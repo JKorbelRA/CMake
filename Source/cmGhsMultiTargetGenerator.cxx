@@ -85,7 +85,10 @@ std::string cmGhsMultiTargetGenerator::GetRelBuildFileName(
 {
   std::string output;
   output = cmGhsMultiTargetGenerator::GetRelBuildFilePath(target);
-  output = cmGhsMultiTargetGenerator::AddSlashIfNeededToPath(output);
+  if (!output.empty())
+  {
+      output = cmGhsMultiTargetGenerator::AddSlashIfNeededToPath(output);
+  }
   output += cmGhsMultiTargetGenerator::GetBuildFileName(target);
   return output;
 }
