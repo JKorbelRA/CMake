@@ -42,7 +42,7 @@ const char* cmGlobalIarGenerator::XML_DECL =
 
 const char* cmGlobalIarGenerator::PROJ_FILE_EXT = ".ewp";
 const char* cmGlobalIarGenerator::WS_FILE_EXT = ".eww";
-const char* cmGlobalIarGenerator::DEFAULT_MAKE_PROGRAM = "IarBuild";
+const char* cmGlobalIarGenerator::DEFAULT_MAKE_PROGRAM = "IarBuild.exe";
 
 
 /// @brief Global configuration of the project (it should be visible
@@ -562,7 +562,7 @@ std::string cmGlobalIarGenerator::FindIarBuildCommand()
     std::string makeProgram =
       cmSystemTools::FindProgram(DEFAULT_MAKE_PROGRAM, userPaths);
     if (makeProgram.empty()) {
-      makeProgram = DEFAULT_MAKE_PROGRAM;
+      makeProgram = commonBin + "/" + DEFAULT_MAKE_PROGRAM;
     }
 
     return makeProgram;
