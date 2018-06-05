@@ -2,6 +2,12 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGlobalGhsMultiGenerator.h"
 
+#include <future>
+#include <iostream>
+#include <objbase.h>
+#include <shellapi.h>
+#include <windows.h>
+
 #include "cmsys/SystemTools.hxx"
 
 #include "cmAlgorithms.h"
@@ -12,6 +18,7 @@
 #include "cmLocalGhsMultiGenerator.h"
 #include "cmMakefile.h"
 #include "cmVersion.h"
+
 
 const char* cmGlobalGhsMultiGenerator::FILE_EXTENSION = ".gpj";
 const char* cmGlobalGhsMultiGenerator::DEFAULT_MAKE_PROGRAM = "gbuild";
@@ -457,11 +464,9 @@ void cmGlobalGhsMultiGenerator::UpdateBuildFiles(
           this->GetCMakeInstance()->GetHomeOutputDirectory().c_str(),
           folderName, GhsMultiGpj::PROJECT);
       }
-      std::vector<cmsys::String> splitPath = cmSystemTools::SplitString(
-        cmGhsMultiTargetGenerator::GetRelBuildFileName(tgt));
-      std::string foldNameRelBuildFile(*(splitPath.end() - 2) + "/" +
-                                       splitPath.back());
-      *this->TargetFolderBuildStreams[folderName] << foldNameRelBuildFile
+
+      std::string relFileName = cmGhsMultiTargetGenerator::GetRelBuildFileName(tgt);
+      *this->TargetFolderBuildStreams[folderName] << relFileName
                                                   << " ";
       GhsMultiGpj::WriteGpjTag(cmGhsMultiTargetGenerator::GetGpjTag(tgt),
                                this->TargetFolderBuildStreams[folderName]);
@@ -494,4 +499,38 @@ std::string cmGlobalGhsMultiGenerator::trimQuotes(std::string const& str)
     }
   }
   return result;
+}
+
+static bool OpenWorkspace(std::string workspace)
+{
+    HRESULT comInitialized =
+        CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (FAILED(comInitialized)) {
+        return false;
+    }
+
+    HINSTANCE hi =
+        ShellExecuteA(NULL, "open", workspace.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+    CoUninitialize();
+
+    return reinterpret_cast<intptr_t>(hi) > 32;
+}
+
+
+bool cmGlobalGhsMultiGenerator::Open(const std::string& bindir,
+    const std::string& projectName,
+    bool dryRun)
+{
+    std::string buildFilePath =
+        this->GetCMakeInstance()->GetHomeOutputDirectory();
+    buildFilePath += "/";
+    buildFilePath += "default";
+    buildFilePath += FILE_EXTENSION;
+    printf("Opening: %s\n", buildFilePath.c_str());
+    if (dryRun) {
+        return cmSystemTools::FileExists(buildFilePath, true);
+    }
+
+    return std::async(std::launch::async, OpenWorkspace, buildFilePath).get();
 }

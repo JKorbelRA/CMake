@@ -59,6 +59,9 @@ public:
    */
   bool FindMakeProgram(cmMakefile* mf) override;
 
+  bool Open(const std::string& bindir, const std::string& projectName,
+      bool dryRun) override;
+
   cmGeneratedFileStream* GetBuildFileStream()
   {
     return this->TargetFolderBuildStreams[""];
@@ -79,6 +82,7 @@ public:
     GhsMultiGpj::Types projType, std::string const& relPath = "");
   static void Open(std::string const& mapKeyName, std::string const& fileName,
                    std::map<std::string, cmGeneratedFileStream*>* fileMap);
+
 
   static std::string trimQuotes(std::string const& str);
   inline bool IsOSDirRelative() { return this->OSDirRelative; }

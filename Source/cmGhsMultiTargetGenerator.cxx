@@ -13,7 +13,7 @@
 #include <assert.h>
 
 std::string const cmGhsMultiTargetGenerator::DDOption("-dynamic");
-
+#include <iostream>
 cmGhsMultiTargetGenerator::cmGhsMultiTargetGenerator(cmGeneratorTarget* target)
   : GeneratorTarget(target)
   , LocalGenerator(
@@ -24,7 +24,7 @@ cmGhsMultiTargetGenerator::cmGhsMultiTargetGenerator(cmGeneratorTarget* target)
 {
   this->RelBuildFilePath = this->GetRelBuildFilePath(target);
 
-  this->RelOutputFileName = this->RelBuildFilePath + target->GetName() + ".a";
+  this->RelOutputFileName = this->RelBuildFilePath + "lib" + target->GetName() + ".a";
 
   this->RelBuildFileName = this->RelBuildFilePath;
   this->RelBuildFileName += this->GetBuildFileName(target);
@@ -44,13 +44,24 @@ cmGhsMultiTargetGenerator::~cmGhsMultiTargetGenerator()
 std::string cmGhsMultiTargetGenerator::GetRelBuildFilePath(
   const cmGeneratorTarget* target)
 {
-  std::string output = target->GetEffectiveFolderName();
-  cmSystemTools::ConvertToUnixSlashes(output);
-  if (!output.empty()) {
-    output += "/";
-  }
-  output += target->GetName() + "/";
-  return output;
+    // Follow CMake File System structure for easy installation with CPACK.
+    std::string path = std::string(target->LocalGenerator->GetCurrentBinaryDirectory());
+    std::string binDir = std::string(target->GetLocalGenerator()->GetBinaryDirectory());
+    std::size_t found = path.find(binDir);
+    if (found != std::string::npos)
+    {
+        if (binDir.length() == path.length())
+        {
+            return "";
+        }
+        else
+        {
+            path = path.substr(binDir.length() + 1);
+        }
+    }
+
+    // Support for easy installation of files.
+    return path + "/";
 }
 
 std::string cmGhsMultiTargetGenerator::GetAbsPathToRoot(
@@ -74,7 +85,10 @@ std::string cmGhsMultiTargetGenerator::GetRelBuildFileName(
 {
   std::string output;
   output = cmGhsMultiTargetGenerator::GetRelBuildFilePath(target);
-  output = cmGhsMultiTargetGenerator::AddSlashIfNeededToPath(output);
+  if (!output.empty())
+  {
+      output = cmGhsMultiTargetGenerator::AddSlashIfNeededToPath(output);
+  }
   output += cmGhsMultiTargetGenerator::GetBuildFileName(target);
   return output;
 }
@@ -198,9 +212,9 @@ void cmGhsMultiTargetGenerator::WriteTypeSpecifics(const std::string& config,
   if (this->GeneratorTarget->GetType() == cmStateEnums::STATIC_LIBRARY) {
     std::string const static_library_suffix =
       this->Makefile->GetSafeDefinition("CMAKE_STATIC_LIBRARY_SUFFIX");
-    *this->GetFolderBuildStreams()
-      << "    -o \"" << outputDir << outputFilename << static_library_suffix
-      << "\"" << std::endl;
+    *this->GetFolderBuildStreams() << "    -o \"" << outputDir
+                                   << "lib" << outputFilename << static_library_suffix
+                                   << "\"" << std::endl;
   } else if (this->GeneratorTarget->GetType() == cmStateEnums::EXECUTABLE) {
     if (notKernel && !this->IsTargetGroup()) {
       *this->GetFolderBuildStreams() << "    -relprog" << std::endl;
@@ -345,9 +359,10 @@ void cmGhsMultiTargetGenerator::WriteTargetLinkLibraries(
        llvI != llv.end(); ++llvI) {
     std::string libName = llvI->first;
     // if it is a user defined target get the full path to the lib
-    cmTarget* tg(GetGlobalGenerator()->FindTarget(libName));
-    if (NULL != tg) {
-      libName = tg->GetName() + ".a";
+
+    cmGeneratorTarget* genTgt = this->LocalGenerator->FindGeneratorTargetToUse(libName);
+    if (NULL != genTgt) {
+      libName = this->GetAbsBuildFilePath(genTgt) + "lib" + genTgt->GetName() + ".a";
     }
     *this->GetFolderBuildStreams()
       << "    -l\"" << libName << "\"" << std::endl;

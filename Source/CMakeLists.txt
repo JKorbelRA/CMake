@@ -697,6 +697,10 @@ if (WIN32)
       cmGhsMultiTargetGenerator.h
       cmGhsMultiGpj.cxx
       cmGhsMultiGpj.h
+      cmGlobalIarGenerator.cxx
+      cmGlobalIarGenerator.h
+      cmLocalIarGenerator.cxx
+      cmLocalIarGenerator.h
       cmVSSetupHelper.cxx
       cmVSSetupHelper.h
       )

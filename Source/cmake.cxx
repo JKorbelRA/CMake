@@ -39,6 +39,10 @@
 #  define CMAKE_USE_ECLIPSE
 #endif
 
+#if defined(CMAKE_BUILD_WITH_CMAKE) && defined(_WIN32)
+#  define CMAKE_USE_IAR
+#endif
+
 #if defined(__MINGW32__) && !defined(CMAKE_BUILD_WITH_CMAKE)
 #  define CMAKE_BOOT_MINGW
 #endif
@@ -48,6 +52,7 @@
 #  if !defined(CMAKE_BOOT_MINGW)
 #    include "cmGlobalBorlandMakefileGenerator.h"
 #    include "cmGlobalGhsMultiGenerator.h"
+#    include "cmGlobalIarGenerator.h"
 #    include "cmGlobalJOMMakefileGenerator.h"
 #    include "cmGlobalNMakeMakefileGenerator.h"
 #    include "cmGlobalVisualStudio10Generator.h"
@@ -1719,7 +1724,8 @@ void cmake::AddDefaultGenerators()
   this->Generators.push_back(cmGlobalNMakeMakefileGenerator::NewFactory());
   this->Generators.push_back(cmGlobalJOMMakefileGenerator::NewFactory());
   this->Generators.push_back(cmGlobalGhsMultiGenerator::NewFactory());
-#  endif
+  this->Generators.push_back(cmGlobalIarGenerator::NewFactory());
+#endif
   this->Generators.push_back(cmGlobalMSYSMakefileGenerator::NewFactory());
   this->Generators.push_back(cmGlobalMinGWMakefileGenerator::NewFactory());
 #endif
