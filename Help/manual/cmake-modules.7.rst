@@ -36,6 +36,13 @@ These modules are loaded using the :command:`include` command.
    /module/CheckIncludeFiles
    /module/CheckLanguage
    /module/CheckLibraryExists
+   /module/CheckLinkerFlag
+   /module/CheckOBJCCompilerFlag
+   /module/CheckOBJCSourceCompiles
+   /module/CheckOBJCSourceRuns
+   /module/CheckOBJCXXCompilerFlag
+   /module/CheckOBJCXXSourceCompiles
+   /module/CheckOBJCXXSourceRuns
    /module/CheckPIESupported
    /module/CheckPrototypeDefinition
    /module/CheckStructHasMember
@@ -116,6 +123,7 @@ They are normally called through the :command:`find_package` command.
    /module/FindCABLE
    /module/FindCoin3D
    /module/FindCups
+   /module/FindCUDAToolkit
    /module/FindCURL
    /module/FindCurses
    /module/FindCVS

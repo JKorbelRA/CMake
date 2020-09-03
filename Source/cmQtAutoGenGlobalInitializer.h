@@ -5,13 +5,13 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmQtAutoGen.h"
-
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "cmQtAutoGen.h"
 
 class cmLocalGenerator;
 class cmQtAutoGenInitializer;
@@ -48,7 +48,7 @@ public:
 
 public:
   cmQtAutoGenGlobalInitializer(
-    std::vector<cmLocalGenerator*> const& localGenerators);
+    std::vector<std::unique_ptr<cmLocalGenerator>> const& localGenerators);
   ~cmQtAutoGenGlobalInitializer();
 
   Keywords const& kw() const { return Keywords_; };

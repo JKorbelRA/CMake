@@ -2,15 +2,18 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmLocalGhsMultiGenerator.h"
 
+#include <algorithm>
+#include <utility>
+
+#include <cmext/algorithm>
+
 #include "cmGeneratorTarget.h"
 #include "cmGhsMultiTargetGenerator.h"
 #include "cmGlobalGenerator.h"
 #include "cmSourceFile.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
-
-#include <algorithm>
-#include <utility>
 
 cmLocalGhsMultiGenerator::cmLocalGhsMultiGenerator(cmGlobalGenerator* gg,
                                                    cmMakefile* mf)
@@ -23,9 +26,7 @@ cmLocalGhsMultiGenerator::~cmLocalGhsMultiGenerator() = default;
 std::string cmLocalGhsMultiGenerator::GetTargetDirectory(
   cmGeneratorTarget const* target) const
 {
-  std::string dir;
-  dir += target->GetName();
-  dir += ".dir";
+  std::string dir = cmStrCat(target->GetName(), ".dir");
   return dir;
 }
 
@@ -51,10 +52,11 @@ void cmLocalGhsMultiGenerator::GenerateTargetsDepthFirst(
 
 void cmLocalGhsMultiGenerator::Generate()
 {
-  std::vector<cmGeneratorTarget*> remaining = this->GetGeneratorTargets();
+  std::vector<cmGeneratorTarget*> remaining;
+  cm::append(remaining, this->GetGeneratorTargets());
   for (auto& t : remaining) {
     if (t) {
-      GenerateTargetsDepthFirst(t, remaining);
+      this->GenerateTargetsDepthFirst(t, remaining);
     }
   }
 }
@@ -63,11 +65,8 @@ void cmLocalGhsMultiGenerator::ComputeObjectFilenames(
   std::map<cmSourceFile const*, std::string>& mapping,
   cmGeneratorTarget const* gt)
 {
-  std::string dir_max;
-  dir_max += this->GetCurrentBinaryDirectory();
-  dir_max += "/";
-  dir_max += this->GetTargetDirectory(gt);
-  dir_max += "/";
+  std::string dir_max = cmStrCat(this->GetCurrentBinaryDirectory(), '/',
+                                 this->GetTargetDirectory(gt), '/');
 
   // Count the number of object files with each name.  Note that
   // filesystem may not be case sensitive.
@@ -75,9 +74,10 @@ void cmLocalGhsMultiGenerator::ComputeObjectFilenames(
 
   for (auto const& si : mapping) {
     cmSourceFile const* sf = si.first;
-    std::string objectNameLower = cmSystemTools::LowerCase(
-      cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath()));
-    objectNameLower += this->GlobalGenerator->GetLanguageOutputExtension(*sf);
+    std::string objectNameLower = cmStrCat(
+      cmSystemTools::LowerCase(
+        cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath())),
+      this->GlobalGenerator->GetLanguageOutputExtension(*sf));
     counts[objectNameLower] += 1;
   }
 
@@ -85,9 +85,9 @@ void cmLocalGhsMultiGenerator::ComputeObjectFilenames(
   // object name computation.
   for (auto& si : mapping) {
     cmSourceFile const* sf = si.first;
-    std::string objectName =
-      cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath());
-    objectName += this->GlobalGenerator->GetLanguageOutputExtension(*sf);
+    std::string objectName = cmStrCat(
+      cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath()),
+      this->GlobalGenerator->GetLanguageOutputExtension(*sf));
 
     if (counts[cmSystemTools::LowerCase(objectName)] > 1) {
       const_cast<cmGeneratorTarget*>(gt)->AddExplicitObjectName(sf);

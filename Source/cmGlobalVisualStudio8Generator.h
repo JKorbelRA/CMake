@@ -57,10 +57,6 @@ protected:
   virtual bool NeedsDeploy(cmGeneratorTarget const& target,
                            const char* config) const;
 
-  /** Returns true if deployment has been disabled in cmake file. */
-  bool DeployInhibited(cmGeneratorTarget const& target,
-                       const char* config) const;
-
   /** Returns true if the target system support debugging deployment. */
   virtual bool TargetSystemSupportsDeployment() const;
 
@@ -74,7 +70,7 @@ protected:
     const std::string& platformMapping = "") override;
   bool ComputeTargetDepends() override;
   void WriteProjectDepends(std::ostream& fout, const std::string& name,
-                           const char* path,
+                           const std::string& path,
                            const cmGeneratorTarget* t) override;
 
   bool UseFolderProperty() const override;

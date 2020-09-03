@@ -3,8 +3,7 @@
 #include "cmComputeComponentGraph.h"
 
 #include <algorithm>
-
-#include <assert.h>
+#include <cassert>
 
 cmComputeComponentGraph::cmComputeComponentGraph(Graph const& input)
   : InputGraph(input)
@@ -124,7 +123,7 @@ void cmComputeComponentGraph::TransferEdges()
         // We do not attempt to combine duplicate edges, but instead
         // store the inter-component edges with suitable multiplicity.
         this->ComponentGraph[i_component].emplace_back(
-          j_component, ni.IsStrong(), ni.GetBacktrace());
+          j_component, ni.IsStrong(), ni.IsCross(), ni.GetBacktrace());
       }
     }
   }

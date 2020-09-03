@@ -6,6 +6,7 @@
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <iosfwd>
+#include <memory>
 #include <string>
 
 #include "cmGlobalVisualStudio14Generator.h"
@@ -19,8 +20,8 @@ class cmGlobalVisualStudioVersionedGenerator
   : public cmGlobalVisualStudio14Generator
 {
 public:
-  static cmGlobalGeneratorFactory* NewFactory15();
-  static cmGlobalGeneratorFactory* NewFactory16();
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory15();
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory16();
 
   bool MatchesGeneratorName(const std::string& name) const override;
 
@@ -28,8 +29,12 @@ public:
 
   bool GetVSInstance(std::string& dir) const;
 
+  bool GetVSInstanceVersion(unsigned long long& vsInstanceVersion) const;
+
   bool IsDefaultToolset(const std::string& version) const override;
   std::string GetAuxiliaryToolset() const override;
+
+  bool IsStdOutEncodingSupported() const override;
 
 protected:
   cmGlobalVisualStudioVersionedGenerator(

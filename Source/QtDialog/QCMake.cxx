@@ -2,11 +2,15 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "QCMake.h"
 
+#include <cm/memory>
+
 #include <QCoreApplication>
 #include <QDir>
 
 #include "cmExternalMakefileProjectGenerator.h"
+#include "cmGlobalGenerator.h"
 #include "cmState.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 
 #ifdef Q_OS_WIN
@@ -33,7 +37,8 @@ QCMake::QCMake(QObject* p)
   cmSystemTools::SetStderrCallback(
     [this](std::string const& msg) { this->stderrCallback(msg); });
 
-  this->CMakeInstance = new cmake(cmake::RoleProject, cmState::Project);
+  this->CMakeInstance =
+    cm::make_unique<cmake>(cmake::RoleProject, cmState::Project);
   this->CMakeInstance->SetCMakeEditCommand(
     cmSystemTools::GetCMakeGUICommand());
   this->CMakeInstance->SetProgressCallback(
@@ -53,11 +58,7 @@ QCMake::QCMake(QObject* p)
   }
 }
 
-QCMake::~QCMake()
-{
-  delete this->CMakeInstance;
-  // cmDynamicLoader::FlushCache();
-}
+QCMake::~QCMake() = default;
 
 void QCMake::loadCache(const QString& dir)
 {
@@ -99,29 +100,28 @@ void QCMake::setBinaryDirectory(const QString& _dir)
 
     QCMakePropertyList props = this->properties();
     emit this->propertiesChanged(props);
-    const char* homeDir = state->GetCacheEntryValue("CMAKE_HOME_DIRECTORY");
+    cmProp homeDir = state->GetCacheEntryValue("CMAKE_HOME_DIRECTORY");
     if (homeDir) {
-      setSourceDirectory(QString::fromLocal8Bit(homeDir));
+      setSourceDirectory(QString::fromLocal8Bit(homeDir->c_str()));
     }
-    const char* gen = state->GetCacheEntryValue("CMAKE_GENERATOR");
+    cmProp gen = state->GetCacheEntryValue("CMAKE_GENERATOR");
     if (gen) {
       const std::string* extraGen =
         state->GetInitializedCacheValue("CMAKE_EXTRA_GENERATOR");
       std::string curGen =
         cmExternalMakefileProjectGenerator::CreateFullGeneratorName(
-          gen, extraGen ? *extraGen : "");
+          *gen, extraGen ? *extraGen : "");
       this->setGenerator(QString::fromLocal8Bit(curGen.c_str()));
     }
 
-    const char* platform =
-      state->GetCacheEntryValue("CMAKE_GENERATOR_PLATFORM");
+    cmProp platform = state->GetCacheEntryValue("CMAKE_GENERATOR_PLATFORM");
     if (platform) {
-      this->setPlatform(QString::fromLocal8Bit(platform));
+      this->setPlatform(QString::fromLocal8Bit(platform->c_str()));
     }
 
-    const char* toolset = state->GetCacheEntryValue("CMAKE_GENERATOR_TOOLSET");
+    cmProp toolset = state->GetCacheEntryValue("CMAKE_GENERATOR_TOOLSET");
     if (toolset) {
-      this->setToolset(QString::fromLocal8Bit(toolset));
+      this->setToolset(QString::fromLocal8Bit(toolset->c_str()));
     }
 
     checkOpenPossible();
@@ -256,14 +256,14 @@ void QCMake::setProperties(const QCMakePropertyList& newProps)
     }
   }
 
-  // remove some properites
+  // remove some properties
   foreach (QString const& s, toremove) {
     this->CMakeInstance->UnwatchUnusedCli(s.toLocal8Bit().data());
 
     state->RemoveCacheEntry(s.toLocal8Bit().data());
   }
 
-  // add some new properites
+  // add some new properties
   foreach (QCMakeProperty const& s, props) {
     this->CMakeInstance->WatchUnusedCli(s.Key.toLocal8Bit().data());
 
@@ -302,27 +302,28 @@ QCMakePropertyList QCMake::properties() const
       continue;
     }
 
-    const char* cachedValue = state->GetCacheEntryValue(key);
+    cmProp cachedValue = state->GetCacheEntryValue(key);
 
     QCMakeProperty prop;
     prop.Key = QString::fromLocal8Bit(key.c_str());
-    prop.Help =
-      QString::fromLocal8Bit(state->GetCacheEntryProperty(key, "HELPSTRING"));
-    prop.Value = QString::fromLocal8Bit(cachedValue);
+    if (cmProp hs = state->GetCacheEntryProperty(key, "HELPSTRING")) {
+      prop.Help = QString::fromLocal8Bit(hs->c_str());
+    }
+    prop.Value = QString::fromLocal8Bit(cachedValue->c_str());
     prop.Advanced = state->GetCacheEntryPropertyAsBool(key, "ADVANCED");
     if (t == cmStateEnums::BOOL) {
       prop.Type = QCMakeProperty::BOOL;
-      prop.Value = cmSystemTools::IsOn(cachedValue);
+      prop.Value = cmIsOn(*cachedValue);
     } else if (t == cmStateEnums::PATH) {
       prop.Type = QCMakeProperty::PATH;
     } else if (t == cmStateEnums::FILEPATH) {
       prop.Type = QCMakeProperty::FILEPATH;
     } else if (t == cmStateEnums::STRING) {
       prop.Type = QCMakeProperty::STRING;
-      const char* stringsProperty =
-        state->GetCacheEntryProperty(key, "STRINGS");
+      cmProp stringsProperty = state->GetCacheEntryProperty(key, "STRINGS");
       if (stringsProperty) {
-        prop.Strings = QString::fromLocal8Bit(stringsProperty).split(";");
+        prop.Strings =
+          QString::fromLocal8Bit(stringsProperty->c_str()).split(";");
       }
     }
 
@@ -484,7 +485,7 @@ void QCMake::setWarnUnusedMode(bool value)
 
 void QCMake::checkOpenPossible()
 {
-  auto data = this->BinaryDirectory.toLocal8Bit().data();
+  std::string data = this->BinaryDirectory.toLocal8Bit().data();
   auto possible = this->CMakeInstance->Open(data, true);
   emit openPossible(possible);
 }

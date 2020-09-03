@@ -5,23 +5,30 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <functional>
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <set>
+#include <stack>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <cm/string_view>
+
+#include "cmGeneratedFileStream.h"
 #include "cmInstalledFile.h"
 #include "cmListFileCache.h"
 #include "cmMessageType.h"
+#include "cmProperty.h"
 #include "cmState.h"
 #include "cmStateSnapshot.h"
 #include "cmStateTypes.h"
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
-#  include "cm_jsoncpp_value.h"
+#if !defined(CMAKE_BOOTSTRAP)
+#  include <cm3p/json/value.h>
 #endif
 
 class cmExternalMakefileProjectGeneratorFactory;
@@ -30,6 +37,9 @@ class cmFileTimeCache;
 class cmGlobalGenerator;
 class cmGlobalGeneratorFactory;
 class cmMakefile;
+#if !defined(CMAKE_BOOTSTRAP)
+class cmMakefileProfilingData;
+#endif
 class cmMessenger;
 class cmVariableWatch;
 struct cmDocumentationEntry;
@@ -109,6 +119,14 @@ public:
     LOG_TRACE
   };
 
+  /** \brief Define supported trace formats **/
+  enum TraceFormat
+  {
+    TRACE_UNDEFINED,
+    TRACE_HUMAN,
+    TRACE_JSON_V1,
+  };
+
   struct GeneratorInfo
   {
     std::string name;
@@ -121,7 +139,18 @@ public:
     bool isAlias;
   };
 
-  typedef std::map<std::string, cmInstalledFile> InstalledFilesMap;
+  struct FileExtensions
+  {
+    bool Test(cm::string_view ext) const
+    {
+      return (this->unordered.find(ext) != this->unordered.end());
+    }
+
+    std::vector<std::string> ordered;
+    std::unordered_set<cm::string_view> unordered;
+  };
+
+  using InstalledFilesMap = std::map<std::string, cmInstalledFile>;
 
   static const int NO_BUILD_PARALLEL_LEVEL = -1;
   static const int DEFAULT_BUILD_PARALLEL_LEVEL = 0;
@@ -134,7 +163,7 @@ public:
   cmake(cmake const&) = delete;
   cmake& operator=(cmake const&) = delete;
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   Json::Value ReportVersionJson() const;
   Json::Value ReportCapabilitiesJson() const;
 #endif
@@ -190,21 +219,25 @@ public:
   void PreLoadCMakeFiles();
 
   //! Create a GlobalGenerator
-  cmGlobalGenerator* CreateGlobalGenerator(const std::string& name);
+  std::unique_ptr<cmGlobalGenerator> CreateGlobalGenerator(
+    const std::string& name);
 
   //! Return the global generator assigned to this instance of cmake
-  cmGlobalGenerator* GetGlobalGenerator() { return this->GlobalGenerator; }
+  cmGlobalGenerator* GetGlobalGenerator()
+  {
+    return this->GlobalGenerator.get();
+  }
   //! Return the global generator assigned to this instance of cmake, const
   const cmGlobalGenerator* GetGlobalGenerator() const
   {
-    return this->GlobalGenerator;
+    return this->GlobalGenerator.get();
   }
 
   //! Return the full path to where the CMakeCache.txt file should be.
   static std::string FindCacheFile(const std::string& binaryDir);
 
   //! Return the global generator assigned to this instance of cmake
-  void SetGlobalGenerator(cmGlobalGenerator*);
+  void SetGlobalGenerator(std::unique_ptr<cmGlobalGenerator>);
 
   //! Get the names of the current registered generators
   void GetRegisteredGenerators(std::vector<GeneratorInfo>& generators,
@@ -233,24 +266,42 @@ public:
 
   const std::vector<std::string>& GetSourceExtensions() const
   {
-    return this->SourceFileExtensions;
+    return this->SourceFileExtensions.ordered;
   }
 
-  bool IsSourceExtension(const std::string& ext) const
+  bool IsSourceExtension(cm::string_view ext) const
   {
-    return this->SourceFileExtensionsSet.find(ext) !=
-      this->SourceFileExtensionsSet.end();
+    return this->SourceFileExtensions.Test(ext);
   }
 
   const std::vector<std::string>& GetHeaderExtensions() const
   {
-    return this->HeaderFileExtensions;
+    return this->HeaderFileExtensions.ordered;
   }
 
-  bool IsHeaderExtension(const std::string& ext) const
+  bool IsHeaderExtension(cm::string_view ext) const
   {
-    return this->HeaderFileExtensionsSet.find(ext) !=
-      this->HeaderFileExtensionsSet.end();
+    return this->HeaderFileExtensions.Test(ext);
+  }
+
+  const std::vector<std::string>& GetCudaExtensions() const
+  {
+    return this->CudaFileExtensions.ordered;
+  }
+
+  bool IsCudaExtension(cm::string_view ext) const
+  {
+    return this->CudaFileExtensions.Test(ext);
+  }
+
+  const std::vector<std::string>& GetFortranExtensions() const
+  {
+    return this->FortranFileExtensions.ordered;
+  }
+
+  bool IsFortranExtension(cm::string_view ext) const
+  {
+    return this->FortranFileExtensions.Test(ext);
   }
 
   // Strips the extension (if present and known) from a filename
@@ -305,7 +356,7 @@ public:
   //! this is called by generators to update the progress
   void UpdateProgress(const std::string& msg, float prog);
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   //! Get the variable watch object
   cmVariableWatch* GetVariableWatch() { return this->VariableWatch.get(); }
 #endif
@@ -314,9 +365,9 @@ public:
 
   //! Set/Get a property of this target file
   void SetProperty(const std::string& prop, const char* value);
-  void AppendProperty(const std::string& prop, const char* value,
+  void AppendProperty(const std::string& prop, const std::string& value,
                       bool asString = false);
-  const char* GetProperty(const std::string& prop);
+  cmProp GetProperty(const std::string& prop);
   bool GetPropertyAsBool(const std::string& prop);
 
   //! Get or create an cmInstalledFile instance and return a pointer to it
@@ -350,20 +401,52 @@ public:
    */
   cmFileTimeCache* GetFileTimeCache() { return this->FileTimeCache.get(); }
 
+  bool WasLogLevelSetViaCLI() const { return this->LogLevelWasSetViaCLI; }
+
   //! Get the selected log level for `message()` commands during the cmake run.
   LogLevel GetLogLevel() const { return this->MessageLogLevel; }
   void SetLogLevel(LogLevel level) { this->MessageLogLevel = level; }
   static LogLevel StringToLogLevel(const std::string& levelStr);
+  static TraceFormat StringToTraceFormat(const std::string& levelStr);
+
+  bool HasCheckInProgress() const
+  {
+    return !this->CheckInProgressMessages.empty();
+  }
+  std::size_t GetCheckInProgressSize() const
+  {
+    return this->CheckInProgressMessages.size();
+  }
+  std::string GetTopCheckInProgressMessage()
+  {
+    auto message = this->CheckInProgressMessages.top();
+    this->CheckInProgressMessages.pop();
+    return message;
+  }
+  void PushCheckInProgressMessage(std::string message)
+  {
+    this->CheckInProgressMessages.emplace(std::move(message));
+  }
+
+  //! Should `message` command display context.
+  bool GetShowLogContext() const { return this->LogContext; }
+  void SetShowLogContext(bool b) { this->LogContext = b; }
 
   //! Do we want debug output during the cmake run.
   bool GetDebugOutput() { return this->DebugOutput; }
   void SetDebugOutputOn(bool b) { this->DebugOutput = b; }
 
+  //! Do we want debug output from the find commands during the cmake run.
+  bool GetDebugFindOutput() { return this->DebugFindOutput; }
+  void SetDebugFindOutputOn(bool b) { this->DebugFindOutput = b; }
+
   //! Do we want trace output during the cmake run.
-  bool GetTrace() { return this->Trace; }
+  bool GetTrace() const { return this->Trace; }
   void SetTrace(bool b) { this->Trace = b; }
-  bool GetTraceExpand() { return this->TraceExpand; }
+  bool GetTraceExpand() const { return this->TraceExpand; }
   void SetTraceExpand(bool b) { this->TraceExpand = b; }
+  TraceFormat GetTraceFormat() const { return this->TraceFormatVar; }
+  void SetTraceFormat(TraceFormat f) { this->TraceFormatVar = f; }
   void AddTraceSource(std::string const& file)
   {
     this->TraceOnlyThisSources.push_back(file);
@@ -372,6 +455,10 @@ public:
   {
     return this->TraceOnlyThisSources;
   }
+  cmGeneratedFileStream& GetTraceFile() { return this->TraceFile; }
+  void SetTraceFile(std::string const& file);
+  void PrintTraceFormatVersion();
+
   bool GetWarnUninitialized() { return this->WarnUninitialized; }
   void SetWarnUninitialized(bool b) { this->WarnUninitialized = b; }
   bool GetWarnUnused() { return this->WarnUnused; }
@@ -466,28 +553,35 @@ public:
   }
   cmStateSnapshot GetCurrentSnapshot() const { return this->CurrentSnapshot; }
 
+  bool GetRegenerateDuringBuild() const { return this->RegenerateDuringBuild; }
+
+#if !defined(CMAKE_BOOTSTRAP)
+  cmMakefileProfilingData& GetProfilingOutput();
+  bool IsProfilingEnabled() const;
+#endif
+
 protected:
   void RunCheckForUnusedVariables();
   int HandleDeleteCacheVariables(const std::string& var);
 
-  typedef std::vector<cmGlobalGeneratorFactory*> RegisteredGeneratorsVector;
+  using RegisteredGeneratorsVector =
+    std::vector<std::unique_ptr<cmGlobalGeneratorFactory>>;
   RegisteredGeneratorsVector Generators;
-  typedef std::vector<cmExternalMakefileProjectGeneratorFactory*>
-    RegisteredExtraGeneratorsVector;
+  using RegisteredExtraGeneratorsVector =
+    std::vector<cmExternalMakefileProjectGeneratorFactory*>;
   RegisteredExtraGeneratorsVector ExtraGenerators;
   void AddScriptingCommands();
   void AddProjectCommands();
   void AddDefaultGenerators();
   void AddDefaultExtraGenerators();
 
-  cmGlobalGenerator* GlobalGenerator;
   std::map<std::string, DiagLevel> DiagLevels;
   std::string GeneratorInstance;
   std::string GeneratorPlatform;
   std::string GeneratorToolset;
-  bool GeneratorInstanceSet;
-  bool GeneratorPlatformSet;
-  bool GeneratorToolsetSet;
+  bool GeneratorInstanceSet = false;
+  bool GeneratorPlatformSet = false;
+  bool GeneratorToolsetSet = false;
 
   //! read in a cmake list file to initialize the cache
   void ReadListFile(const std::vector<std::string>& args,
@@ -514,14 +608,17 @@ protected:
 
 private:
   ProgressCallbackType ProgressCallback;
-  WorkingMode CurrentWorkingMode;
-  bool DebugOutput;
-  bool Trace;
-  bool TraceExpand;
-  bool WarnUninitialized;
-  bool WarnUnused;
-  bool WarnUnusedCli;
-  bool CheckSystemVars;
+  WorkingMode CurrentWorkingMode = NORMAL_MODE;
+  bool DebugOutput = false;
+  bool DebugFindOutput = false;
+  bool Trace = false;
+  bool TraceExpand = false;
+  TraceFormat TraceFormatVar = TRACE_HUMAN;
+  cmGeneratedFileStream TraceFile;
+  bool WarnUninitialized = false;
+  bool WarnUnused = false;
+  bool WarnUnusedCli = true;
+  bool CheckSystemVars = false;
   std::map<std::string, bool> UsedCliVariables;
   std::string CMakeEditCommand;
   std::string CXXEnvironment;
@@ -531,17 +628,18 @@ private:
   std::string CheckStampList;
   std::string VSSolutionFile;
   std::string EnvironmentGenerator;
-  std::vector<std::string> SourceFileExtensions;
-  std::unordered_set<std::string> SourceFileExtensionsSet;
-  std::vector<std::string> HeaderFileExtensions;
-  std::unordered_set<std::string> HeaderFileExtensionsSet;
-  bool ClearBuildSystem;
-  bool DebugTryCompile;
+  FileExtensions SourceFileExtensions;
+  FileExtensions HeaderFileExtensions;
+  FileExtensions CudaFileExtensions;
+  FileExtensions FortranFileExtensions;
+  bool ClearBuildSystem = false;
+  bool DebugTryCompile = false;
+  bool RegenerateDuringBuild = false;
   std::unique_ptr<cmFileTimeCache> FileTimeCache;
   std::string GraphVizFile;
   InstalledFilesMap InstalledFiles;
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   std::unique_ptr<cmVariableWatch> VariableWatch;
   std::unique_ptr<cmFileAPI> FileAPI;
 #endif
@@ -553,6 +651,12 @@ private:
   std::vector<std::string> TraceOnlyThisSources;
 
   LogLevel MessageLogLevel = LogLevel::LOG_STATUS;
+  bool LogLevelWasSetViaCLI = false;
+  bool LogContext = false;
+
+  std::stack<std::string> CheckInProgressMessages;
+
+  std::unique_ptr<cmGlobalGenerator> GlobalGenerator;
 
   void UpdateConversionPathTable();
 
@@ -564,6 +668,10 @@ private:
 
   void AppendGlobalGeneratorsDocumentation(std::vector<cmDocumentationEntry>&);
   void AppendExtraGeneratorsDocumentation(std::vector<cmDocumentationEntry>&);
+
+#if !defined(CMAKE_BOOTSTRAP)
+  std::unique_ptr<cmMakefileProfilingData> ProfilingOutput;
+#endif
 };
 
 #define CMAKE_STANDARD_OPTIONS_TABLE                                          \
@@ -679,5 +787,12 @@ private:
   FOR_EACH_CXX98_FEATURE(F)                                                   \
   FOR_EACH_CXX11_FEATURE(F)                                                   \
   FOR_EACH_CXX14_FEATURE(F)
+
+#define FOR_EACH_CUDA_FEATURE(F)                                              \
+  F(cuda_std_03)                                                              \
+  F(cuda_std_11)                                                              \
+  F(cuda_std_14)                                                              \
+  F(cuda_std_17)                                                              \
+  F(cuda_std_20)
 
 #endif

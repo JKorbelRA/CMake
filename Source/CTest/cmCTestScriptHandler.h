@@ -5,12 +5,13 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmCTestGenericHandler.h"
-#include "cmDuration.h"
-
 #include <chrono>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "cmCTestGenericHandler.h"
+#include "cmDuration.h"
 
 class cmCTest;
 class cmCTestCommand;
@@ -57,7 +58,7 @@ class cmake;
 class cmCTestScriptHandler : public cmCTestGenericHandler
 {
 public:
-  typedef cmCTestGenericHandler Superclass;
+  using Superclass = cmCTestGenericHandler;
 
   /**
    * Add a script to run, and if is should run in the current process
@@ -100,12 +101,14 @@ public:
   cmDuration GetRemainingTimeAllowed();
 
   cmCTestScriptHandler();
+  cmCTestScriptHandler(const cmCTestScriptHandler&) = delete;
+  const cmCTestScriptHandler& operator=(const cmCTestScriptHandler&) = delete;
   ~cmCTestScriptHandler() override;
 
   void Initialize() override;
 
   void CreateCMake();
-  cmake* GetCMake() { return this->CMake; }
+  cmake* GetCMake() { return this->CMake.get(); }
 
   void SetRunCurrentScript(bool value);
 
@@ -131,7 +134,8 @@ private:
   int RunConfigurationDashboard();
 
   // Add ctest command
-  void AddCTestCommand(std::string const& name, cmCTestCommand* command);
+  void AddCTestCommand(std::string const& name,
+                       std::unique_ptr<cmCTestCommand> command);
 
   // Try to remove the binary directory once
   static bool TryToRemoveBinaryDirectoryOnce(const std::string& directoryPath);
@@ -141,9 +145,9 @@ private:
 
   bool ShouldRunCurrentScript;
 
-  bool Backup;
-  bool EmptyBinDir;
-  bool EmptyBinDirOnce;
+  bool Backup = false;
+  bool EmptyBinDir = false;
+  bool EmptyBinDirOnce = false;
 
   std::string SourceDir;
   std::string BinaryDir;
@@ -159,16 +163,18 @@ private:
   std::string CMOutFile;
   std::vector<std::string> ExtraUpdates;
 
-  double MinimumInterval;
-  double ContinuousDuration;
+  // the *60 is because the settings are in minutes but GetTime is seconds
+  double MinimumInterval = 30 * 60;
+  double ContinuousDuration = -1;
 
   // what time in seconds did this script start running
-  std::chrono::steady_clock::time_point ScriptStartTime;
+  std::chrono::steady_clock::time_point ScriptStartTime =
+    std::chrono::steady_clock::time_point();
 
-  cmMakefile* Makefile;
-  cmMakefile* ParentMakefile;
-  cmGlobalGenerator* GlobalGenerator;
-  cmake* CMake;
+  std::unique_ptr<cmMakefile> Makefile;
+  cmMakefile* ParentMakefile = nullptr;
+  std::unique_ptr<cmGlobalGenerator> GlobalGenerator;
+  std::unique_ptr<cmake> CMake;
 };
 
 #endif

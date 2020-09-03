@@ -5,9 +5,9 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <iosfwd>
-#include <memory> // IWYU pragma: keep
-#include <stddef.h>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -183,6 +183,9 @@ struct cmListFile
 {
   bool ParseFile(const char* path, cmMessenger* messenger,
                  cmListFileBacktrace const& lfbt);
+
+  bool ParseString(const char* str, const char* virtual_filename,
+                   cmMessenger* messenger, cmListFileBacktrace const& lfbt);
 
   std::vector<cmListFileFunction> Functions;
 };

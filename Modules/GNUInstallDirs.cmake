@@ -221,8 +221,14 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR OR (_libdir_set
     # default one. When CMAKE_INSTALL_PREFIX changes, the value is
     # updated to the new default, unless the user explicitly changed it.
   endif()
+  if (NOT DEFINED CMAKE_SYSTEM_NAME OR NOT DEFINED CMAKE_SIZEOF_VOID_P)
+    message(AUTHOR_WARNING
+      "Unable to determine default CMAKE_INSTALL_LIBDIR directory because no target architecture is known. "
+      "Please enable at least one language before including GNUInstallDirs.")
+  endif()
   if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|kFreeBSD|GNU)$"
-      AND NOT CMAKE_CROSSCOMPILING)
+      AND NOT CMAKE_CROSSCOMPILING
+      AND NOT EXISTS "/etc/arch-release")
     if (EXISTS "/etc/debian_version") # is this a debian system ?
       if(CMAKE_LIBRARY_ARCHITECTURE)
         if("${CMAKE_INSTALL_PREFIX}" MATCHES "^/usr/?$")
@@ -234,16 +240,10 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR OR (_libdir_set
         endif()
       endif()
     else() # not debian, rely on CMAKE_SIZEOF_VOID_P:
-      if(NOT DEFINED CMAKE_SIZEOF_VOID_P)
-        message(AUTHOR_WARNING
-          "Unable to determine default CMAKE_INSTALL_LIBDIR directory because no target architecture is known. "
-          "Please enable at least one language before including GNUInstallDirs.")
-      else()
-        if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
-          set(_LIBDIR_DEFAULT "lib64")
-          if(DEFINED _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX)
-            set(__LAST_LIBDIR_DEFAULT "lib64")
-          endif()
+      if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
+        set(_LIBDIR_DEFAULT "lib64")
+        if(DEFINED _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX)
+          set(__LAST_LIBDIR_DEFAULT "lib64")
         endif()
       endif()
     endif()

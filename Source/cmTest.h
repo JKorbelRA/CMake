@@ -5,11 +5,11 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmListFileCache.h"
-#include "cmPropertyMap.h"
-
 #include <string>
 #include <vector>
+
+#include "cmListFileCache.h"
+#include "cmPropertyMap.h"
 
 class cmMakefile;
 
@@ -35,7 +35,7 @@ public:
 
   //! Set/Get a property of this source file
   void SetProperty(const std::string& prop, const char* value);
-  void AppendProperty(const std::string& prop, const char* value,
+  void AppendProperty(const std::string& prop, const std::string& value,
                       bool asString = false);
   const char* GetProperty(const std::string& prop) const;
   bool GetPropertyAsBool(const std::string& prop) const;

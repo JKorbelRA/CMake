@@ -5,11 +5,11 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <iosfwd>
-#include <stddef.h>
 #include <string>
 
-#if !defined(CMAKE_BUILD_WITH_CMAKE)
+#if defined(CMAKE_BOOTSTRAP)
 #  error "cmArchiveWrite not allowed during bootstrap build!"
 #endif
 
@@ -61,6 +61,8 @@ public:
 
   cmArchiveWrite(const cmArchiveWrite&) = delete;
   cmArchiveWrite& operator=(const cmArchiveWrite&) = delete;
+
+  bool Open();
 
   /**
    * Add a path (file or directory) to the archive.  Directories are
@@ -138,6 +140,9 @@ public:
     this->Uname = "";
     this->Gname = "";
   }
+
+  //! Set an option on a filter;
+  bool SetFilterOption(const char* module, const char* key, const char* value);
 
 private:
   bool Okay() const { return this->Error.empty(); }

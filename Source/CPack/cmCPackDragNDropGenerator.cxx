@@ -2,20 +2,22 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCPackDragNDropGenerator.h"
 
+#include <algorithm>
+#include <cstdlib>
+#include <iomanip>
+#include <map>
+
+#include <CoreFoundation/CoreFoundation.h>
+
+#include "cmsys/FStream.hxx"
+#include "cmsys/RegularExpression.hxx"
+
 #include "cmCPackGenerator.h"
 #include "cmCPackLog.h"
 #include "cmDuration.h"
 #include "cmGeneratedFileStream.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
-
-#include "cmsys/FStream.hxx"
-#include "cmsys/RegularExpression.hxx"
-#include <algorithm>
-#include <iomanip>
-#include <map>
-#include <stdlib.h>
-
-#include <CoreFoundation/CoreFoundation.h>
 
 #ifdef HAVE_CoreServices
 // For the old LocaleStringToLangAndRegionCodes() function, to convert
@@ -127,9 +129,8 @@ int cmCPackDragNDropGenerator::InitializeInternal()
       return 0;
     }
 
-    std::vector<std::string> languages;
-    cmSystemTools::ExpandListArgument(
-      this->GetOption("CPACK_DMG_SLA_LANGUAGES"), languages);
+    std::vector<std::string> languages =
+      cmExpandedList(this->GetOption("CPACK_DMG_SLA_LANGUAGES"));
     if (languages.empty()) {
       cmCPackLogger(cmCPackLog::LOG_ERROR,
                     "CPACK_DMG_SLA_LANGUAGES set but empty" << std::endl);
@@ -137,11 +138,16 @@ int cmCPackDragNDropGenerator::InitializeInternal()
     }
     for (auto const& language : languages) {
       std::string license = slaDirectory + "/" + language + ".license.txt";
-      if (!singleLicense && !cmSystemTools::FileExists(license)) {
-        cmCPackLogger(cmCPackLog::LOG_ERROR,
-                      "Missing license file " << language << ".license.txt"
-                                              << std::endl);
-        return 0;
+      std::string license_rtf = slaDirectory + "/" + language + ".license.rtf";
+      if (!singleLicense) {
+        if (!cmSystemTools::FileExists(license) &&
+            !cmSystemTools::FileExists(license_rtf)) {
+          cmCPackLogger(cmCPackLog::LOG_ERROR,
+                        "Missing license file "
+                          << language << ".license.txt"
+                          << " / " << language << ".license.rtf" << std::endl);
+          return 0;
+        }
       }
       std::string menu = slaDirectory + "/" + language + ".menu.txt";
       if (!cmSystemTools::FileExists(menu)) {
@@ -196,9 +202,7 @@ int cmCPackDragNDropGenerator::PackageFiles()
     full_package_name += std::string(GetOutputExtension());
     packageFileNames.push_back(full_package_name);
 
-    std::string src_dir = toplevel;
-    src_dir += "/";
-    src_dir += package_file;
+    std::string src_dir = cmStrCat(toplevel, '/', package_file);
 
     if (0 == this->CreateDMG(src_dir, full_package_name)) {
       return 0;
@@ -409,8 +413,8 @@ int cmCPackDragNDropGenerator::CreateDMG(const std::string& src_dir,
   }
 
   // Create a temporary read-write disk image ...
-  std::string temp_image = this->GetOption("CPACK_TOPLEVEL_DIRECTORY");
-  temp_image += "/temp.dmg";
+  std::string temp_image =
+    cmStrCat(this->GetOption("CPACK_TOPLEVEL_DIRECTORY"), "/temp.dmg");
 
   std::string create_error;
   std::ostringstream temp_image_command;
@@ -522,12 +526,12 @@ int cmCPackDragNDropGenerator::CreateDMG(const std::string& src_dir,
   if (!cpack_license_file.empty() || !slaDirectory.empty()) {
     // Use old hardcoded style if sla_dir is not set
     bool oldStyle = slaDirectory.empty();
-    std::string sla_r = this->GetOption("CPACK_TOPLEVEL_DIRECTORY");
-    sla_r += "/sla.r";
+    std::string sla_r =
+      cmStrCat(this->GetOption("CPACK_TOPLEVEL_DIRECTORY"), "/sla.r");
 
     std::vector<std::string> languages;
     if (!oldStyle) {
-      cmSystemTools::ExpandListArgument(cpack_dmg_languages, languages);
+      cmExpandList(cpack_dmg_languages, languages);
     }
 
     cmGeneratedFileStream ofs(sla_r);
@@ -649,8 +653,8 @@ int cmCPackDragNDropGenerator::CreateDMG(const std::string& src_dir,
     if (temp_image_format != "UDZO") {
       temp_image_format = "UDZO";
       // convert to UDZO to enable unflatten/flatten
-      std::string temp_udzo = this->GetOption("CPACK_TOPLEVEL_DIRECTORY");
-      temp_udzo += "/temp-udzo.dmg";
+      std::string temp_udzo = cmStrCat(
+        this->GetOption("CPACK_TOPLEVEL_DIRECTORY"), "/temp-udzo.dmg");
 
       std::ostringstream udco_image_command;
       udco_image_command << this->GetOption("CPACK_COMMAND_HDIUTIL");
@@ -776,6 +780,11 @@ std::string cmCPackDragNDropGenerator::GetComponentInstallDirNameSuffix(
     }
   }
 
+  std::string componentFileName =
+    "CPACK_DMG_" + cmSystemTools::UpperCase(componentName) + "_FILE_NAME";
+  if (this->IsSet(componentFileName)) {
+    return this->GetOption(componentFileName);
+  }
   return GetComponentPackageFileName(package_file_name, componentName, false);
 }
 
@@ -789,13 +798,29 @@ bool cmCPackDragNDropGenerator::WriteLicense(
     licenseLanguage = "English";
   }
 
+  // License file
+  std::string license_format = "TEXT";
+  std::string actual_license;
+  if (!licenseFile.empty()) {
+    if (cmHasLiteralSuffix(licenseFile, ".rtf")) {
+      license_format = "RTF ";
+    }
+    actual_license = licenseFile;
+  } else {
+    std::string license_wo_ext =
+      slaDirectory + "/" + licenseLanguage + ".license";
+    if (cmSystemTools::FileExists(license_wo_ext + ".txt")) {
+      actual_license = license_wo_ext + ".txt";
+    } else {
+      license_format = "RTF ";
+      actual_license = license_wo_ext + ".rtf";
+    }
+  }
+
   // License header
-  outputStream << "data 'TEXT' (" << licenseNumber << ", \"" << licenseLanguage
-               << "\") {\n";
+  outputStream << "data '" << license_format << "' (" << licenseNumber
+               << ", \"" << licenseLanguage << "\") {\n";
   // License body
-  std::string actual_license = !licenseFile.empty()
-    ? licenseFile
-    : (slaDirectory + "/" + licenseLanguage + ".license.txt");
   cmsys::ifstream license_ifs;
   license_ifs.open(actual_license.c_str());
   if (license_ifs.is_open()) {
@@ -874,8 +899,9 @@ bool cmCPackDragNDropGenerator::BreakLongLine(const std::string& line,
                                               std::string* error)
 {
   const size_t max_line_length = 512;
-  for (size_t i = 0; i < line.size(); i += max_line_length) {
-    size_t line_length = max_line_length;
+  size_t line_length = max_line_length;
+  for (size_t i = 0; i < line.size(); i += line_length) {
+    line_length = max_line_length;
     if (i + line_length > line.size()) {
       line_length = line.size() - i;
     } else {

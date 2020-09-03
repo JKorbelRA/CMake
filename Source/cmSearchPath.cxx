@@ -6,9 +6,9 @@
 #include <cassert>
 #include <utility>
 
-#include "cmAlgorithms.h"
 #include "cmFindCommon.h"
 #include "cmMakefile.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 
 cmSearchPath::cmSearchPath(cmFindCommon* findCmd)
@@ -78,8 +78,7 @@ void cmSearchPath::AddCMakePath(const std::string& variable)
 
   // Get a path from a CMake variable.
   if (const char* value = this->FC->Makefile->GetDefinition(variable)) {
-    std::vector<std::string> expanded;
-    cmSystemTools::ExpandListArgument(value, expanded);
+    std::vector<std::string> expanded = cmExpandedList(value);
 
     for (std::string const& p : expanded) {
       this->AddPathInternal(
@@ -103,8 +102,7 @@ void cmSearchPath::AddCMakePrefixPath(const std::string& variable)
 
   // Get a path from a CMake variable.
   if (const char* value = this->FC->Makefile->GetDefinition(variable)) {
-    std::vector<std::string> expanded;
-    cmSystemTools::ExpandListArgument(value, expanded);
+    std::vector<std::string> expanded = cmExpandedList(value);
 
     this->AddPrefixPaths(
       expanded, this->FC->Makefile->GetCurrentSourceDirectory().c_str());
@@ -183,7 +181,13 @@ void cmSearchPath::AddPrefixPaths(const std::vector<std::string>& paths,
       const char* arch =
         this->FC->Makefile->GetDefinition("CMAKE_LIBRARY_ARCHITECTURE");
       if (arch && *arch) {
-        this->AddPathInternal(dir + subdir + "/" + arch, base);
+        if (this->FC->Makefile->IsDefinitionSet("CMAKE_SYSROOT") &&
+            this->FC->Makefile->IsDefinitionSet(
+              "CMAKE_PREFIX_LIBRARY_ARCHITECTURE")) {
+          this->AddPathInternal(cmStrCat('/', arch, dir, subdir), base);
+        } else {
+          this->AddPathInternal(cmStrCat(dir, subdir, '/', arch), base);
+        }
       }
     }
     std::string add = dir + subdir;

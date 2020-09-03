@@ -5,13 +5,12 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmGeneratorExpression.h"
-
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <string>
 #include <vector>
 
+class cmCompiledGeneratorExpression;
 class cmMakefile;
 
 /** \class cmInstalledFile
@@ -22,10 +21,10 @@ class cmMakefile;
 class cmInstalledFile
 {
 public:
-  typedef std::unique_ptr<cmCompiledGeneratorExpression>
-    CompiledGeneratorExpressionPtrType;
+  using CompiledGeneratorExpressionPtrType =
+    std::unique_ptr<cmCompiledGeneratorExpression>;
 
-  typedef std::vector<cmCompiledGeneratorExpression*> ExpressionVectorType;
+  using ExpressionVectorType = std::vector<CompiledGeneratorExpressionPtrType>;
 
   struct Property
   {
@@ -38,7 +37,7 @@ public:
     ExpressionVectorType ValueExpressions;
   };
 
-  typedef std::map<std::string, Property> PropertyMapType;
+  using PropertyMapType = std::map<std::string, Property>;
 
   cmInstalledFile();
 
@@ -50,10 +49,10 @@ public:
   void RemoveProperty(const std::string& prop);
 
   void SetProperty(cmMakefile const* mf, const std::string& prop,
-                   const char* value);
+                   const std::string& value);
 
   void AppendProperty(cmMakefile const* mf, const std::string& prop,
-                      const char* value, bool asString = false);
+                      const std::string& value, bool asString = false);
 
   bool HasProperty(const std::string& prop) const;
 
@@ -74,7 +73,7 @@ public:
 
 private:
   std::string Name;
-  cmCompiledGeneratorExpression* NameExpression = nullptr;
+  CompiledGeneratorExpressionPtrType NameExpression;
   PropertyMapType Properties;
 };
 

@@ -5,11 +5,12 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmAlgorithms.h"
-#include "cmDocumentationEntry.h"
-
 #include <string>
 #include <vector>
+
+#include <cmext/algorithm>
+
+#include "cmDocumentationEntry.h"
 
 // Low-level interface for custom documents:
 /** Internal class representing a section of the documentation.
@@ -47,7 +48,7 @@ public:
   }
   void Append(const std::vector<cmDocumentationEntry>& entries)
   {
-    cmAppend(this->Entries, entries);
+    cm::append(this->Entries, entries);
   }
 
   /** Append an entry to this section using NULL terminated chars */

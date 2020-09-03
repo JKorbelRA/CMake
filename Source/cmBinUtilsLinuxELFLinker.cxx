@@ -2,18 +2,21 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
 #include "cmBinUtilsLinuxELFLinker.h"
-#include "cmAlgorithms.h"
+
+#include <sstream>
+
+#include <cm/memory>
+#include <cm/string_view>
+
+#include <cmsys/RegularExpression.hxx>
+
 #include "cmBinUtilsLinuxELFObjdumpGetRuntimeDependenciesTool.h"
 #include "cmLDConfigLDConfigTool.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmRuntimeDependencyArchive.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
-
-#include <cmsys/RegularExpression.hxx>
-
-#include <memory>
-#include <sstream>
 
 static std::string ReplaceOrigin(const std::string& rpath,
                                  const std::string& origin)
@@ -24,14 +27,16 @@ static std::string ReplaceOrigin(const std::string& rpath,
 
   cmsys::RegularExpressionMatch match;
   if (originRegex.find(rpath.c_str(), match)) {
-    std::string begin = rpath.substr(0, match.start(1));
-    std::string end = rpath.substr(match.end(1));
-    return begin + origin + end;
+    cm::string_view pathv(rpath);
+    auto begin = pathv.substr(0, match.start(1));
+    auto end = pathv.substr(match.end(1));
+    return cmStrCat(begin, origin, end);
   }
   if (originCurlyRegex.find(rpath.c_str(), match)) {
-    std::string begin = rpath.substr(0, match.start());
-    std::string end = rpath.substr(match.end());
-    return begin + origin + end;
+    cm::string_view pathv(rpath);
+    auto begin = pathv.substr(0, match.start());
+    auto end = pathv.substr(match.end());
+    return cmStrCat(begin, origin, end);
   }
   return rpath;
 }
@@ -150,7 +155,7 @@ bool cmBinUtilsLinuxELFLinker::ResolveDependency(
   std::string& path, bool& resolved)
 {
   for (auto const& searchPath : searchPaths) {
-    path = searchPath + '/' + name;
+    path = cmStrCat(searchPath, '/', name);
     if (cmSystemTools::PathExists(path)) {
       resolved = true;
       return true;
@@ -158,7 +163,7 @@ bool cmBinUtilsLinuxELFLinker::ResolveDependency(
   }
 
   for (auto const& searchPath : this->Archive->GetSearchDirectories()) {
-    path = searchPath + '/' + name;
+    path = cmStrCat(searchPath, '/', name);
     if (cmSystemTools::PathExists(path)) {
       std::ostringstream warning;
       warning << "Dependency " << name << " found in search directory:\n  "

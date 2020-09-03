@@ -7,6 +7,7 @@
 
 #include <iosfwd>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -34,7 +35,11 @@ class cmGlobalXCodeGenerator : public cmGlobalGenerator
 public:
   cmGlobalXCodeGenerator(cmake* cm, std::string const& version_string,
                          unsigned int version_number);
-  static cmGlobalGeneratorFactory* NewFactory();
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory();
+
+  cmGlobalXCodeGenerator(const cmGlobalXCodeGenerator&) = delete;
+  const cmGlobalXCodeGenerator& operator=(const cmGlobalXCodeGenerator&) =
+    delete;
 
   //! Get the name for the generator.
   std::string GetName() const override
@@ -47,7 +52,8 @@ public:
   static void GetDocumentation(cmDocumentationEntry& entry);
 
   //! Create a local generator appropriate to this Global Generator
-  cmLocalGenerator* CreateLocalGenerator(cmMakefile* mf) override;
+  std::unique_ptr<cmLocalGenerator> CreateLocalGenerator(
+    cmMakefile* mf) override;
 
   /**
    * Try to determine system information such as shared library
@@ -103,7 +109,9 @@ public:
 
   bool ShouldStripResourcePath(cmMakefile*) const override;
 
-  bool SetGeneratorToolset(std::string const& ts, cmMakefile* mf) override;
+  bool SetSystemName(std::string const& s, cmMakefile* mf) override;
+  bool SetGeneratorToolset(std::string const& ts, bool build,
+                           cmMakefile* mf) override;
   void AppendFlag(std::string& flags, std::string const& flag) const;
 
 protected:
@@ -122,13 +130,11 @@ private:
   std::string RelativeToSource(const std::string& p);
   std::string RelativeToBinary(const std::string& p);
   std::string ConvertToRelativeForMake(std::string const& p);
-  void CreateCustomCommands(cmXCodeObject* buildPhases,
-                            cmXCodeObject* sourceBuildPhase,
-                            cmXCodeObject* headerBuildPhase,
-                            cmXCodeObject* resourceBuildPhase,
-                            std::vector<cmXCodeObject*> contentBuildPhases,
-                            cmXCodeObject* frameworkBuildPhase,
-                            cmGeneratorTarget* gtgt);
+  void CreateCustomCommands(
+    cmXCodeObject* buildPhases, cmXCodeObject* sourceBuildPhase,
+    cmXCodeObject* headerBuildPhase, cmXCodeObject* resourceBuildPhase,
+    std::vector<cmXCodeObject*> const& contentBuildPhases,
+    cmXCodeObject* frameworkBuildPhase, cmGeneratorTarget* gtgt);
 
   std::string ComputeInfoPListLocation(cmGeneratorTarget* target);
 
@@ -248,7 +254,7 @@ protected:
   unsigned int XcodeVersion;
   std::string VersionString;
   std::set<std::string> XCodeObjectIDs;
-  std::vector<cmXCodeObject*> XCodeObjects;
+  std::vector<std::unique_ptr<cmXCodeObject>> XCodeObjects;
   cmXCodeObject* RootObject;
 
 private:
@@ -272,7 +278,7 @@ private:
   void ComputeArchitectures(cmMakefile* mf);
   void ComputeObjectDirArch(cmMakefile* mf);
 
-  void addObject(cmXCodeObject* obj);
+  void addObject(std::unique_ptr<cmXCodeObject> obj);
   std::string PostBuildMakeTarget(std::string const& tName,
                                   std::string const& configName);
   cmXCodeObject* MainGroupChildren;
@@ -293,6 +299,7 @@ private:
   std::vector<std::string> Architectures;
   std::string ObjectDirArchDefault;
   std::string ObjectDirArch;
+  std::string SystemName;
   std::string GeneratorToolset;
   std::map<cmGeneratorTarget const*, size_t> TargetOrderIndex;
 };

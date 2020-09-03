@@ -5,11 +5,11 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmExternalMakefileProjectGenerator.h"
-
 #include <map>
 #include <string>
 #include <vector>
+
+#include "cmExternalMakefileProjectGenerator.h"
 
 class cmGeneratedFileStream;
 class cmGeneratorTarget;
@@ -24,7 +24,7 @@ class cmExtraSublimeTextGenerator : public cmExternalMakefileProjectGenerator
 {
 public:
   static cmExternalMakefileProjectGeneratorFactory* GetFactory();
-  typedef std::map<std::string, std::vector<std::string>> MapSourceFileFlags;
+  using MapSourceFileFlags = std::map<std::string, std::vector<std::string>>;
   cmExtraSublimeTextGenerator();
 
   void Generate() override;
@@ -44,7 +44,8 @@ private:
   /** Returns the build command that needs to be executed to build the
    *  specified target.
    */
-  std::string BuildMakeCommand(const std::string& make, const char* makefile,
+  std::string BuildMakeCommand(const std::string& make,
+                               const std::string& makefile,
                                const std::string& target);
   /** Appends the specified target to the generated project file as a Sublime
    *  Text build system.

@@ -5,9 +5,9 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmParseMumpsCoverage.h"
-
 #include <string>
+
+#include "cmParseMumpsCoverage.h"
 
 class cmCTest;
 class cmCTestCoverageHandlerContainer;
@@ -25,7 +25,7 @@ public:
 
 protected:
   // implement virtual from parent
-  bool LoadCoverageData(const char* dir) override;
+  bool LoadCoverageData(std::string const& dir) override;
   // Read a single mcov file
   bool ReadMCovFile(const char* f);
   // find out what line in a mumps file (filepath) the given entry point

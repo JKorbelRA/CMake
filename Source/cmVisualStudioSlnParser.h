@@ -7,8 +7,11 @@
 
 #include <bitset>
 #include <iosfwd>
-#include <stddef.h>
 #include <string>
+
+#include <cm/string_view>
+
+#include <stddef.h>
 
 class cmSlnData;
 
@@ -42,7 +45,7 @@ public:
     DataGroupCount
   };
 
-  typedef std::bitset<DataGroupCount> DataGroupSet;
+  using DataGroupSet = std::bitset<DataGroupCount>;
 
   static const DataGroupSet DataGroupProjects;
   static const DataGroupSet DataGroupProjectDependencies;
@@ -96,8 +99,7 @@ protected:
   bool ParseKeyValuePair(const std::string& line, ParsedLine& parsedLine,
                          State& state);
 
-  bool ParseTag(const std::string& fullTag, ParsedLine& parsedLine,
-                State& state);
+  bool ParseTag(cm::string_view fullTag, ParsedLine& parsedLine, State& state);
 
   bool ParseValue(const std::string& value, ParsedLine& parsedLine);
 };

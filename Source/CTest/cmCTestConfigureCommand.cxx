@@ -2,30 +2,32 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestConfigureCommand.h"
 
+#include <cstring>
+#include <sstream>
+#include <vector>
+
+#include <cmext/string_view>
+
 #include "cmCTest.h"
 #include "cmCTestConfigureHandler.h"
 #include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmake.h"
 
-#include <sstream>
-#include <string.h>
-#include <vector>
-
-cmCTestConfigureCommand::cmCTestConfigureCommand()
+void cmCTestConfigureCommand::BindArguments()
 {
-  this->Arguments[ctc_OPTIONS] = "OPTIONS";
-  this->Arguments[ctc_LAST] = nullptr;
-  this->Last = ctc_LAST;
+  this->cmCTestHandlerCommand::BindArguments();
+  this->Bind("OPTIONS"_s, this->Options);
 }
 
 cmCTestGenericHandler* cmCTestConfigureCommand::InitializeHandler()
 {
   std::vector<std::string> options;
 
-  if (this->Values[ctc_OPTIONS]) {
-    cmSystemTools::ExpandListArgument(this->Values[ctc_OPTIONS], options);
+  if (!this->Options.empty()) {
+    cmExpandList(this->Options, options);
   }
 
   if (this->CTest->GetCTestConfiguration("BuildDirectory").empty()) {
@@ -67,17 +69,15 @@ cmCTestGenericHandler* cmCTestConfigureCommand::InitializeHandler()
       bool multiConfig = false;
       bool cmakeBuildTypeInOptions = false;
 
-      cmGlobalGenerator* gg =
-        this->Makefile->GetCMakeInstance()->CreateGlobalGenerator(
-          cmakeGeneratorName);
+      auto gg = this->Makefile->GetCMakeInstance()->CreateGlobalGenerator(
+        cmakeGeneratorName);
       if (gg) {
         multiConfig = gg->IsMultiConfig();
-        delete gg;
+        gg.reset();
       }
 
-      std::string cmakeConfigureCommand = "\"";
-      cmakeConfigureCommand += cmSystemTools::GetCMakeCommand();
-      cmakeConfigureCommand += "\"";
+      std::string cmakeConfigureCommand =
+        cmStrCat('"', cmSystemTools::GetCMakeCommand(), '"');
 
       for (std::string const& option : options) {
         cmakeConfigureCommand += " \"";

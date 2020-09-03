@@ -37,7 +37,34 @@ This module defines the following variables:
 
 ``CURL_VERSION_STRING``
   The version of ``curl`` found.
+
+CURL CMake
+^^^^^^^^^^
+
+If CURL was built using the CMake buildsystem then it provides its own
+``CURLConfig.cmake`` file for use with the :command:`find_package` command's
+config mode. This module looks for this file and, if found,
+returns its results with no further action.
+
+Set ``CURL_NO_CURL_CMAKE`` to ``ON`` to disable this search.
+
 #]=======================================================================]
+
+include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+
+if(NOT CURL_NO_CURL_CMAKE)
+  # do a find package call to specifically look for the CMake version
+  # of curl
+  find_package(CURL QUIET NO_MODULE)
+  mark_as_advanced(CURL_DIR)
+
+  # if we found the CURL cmake package then we are done, and
+  # can print what we found and return.
+  if(CURL_FOUND)
+    find_package_handle_standard_args(CURL HANDLE_COMPONENTS CONFIG_MODE)
+    return()
+  endif()
+endif()
 
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
@@ -121,16 +148,16 @@ if(CURL_FIND_COMPONENTS)
   endif()
   foreach(component IN LISTS CURL_FIND_COMPONENTS)
     list(FIND CURL_KNOWN_PROTOCOLS ${component} _found)
-    if(_found)
+    if(NOT _found EQUAL -1)
       list(FIND CURL_SUPPORTED_PROTOCOLS ${component} _found)
-      if(_found)
+      if(NOT _found EQUAL -1)
         set(CURL_${component}_FOUND TRUE)
       elseif(CURL_FIND_REQUIRED)
         message(FATAL_ERROR "CURL: Required protocol ${component} is not found")
       endif()
     else()
       list(FIND CURL_SUPPORTED_FEATURES ${component} _found)
-      if(_found)
+      if(NOT _found EQUAL -1)
         set(CURL_${component}_FOUND TRUE)
       elseif(CURL_FIND_REQUIRED)
         message(FATAL_ERROR "CURL: Required feature ${component} is not found")
@@ -139,7 +166,6 @@ if(CURL_FIND_COMPONENTS)
   endforeach()
 endif()
 
-include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 find_package_handle_standard_args(CURL
                                   REQUIRED_VARS CURL_LIBRARY CURL_INCLUDE_DIR
                                   VERSION_VAR CURL_VERSION_STRING

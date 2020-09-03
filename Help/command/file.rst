@@ -19,6 +19,7 @@ Synopsis
     file({`WRITE`_ | `APPEND`_} <filename> <content>...)
     file({`TOUCH`_ | `TOUCH_NOCREATE`_} [<file>...])
     file(`GENERATE`_ OUTPUT <output-file> [...])
+    file(`CONFIGURE`_ OUTPUT <output-file> CONTENT <content> [...])
 
   `Filesystem`_
     file({`GLOB`_ | `GLOB_RECURSE`_} <out-var> [...] [<globbing-expr>...])
@@ -41,6 +42,10 @@ Synopsis
   `Locking`_
     file(`LOCK`_ <path> [...])
 
+  `Archiving`_
+    file(`ARCHIVE_CREATE`_ OUTPUT <archive> PATHS <paths>... [...])
+    file(`ARCHIVE_EXTRACT`_ INPUT <archive> [...])
+
 Reading
 ^^^^^^^
 
@@ -54,7 +59,9 @@ Reading
 Read content from a file called ``<filename>`` and store it in a
 ``<variable>``.  Optionally start from the given ``<offset>`` and
 read at most ``<max-in>`` bytes.  The ``HEX`` option causes data to
-be converted to a hexadecimal representation (useful for binary data).
+be converted to a hexadecimal representation (useful for binary data). If the
+``HEX`` option is specified, letters in the output (``a`` through ``f``) are in
+lowercase.
 
 .. _STRINGS:
 
@@ -138,7 +145,7 @@ the ``<format>`` and ``UTC`` options.
   file(GET_RUNTIME_DEPENDENCIES
     [RESOLVED_DEPENDENCIES_VAR <deps_var>]
     [UNRESOLVED_DEPENDENCIES_VAR <unresolved_deps_var>]
-    [CONFLICTING_DEPENDENICES_PREFIX <conflicting_deps_prefix>]
+    [CONFLICTING_DEPENDENCIES_PREFIX <conflicting_deps_prefix>]
     [EXECUTABLES [<executable_files>...]]
     [LIBRARIES [<library_files>...]]
     [MODULES [<module_files>...]]
@@ -187,14 +194,14 @@ The arguments are as follows:
   are typically created with :command:`add_executable`, but they do not have to
   be created by CMake. On Apple platforms, the paths to these files determine
   the value of ``@executable_path`` when recursively resolving the libraries.
-  Specifying ``STATIC`` libraries, ``MODULE`` s, or ``SHARED`` libraries here
+  Specifying any kind of library (``STATIC``, ``MODULE``, or ``SHARED``) here
   will result in undefined behavior.
 
 ``LIBRARIES <library_files>``
   List of library files to read for dependencies. These are libraries that are
   typically created with :command:`add_library(SHARED)`, but they do not have
-  to be created by CMake. Specifying ``STATIC`` libraries, ``MODULE`` s, or
-  executables here will result in undefined behavior.
+  to be created by CMake. Specifying ``STATIC`` libraries, ``MODULE``
+  libraries, or executables here will result in undefined behavior.
 
 ``MODULES <module_files>``
   List of loadable module files to read for dependencies. These are modules
@@ -209,13 +216,13 @@ The arguments are as follows:
   platforms, these directories are searched if the dependency is not found in
   any of the other usual paths. If it is found in such a directory, a warning
   is issued, because it means that the file is incomplete (it does not list all
-  of the directories that contain its dependencies.) On Windows platforms,
+  of the directories that contain its dependencies). On Windows platforms,
   these directories are searched if the dependency is not found in any of the
   other search paths, but no warning is issued, because searching other paths
   is a normal part of Windows dependency resolution. On Apple platforms, this
   argument has no effect.
 
-``BUNDLE_EXECTUBLE <bundle_executable_file>``
+``BUNDLE_EXECUTABLE <bundle_executable_file>``
   Executable to treat as the "bundle executable" when resolving libraries. On
   Apple platforms, this argument determines the value of ``@executable_path``
   when recursively resolving libraries for ``LIBRARIES`` and ``MODULES`` files.
@@ -243,8 +250,8 @@ be resolved. See below for a full description of how they work.
   List of post-exclude regexes through which to filter the names of resolved
   dependencies.
 
-These arguments can be used to blacklist unwanted system libraries when
-resolving the dependencies, or to whitelist libraries from a specific
+These arguments can be used to exclude unwanted system libraries when
+resolving the dependencies, or to include libraries from a specific
 directory. The filtering works as follows:
 
 1. If the not-yet-resolved dependency matches any of the
@@ -284,7 +291,7 @@ On Linux platforms, library resolution works as follows:
    dependency is resolved to that file. In this case, a warning is issued,
    because finding a file in one of the ``DIRECTORIES`` means that the
    depending file is not complete (it does not list all the directories from
-   which it pulls dependencies.)
+   which it pulls dependencies).
 5. Otherwise, the dependency is unresolved.
 
 On Windows platforms, library resolution works as follows:
@@ -331,8 +338,8 @@ On Windows platforms, library resolution works as follows:
    dependency is resolved to that file.
 5. Otherwise, if the library exists in one of the directories specified by
    ``DIRECTORIES``, in the order they are listed, the dependency is resolved to
-   that file. (In this case, a warning is not issued, because searching other
-   directories is a normal part of Windows library resolution.)
+   that file. In this case, a warning is not issued, because searching other
+   directories is a normal part of Windows library resolution.
 6. Otherwise, the dependency is unresolved.
 
 On Apple platforms, library resolution works as follows:
@@ -350,9 +357,9 @@ On Apple platforms, library resolution works as follows:
    existing file, the dependency is resolved to that file.
 4. Otherwise, if the dependency starts with ``@rpath/``, and replacing
    ``@rpath/`` with one of the ``RPATH`` entries of the depending file yields
-   an existing file, the dependency is resolved to that file. (Note that
+   an existing file, the dependency is resolved to that file. Note that
    ``RPATH`` entries that start with ``@executable_path/`` or ``@loader_path/``
-   also have these items replaced with the appropriate path.)
+   also have these items replaced with the appropriate path.
 5. Otherwise, if the dependency is an absolute file that exists, the dependency
    is resolved to that file.
 6. Otherwise, the dependency is unresolved.
@@ -395,8 +402,8 @@ dependency resolution:
   Determines the path to the tool to use for dependency resolution. This is the
   actual path to ``objdump``, ``dumpbin``, or ``otool``.
 
-  If this variable is not specified, it is determined automatically by system
-  introspection.
+  If this variable is not specified, it is determined by the value of
+  ``CMAKE_OBJDUMP`` if set, else by system introspection.
 
 Writing
 ^^^^^^^
@@ -482,6 +489,44 @@ generation phase. The output file will not yet have been written when the
 ``file(GENERATE)`` command returns, it is written only after processing all
 of a project's ``CMakeLists.txt`` files.
 
+.. _CONFIGURE:
+
+.. code-block:: cmake
+
+  file(CONFIGURE OUTPUT output-file
+       CONTENT content
+       [ESCAPE_QUOTES] [@ONLY]
+       [NEWLINE_STYLE [UNIX|DOS|WIN32|LF|CRLF] ])
+
+Generate an output file using the input given by ``CONTENT`` and substitute
+variable values referenced as ``@VAR@`` or ``${VAR}`` contained therein. The
+substitution rules behave the same as the :command:`configure_file` command.
+In order to match :command:`configure_file`'s behavior, generator expressions
+are not supported for both ``OUTPUT`` and ``CONTENT``.
+
+The arguments are:
+
+``OUTPUT <output-file>``
+  Specify the output file name to generate. A relative path is treated with
+  respect to the value of :variable:`CMAKE_CURRENT_BINARY_DIR`.
+  ``<output-file>`` does not support generator expressions.
+
+``CONTENT <content>``
+  Use the content given explicitly as input.
+  ``<content>`` does not support generator expressions.
+
+``ESCAPE_QUOTES``
+  Escape any substituted quotes with backslashes (C-style).
+
+``@ONLY``
+  Restrict variable replacement to references of the form ``@VAR@``.
+  This is useful for configuring scripts that use ``${VAR}`` syntax.
+
+``NEWLINE_STYLE <style>``
+  Specify the newline style for the output file.  Specify
+  ``UNIX`` or ``LF`` for ``\n`` newlines, or specify
+  ``DOS``, ``WIN32``, or ``CRLF`` for ``\r\n`` newlines.
+
 Filesystem
 ^^^^^^^^^^
 
@@ -502,6 +547,11 @@ store it into the ``<variable>``.  Globbing expressions are similar to
 regular expressions, but much simpler.  If ``RELATIVE`` flag is
 specified, the results will be returned as relative paths to the given
 path.  The results will be ordered lexicographically.
+
+On Windows and macOS, globbing is case-insensitive even if the underlying
+filesystem is case-sensitive (both filenames and globbing expressions are
+converted to lowercase before matching).  On other platforms, globbing is
+case-sensitive.
 
 If the ``CONFIGURE_DEPENDS`` flag is specified, CMake will add logic
 to the main build system check target to rerun the flagged ``GLOB`` commands
@@ -535,7 +585,7 @@ are only traversed if ``FOLLOW_SYMLINKS`` is given or policy
 By default ``GLOB_RECURSE`` omits directories from result list - setting
 ``LIST_DIRECTORIES`` to true adds directories to result list.
 If ``FOLLOW_SYMLINKS`` is given or policy :policy:`CMP0009` is not set to
-``OLD`` then ``LIST_DIRECTORIES`` treats symlinks as directories.
+``NEW`` then ``LIST_DIRECTORIES`` treats symlinks as directories.
 
 Examples of recursive globbing include::
 
@@ -785,6 +835,18 @@ Options to both ``DOWNLOAD`` and ``UPLOAD`` are:
 If neither ``NETRC`` option is given CMake will check variables
 ``CMAKE_NETRC`` and ``CMAKE_NETRC_FILE``, respectively.
 
+``TLS_VERIFY <ON|OFF>``
+  Specify whether to verify the server certificate for ``https://`` URLs.
+  The default is to *not* verify.
+
+``TLS_CAINFO <file>``
+  Specify a custom Certificate Authority file for ``https://`` URLs.
+
+For ``https://`` URLs CMake must be built with OpenSSL support.  ``TLS/SSL``
+certificates are not checked by default.  Set ``TLS_VERIFY`` to ``ON`` to
+check certificates. If neither ``TLS`` option is given CMake will check
+variables ``CMAKE_TLS_VERIFY`` and ``CMAKE_TLS_CAINFO``, respectively.
+
 Additional options to ``DOWNLOAD`` are:
 
 ``EXPECTED_HASH ALGO=<value>``
@@ -795,19 +857,6 @@ Additional options to ``DOWNLOAD`` are:
 
 ``EXPECTED_MD5 <value>``
   Historical short-hand for ``EXPECTED_HASH MD5=<value>``.
-
-``TLS_VERIFY <ON|OFF>``
-  Specify whether to verify the server certificate for ``https://`` URLs.
-  The default is to *not* verify.
-
-``TLS_CAINFO <file>``
-  Specify a custom Certificate Authority file for ``https://`` URLs.
-
-For ``https://`` URLs CMake must be built with OpenSSL support.  ``TLS/SSL``
-certificates are not checked by default.  Set ``TLS_VERIFY`` to ``ON`` to
-check certificates and/or use ``EXPECTED_HASH`` to verify downloaded content.
-If neither ``TLS`` option is given CMake will check variables
-``CMAKE_TLS_VERIFY`` and ``CMAKE_TLS_CAINFO``, respectively.
 
 Locking
 ^^^^^^^
@@ -841,3 +890,66 @@ child directory or file.
 Trying to lock file twice is not allowed.  Any intermediate directories and
 file itself will be created if they not exist.  ``GUARD`` and ``TIMEOUT``
 options ignored on ``RELEASE`` operation.
+
+Archiving
+^^^^^^^^^
+
+.. _ARCHIVE_CREATE:
+
+.. code-block:: cmake
+
+  file(ARCHIVE_CREATE OUTPUT <archive>
+    PATHS <paths>...
+    [FORMAT <format>]
+    [COMPRESSION <compression>]
+    [MTIME <mtime>]
+    [VERBOSE])
+
+Creates the specified ``<archive>`` file with the files and directories
+listed in ``<paths>``.  Note that ``<paths>`` must list actual files or
+directories, wildcards are not supported.
+
+Use the ``FORMAT`` option to specify the archive format.  Supported values
+for ``<format>`` are ``7zip``, ``gnutar``, ``pax``, ``paxr``, ``raw`` and
+``zip``.  If ``FORMAT`` is not given, the default format is ``paxr``.
+
+Some archive formats allow the type of compression to be specified.
+The ``7zip`` and ``zip`` archive formats already imply a specific type of
+compression.  The other formats use no compression by default, but can be
+directed to do so with the ``COMPRESSION`` option.  Valid values for
+``<compression>`` are ``None``, ``BZip2``, ``GZip``, ``XZ``, and ``Zstd``.
+
+.. note::
+  With ``FORMAT`` set to ``raw`` only one file will be compressed with the
+  compression type specified by ``COMPRESSION``.
+
+The ``VERBOSE`` option enables verbose output for the archive operation.
+
+To specify the modification time recorded in tarball entries, use
+the ``MTIME`` option.
+
+.. _ARCHIVE_EXTRACT:
+
+.. code-block:: cmake
+
+  file(ARCHIVE_EXTRACT INPUT <archive>
+    [DESTINATION <dir>]
+    [PATTERNS <patterns>...]
+    [LIST_ONLY]
+    [VERBOSE])
+
+Extracts or lists the content of the specified ``<archive>``.
+
+The directory where the content of the archive will be extracted to can
+be specified using the ``DESTINATION`` option.  If the directory does not
+exist, it will be created.  If ``DESTINATION`` is not given, the current
+binary directory will be used.
+
+If required, you may select which files and directories to list or extract
+from the archive using the specified ``<patterns>``.  Wildcards are supported.
+If the ``PATTERNS`` option is not given, the entire archive will be listed or
+extracted.
+
+``LIST_ONLY`` will list the files in the archive rather than extract them.
+
+With ``VERBOSE``, the command will produce verbose output.

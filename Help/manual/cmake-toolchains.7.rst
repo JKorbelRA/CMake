@@ -101,6 +101,14 @@ values for the compilers.
 The :variable:`CMAKE_CROSSCOMPILING` variable is set to true when CMake is
 cross-compiling.
 
+Note that using the :variable:`CMAKE_SOURCE_DIR` or :variable:`CMAKE_BINARY_DIR`
+variables inside a toolchain file is typically undesirable.  The toolchain
+file is used in contexts where these variables have different values when used
+in different places (e.g. as part of a call to :command:`try_compile`).  In most
+cases, where there is a need to evaluate paths inside a toolchain file, the more
+appropriate variable to use would be :variable:`CMAKE_CURRENT_LIST_DIR`, since
+it always has an unambiguous, predictable value.
+
 Cross Compiling for Linux
 -------------------------
 
@@ -224,6 +232,9 @@ value to those supported compilers when compiling:
   set(CMAKE_C_COMPILER_TARGET ${arch})
   set(CMAKE_CXX_COMPILER QCC)
   set(CMAKE_CXX_COMPILER_TARGET ${arch})
+
+  set(CMAKE_SYSROOT $ENV{QNX_TARGET})
+
 
 Cross Compiling for Windows CE
 ------------------------------
@@ -391,8 +402,10 @@ Configure use of an Android NDK with the following variables:
   be false unless using a NDK that does not provide unified headers.
 
 :variable:`CMAKE_ANDROID_NDK_TOOLCHAIN_VERSION`
-  Set to the version of the NDK toolchain to be selected as the compiler.
-  If not specified, the default will be the latest available GCC toolchain.
+  On NDK r19 or above, this variable must be unset or set to ``clang``.
+  On NDK r18 or below, set this to the version of the NDK toolchain to
+  be selected as the compiler.  If not specified, the default will be
+  the latest available GCC toolchain.
 
 :variable:`CMAKE_ANDROID_STL_TYPE`
   Set to specify which C++ standard library to use.  If not specified,

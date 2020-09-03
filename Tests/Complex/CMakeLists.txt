@@ -324,7 +324,7 @@ if (WIN32)
       ${file}
       "[${hkey}]" DOC "Registry_Test_Path")
     exec_program(${CMAKE_COMMAND} ARGS "-E delete_regv \"${hkey}\"")
-    exec_program(${CMAKE_COMMAND} ARGS "-E remove \"${dir}/${file}\"")
+    exec_program(${CMAKE_COMMAND} ARGS "-E rm -f \"${dir}/${file}\"")
   endif ()
 endif ()
 
@@ -444,11 +444,6 @@ set(CMAKE_CXX_EXTENSIONS TRUE)
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
     CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
   set(CMAKE_CXX_STANDARD 11)
-endif()
-
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
-    CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
-  set(CMAKE_CXX_STANDARD 14)
 endif()
 
 #

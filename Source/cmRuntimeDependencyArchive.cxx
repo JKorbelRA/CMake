@@ -3,22 +3,23 @@
 
 #include "cmRuntimeDependencyArchive.h"
 
-#include "cmAlgorithms.h"
 #include "cmBinUtilsLinuxELFLinker.h"
 #include "cmBinUtilsMacOSMachOLinker.h"
 #include "cmBinUtilsWindowsPELinker.h"
-#include "cmCommand.h"
+#include "cmExecutionStatus.h"
 #include "cmMakefile.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 
 #if defined(_WIN32)
 #  include "cmGlobalGenerator.h"
-#  ifdef CMAKE_BUILD_WITH_CMAKE
+#  ifndef CMAKE_BOOTSTRAP
 #    include "cmGlobalVisualStudioVersionedGenerator.h"
 #  endif
-#  include "cmVSSetupHelper.h"
 #  include "cmsys/Glob.hxx"
+
+#  include "cmVSSetupHelper.h"
 #endif
 
 #include <algorithm>
@@ -26,6 +27,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <cm/memory>
 
 #if defined(_WIN32)
 static void AddVisualStudioPath(std::vector<std::string>& paths,
@@ -35,8 +38,8 @@ static void AddVisualStudioPath(std::vector<std::string>& paths,
   // If generating for the VS IDE, use the same instance.
   std::string vsloc;
   bool found = false;
-#  ifdef CMAKE_BUILD_WITH_CMAKE
-  if (gg->GetName().find(prefix) == 0) {
+#  ifndef CMAKE_BOOTSTRAP
+  if (cmHasPrefix(gg->GetName(), prefix)) {
     cmGlobalVisualStudioVersionedGenerator* vsgen =
       static_cast<cmGlobalVisualStudioVersionedGenerator*>(gg);
     if (vsgen->GetVSInstance(vsloc)) {
@@ -107,13 +110,13 @@ static cmsys::RegularExpression TransformCompile(const std::string& str)
 }
 
 cmRuntimeDependencyArchive::cmRuntimeDependencyArchive(
-  cmCommand* command, std::vector<std::string> searchDirectories,
+  cmExecutionStatus& status, std::vector<std::string> searchDirectories,
   std::string bundleExecutable,
   const std::vector<std::string>& preIncludeRegexes,
   const std::vector<std::string>& preExcludeRegexes,
   const std::vector<std::string>& postIncludeRegexes,
   const std::vector<std::string>& postExcludeRegexes)
-  : Command(command)
+  : Status(status)
   , SearchDirectories(std::move(searchDirectories))
   , BundleExecutable(std::move(bundleExecutable))
   , PreIncludeRegexes(preIncludeRegexes.size())
@@ -189,7 +192,7 @@ bool cmRuntimeDependencyArchive::GetRuntimeDependencies(
 
 void cmRuntimeDependencyArchive::SetError(const std::string& e)
 {
-  this->Command->SetError(e);
+  this->Status.SetError(e);
 }
 
 std::string cmRuntimeDependencyArchive::GetBundleExecutable()
@@ -215,8 +218,11 @@ bool cmRuntimeDependencyArchive::GetGetRuntimeDependenciesCommand(
   // First see if it was supplied by the user
   std::string toolCommand = this->GetMakefile()->GetSafeDefinition(
     "CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND");
+  if (toolCommand.empty() && search == "objdump") {
+    toolCommand = this->GetMakefile()->GetSafeDefinition("CMAKE_OBJDUMP");
+  }
   if (!toolCommand.empty()) {
-    cmSystemTools::ExpandListArgument(toolCommand, command);
+    cmExpandList(toolCommand, command);
     return true;
   }
 
@@ -360,7 +366,7 @@ void cmRuntimeDependencyArchive::AddUnresolvedPath(const std::string& name)
 
 cmMakefile* cmRuntimeDependencyArchive::GetMakefile()
 {
-  return this->Command->GetMakefile();
+  return &this->Status.GetMakefile();
 }
 
 const std::map<std::string, std::set<std::string>>&

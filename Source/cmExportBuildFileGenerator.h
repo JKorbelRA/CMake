@@ -5,13 +5,15 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmAlgorithms.h"
-#include "cmExportFileGenerator.h"
-#include "cmStateTypes.h"
-
 #include <iosfwd>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <cmext/algorithm>
+
+#include "cmExportFileGenerator.h"
+#include "cmStateTypes.h"
 
 class cmExportSet;
 class cmGeneratorTarget;
@@ -40,7 +42,7 @@ public:
   void GetTargets(std::vector<std::string>& targets) const;
   void AppendTargets(std::vector<std::string> const& targets)
   {
-    cmAppend(this->Targets, targets);
+    cm::append(this->Targets, targets);
   }
   void SetExportSet(cmExportSet*);
 
@@ -64,7 +66,7 @@ protected:
 
   void ComplainAboutMissingTarget(cmGeneratorTarget* depender,
                                   cmGeneratorTarget* dependee,
-                                  int occurrences);
+                                  std::vector<std::string> const& namespaces);
 
   /** Fill in properties indicating built file locations.  */
   void SetImportLocationProperty(const std::string& config,
@@ -75,8 +77,8 @@ protected:
   std::string InstallNameDir(cmGeneratorTarget* target,
                              const std::string& config) override;
 
-  std::vector<std::string> FindNamespaces(cmGlobalGenerator* gg,
-                                          const std::string& name);
+  std::pair<std::vector<std::string>, std::string> FindBuildExportInfo(
+    cmGlobalGenerator* gg, const std::string& name);
 
   std::vector<std::string> Targets;
   cmExportSet* ExportSet;

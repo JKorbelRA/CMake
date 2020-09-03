@@ -1,16 +1,8 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#include "QCMake.h" // include to disable MS warnings
+#include <iostream>
 
-#include "CMakeSetupDialog.h"
-#include "cmAlgorithms.h"
-#include "cmDocumentation.h"
-#include "cmDocumentationEntry.h"
-#include "cmVersion.h"
-#include "cmake.h"
-#include "cmsys/CommandLineArguments.hxx"
-#include "cmsys/Encoding.hxx"
-#include "cmsys/SystemTools.hxx"
+#include "QCMake.h" // include to disable MS warnings
 #include <QApplication>
 #include <QDir>
 #include <QLocale>
@@ -18,9 +10,19 @@
 #include <QTextCodec>
 #include <QTranslator>
 #include <QtPlugin>
-#include <iostream>
 
+#include "cmsys/CommandLineArguments.hxx"
+#include "cmsys/Encoding.hxx"
+#include "cmsys/SystemTools.hxx"
+
+#include "CMakeSetupDialog.h"
+#include "cmAlgorithms.h"
+#include "cmDocumentation.h"
+#include "cmDocumentationEntry.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h" // IWYU pragma: keep
+#include "cmVersion.h"
+#include "cmake.h"
 
 static const char* cmDocumentationName[][2] = { { nullptr,
                                                   "  cmake-gui - CMake GUI." },
@@ -199,8 +201,7 @@ int main(int argc, char** argv)
         cmSystemTools::CollapseFullPath(args[1].toLocal8Bit().data());
 
       // check if argument is a directory containing CMakeCache.txt
-      std::string buildFilePath =
-        cmSystemTools::CollapseFullPath("CMakeCache.txt", filePath.c_str());
+      std::string buildFilePath = cmStrCat(filePath, "/CMakeCache.txt");
 
       // check if argument is a CMakeCache.txt file
       if (cmSystemTools::GetFilenameName(filePath) == "CMakeCache.txt" &&
@@ -209,8 +210,7 @@ int main(int argc, char** argv)
       }
 
       // check if argument is a directory containing CMakeLists.txt
-      std::string srcFilePath =
-        cmSystemTools::CollapseFullPath("CMakeLists.txt", filePath.c_str());
+      std::string srcFilePath = cmStrCat(filePath, "/CMakeLists.txt");
 
       if (cmSystemTools::FileExists(buildFilePath.c_str())) {
         dialog.setBinaryDirectory(QString::fromLocal8Bit(
@@ -227,10 +227,12 @@ int main(int argc, char** argv)
 }
 
 #if defined(Q_OS_MAC)
-#  include "cm_sys_stat.h"
-#  include <errno.h>
-#  include <string.h>
+#  include <cerrno>
+#  include <cstring>
+
 #  include <unistd.h>
+
+#  include "cm_sys_stat.h"
 static bool cmOSXInstall(std::string const& dir, std::string const& tool)
 {
   if (tool.empty()) {

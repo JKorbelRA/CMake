@@ -1,19 +1,19 @@
 #include "cmPolicies.h"
 
-#include "cmAlgorithms.h"
+#include <cassert>
+#include <cctype>
+#include <cstdio>
+#include <cstring>
+#include <sstream>
+#include <vector>
+
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmState.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmVersion.h"
-
-#include <assert.h>
-#include <ctype.h>
-#include <sstream>
-#include <stdio.h>
-#include <string.h>
-#include <vector>
 
 static bool stringToId(const char* input, cmPolicies::PolicyID& pid)
 {
@@ -34,7 +34,7 @@ static bool stringToId(const char* input, cmPolicies::PolicyID& pid)
     }
   }
   long id;
-  if (!cmSystemTools::StringToLong(input + 3, &id)) {
+  if (!cmStrToLong(input + 3, &id)) {
     return false;
   }
   if (id >= cmPolicies::CMPCOUNT) {
@@ -72,6 +72,7 @@ static const char* idToVersion(cmPolicies::PolicyID id)
 #define POLICY_CASE(ID, V_MAJOR, V_MINOR, V_PATCH)                            \
   case cmPolicies::ID:                                                        \
     return #V_MAJOR "." #V_MINOR "." #V_PATCH;
+    // NOLINTNEXTLINE(bugprone-branch-clone)
     CM_FOR_EACH_POLICY_ID_VERSION(POLICY_CASE)
 #undef POLICY_CASE
     case cmPolicies::CMPCOUNT:
@@ -90,6 +91,7 @@ static bool isPolicyNewerThan(cmPolicies::PolicyID id, unsigned int majorV,
             (majorV == (V_MAJOR) && minorV + 1 < (V_MINOR) + 1) ||            \
             (majorV == (V_MAJOR) && minorV == (V_MINOR) &&                    \
              patchV + 1 < (V_PATCH) + 1));
+    // NOLINTNEXTLINE(bugprone-branch-clone)
     CM_FOR_EACH_POLICY_ID_VERSION(POLICY_CASE)
 #undef POLICY_CASE
     case cmPolicies::CMPCOUNT:

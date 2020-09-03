@@ -14,6 +14,11 @@ Review a Merge Request
 The `CMake Review Process`_ requires a maintainer to issue the ``Do: merge``
 command to integrate a merge request.  Please check at least the following:
 
+* If the MR source branch (or part of it) should be backported
+  to the ``release`` branch (and is already based on a commit
+  contained in the ``release`` branch), add a ``Backport: release`` or
+  ``Backport: release:<commit-ish>`` trailing line to the MR description.
+
 * If the MR source branch is not named well for the change it makes
   (e.g. it is just ``master`` or the patch changed during review),
   add a ``Topic-rename: <topic>`` trailing line to the MR description
@@ -38,9 +43,10 @@ command to integrate a merge request.  Please check at least the following:
   of various nightly builders.)
 
 * Ensure that the MR targets the ``master`` branch.  A MR intended for
-  the ``release`` branch should be based on ``release`` but still merged
-  to ``master`` first (via ``Do: merge``).  A maintainer may then merge
-  the MR topic to ``release`` manually.
+  the ``release`` branch should be based on ``release`` but still target
+  ``master``.  Use the above-mentioned ``Backport: release`` line to tell
+  ``Do: merge`` to merge to both.  If a MR is merged without the backport
+  line, a maintainer may still merge the MR topic to ``release`` manually.
 
 Maintain Current Release
 ========================
@@ -50,6 +56,12 @@ candidate.  The branch is published with no version number but maintained
 using a local branch named ``release-$ver``, where ``$ver`` is the version
 number of the current release in the form ``$major.$minor``.  It is always
 merged into ``master`` before publishing.
+
+To merge an open MR to the ``release`` branch, edit its description to
+use the ``Backport: release`` line mentioned above and then ``Do: merge``
+normally.  To update the ``release`` branch manually (e.g. to merge a
+``$topic`` branch that was merged without the backport line), use the
+following procedure.
 
 Before merging a ``$topic`` branch into ``release``, verify that the
 ``$topic`` branch has already been merged to ``master`` via the usual
@@ -91,6 +103,45 @@ Publish both ``master`` and ``release`` simultaneously:
 
 .. _`CMake Review Process`: review.rst
 .. _`CMake CDash Page`: https://open.cdash.org/index.php?project=CMake
+
+Create Release Version
+======================
+
+When the ``release`` branch is ready to create a new release, follow the
+steps in the above `Maintain Current Release`_ section to checkout a local
+``release-$ver`` branch, where ``$ver`` is the version number of the
+current release in the form ``$major.$minor``.
+
+Edit ``Source/CMakeVersion.cmake`` to set the full version:
+
+.. code-block:: cmake
+
+  # CMake version number components.
+  set(CMake_VERSION_MAJOR $major)
+  set(CMake_VERSION_MINOR $minor)
+  set(CMake_VERSION_PATCH $patch)
+  #set(CMake_VERSION_RC $rc) # uncomment for release candidates
+
+In the following we use the placeholder ``$fullver`` for the full version
+number of the new release with the form ``$major.$minor.$patch[-rc$rc]``.
+If the version is not a release candidate, comment out the RC version
+component above and leave off the ``-rc$rc`` suffix from ``$fullver``.
+
+Commit the release version with the **exact** message ``CMake $fullver``:
+
+.. code-block:: shell
+
+  git commit -m "CMake $fullver"
+
+Tag the release using an annotated tag with the same message as the
+commit and named with the **exact** form ``v$fullver``:
+
+.. code-block:: shell
+
+  git tag -s -m "CMake $fullver" "v$fullver"
+
+Follow the steps in the above `Maintain Current Release`_ section to
+merge the ``release-$ver`` branch into ``master`` and publish both.
 
 Branch a New Release
 ====================
@@ -178,7 +229,7 @@ Commit with a message such as::
   the CMake Release Notes index page.
 
 Update ``Source/CMakeVersion.cmake`` to set the version to
-``$major.$minor.0-rc1``:
+``$major.$minor.0-rc0``:
 
 .. code-block:: cmake
 
@@ -186,7 +237,7 @@ Update ``Source/CMakeVersion.cmake`` to set the version to
   set(CMake_VERSION_MAJOR $major)
   set(CMake_VERSION_MINOR $minor)
   set(CMake_VERSION_PATCH 0)
-  set(CMake_VERSION_RC 1)
+  set(CMake_VERSION_RC 0)
 
 Update uses of ``DEVEL_CMAKE_VERSION`` in the source tree to mention the
 actual version number:
@@ -197,7 +248,7 @@ actual version number:
 
 Commit with a message such as::
 
-  CMake $major.$minor.0-rc1 version update
+  Begin $ver release versioning
 
 Merge the ``release-$ver`` branch to ``master``:
 
@@ -225,7 +276,7 @@ Update ``Source/CMakeVersion.cmake`` to set the version to
   set(CMake_VERSION_MAJOR $major)
   set(CMake_VERSION_MINOR $minor)
   set(CMake_VERSION_PATCH $date)
-  #set(CMake_VERSION_RC 1)
+  #set(CMake_VERSION_RC 0)
 
 Commit with a message such as::
 
@@ -240,10 +291,11 @@ Push the update to the ``master`` and ``release`` branches:
 Announce 'release' Branch
 -------------------------
 
-Send email to the ``cmake-developers@cmake.org`` mailing list (perhaps
-in reply to a release preparation thread) announcing that post-release
-development is open::
+Post a topic to the `CMake Discourse Forum Development Category`_
+announcing that post-release development is open::
 
-  I've branched 'release' for $ver.  The repository is now open for
-  post-$ver development.  Please rebase open merge requests on 'master'
+  I've branched `release` for $ver.  The repository is now open for
+  post-$ver development.  Please rebase open merge requests on `master`
   before staging or merging.
+
+.. _`CMake Discourse Forum Development Category`: https://discourse.cmake.org/c/development

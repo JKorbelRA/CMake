@@ -103,8 +103,6 @@ macro(CHECK_Fortran_SOURCE_COMPILES SOURCE VAR)
     if(NOT _SRC_EXT)
       set(_SRC_EXT F)
     endif()
-    set(MACRO_CHECK_FUNCTION_DEFINITIONS
-      "-D${VAR} ${CMAKE_REQUIRED_FLAGS}")
     if(CMAKE_REQUIRED_LINK_OPTIONS)
       set(CHECK_Fortran_SOURCE_COMPILES_ADD_LINK_OPTIONS
         LINK_OPTIONS ${CMAKE_REQUIRED_LINK_OPTIONS})
@@ -127,15 +125,15 @@ macro(CHECK_Fortran_SOURCE_COMPILES SOURCE VAR)
       "${SOURCE}\n")
 
     if(NOT CMAKE_REQUIRED_QUIET)
-      message(STATUS "Performing Test ${VAR}")
+      message(CHECK_START "Performing Test ${VAR}")
     endif()
     try_compile(${VAR}
       ${CMAKE_BINARY_DIR}
       ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.${_SRC_EXT}
-      COMPILE_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS}
+      COMPILE_DEFINITIONS -D${VAR} ${CMAKE_REQUIRED_DEFINITIONS}
       ${CHECK_Fortran_SOURCE_COMPILES_ADD_LINK_OPTIONS}
       ${CHECK_Fortran_SOURCE_COMPILES_ADD_LIBRARIES}
-      CMAKE_FLAGS -DCOMPILE_DEFINITIONS:STRING=${MACRO_CHECK_FUNCTION_DEFINITIONS}
+      CMAKE_FLAGS -DCOMPILE_DEFINITIONS:STRING=${CMAKE_REQUIRED_FLAGS}
       "${CHECK_Fortran_SOURCE_COMPILES_ADD_INCLUDES}"
       OUTPUT_VARIABLE OUTPUT)
 
@@ -148,7 +146,7 @@ macro(CHECK_Fortran_SOURCE_COMPILES SOURCE VAR)
     if(${VAR})
       set(${VAR} 1 CACHE INTERNAL "Test ${VAR}")
       if(NOT CMAKE_REQUIRED_QUIET)
-        message(STATUS "Performing Test ${VAR} - Success")
+        message(CHECK_PASS "Success")
       endif()
       file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
         "Performing Fortran SOURCE FILE Test ${VAR} succeeded with the following output:\n"
@@ -156,7 +154,7 @@ macro(CHECK_Fortran_SOURCE_COMPILES SOURCE VAR)
         "Source file was:\n${SOURCE}\n")
     else()
       if(NOT CMAKE_REQUIRED_QUIET)
-        message(STATUS "Performing Test ${VAR} - Failed")
+        message(CHECK_FAIL "Failed")
       endif()
       set(${VAR} "" CACHE INTERNAL "Test ${VAR}")
       file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log

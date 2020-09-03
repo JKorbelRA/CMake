@@ -2,17 +2,21 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmTestGenerator.h"
 
+#include <memory>
 #include <ostream>
 #include <utility>
+#include <vector>
 
 #include "cmGeneratorExpression.h"
 #include "cmGeneratorTarget.h"
 #include "cmListFileCache.h"
 #include "cmLocalGenerator.h"
 #include "cmOutputConverter.h"
+#include "cmProperty.h"
 #include "cmPropertyMap.h"
 #include "cmRange.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmTest.h"
 
@@ -81,7 +85,7 @@ void cmTestGenerator::GenerateScriptForConfig(std::ostream& os,
 
   // Expand arguments if COMMAND_EXPAND_LISTS is set
   if (this->Test->GetCommandExpandLists()) {
-    argv = cmSystemTools::ExpandedLists(argv.begin(), argv.end());
+    argv = cmExpandedLists(argv.begin(), argv.end());
     // Expanding lists on an empty command may have left it empty
     if (argv.empty()) {
       argv.emplace_back();
@@ -97,10 +101,9 @@ void cmTestGenerator::GenerateScriptForConfig(std::ostream& os,
     exe = target->GetFullPath(config);
 
     // Prepend with the emulator when cross compiling if required.
-    const char* emulator = target->GetProperty("CROSSCOMPILING_EMULATOR");
-    if (emulator != nullptr && *emulator) {
-      std::vector<std::string> emulatorWithArgs;
-      cmSystemTools::ExpandListArgument(emulator, emulatorWithArgs);
+    cmProp emulator = target->GetProperty("CROSSCOMPILING_EMULATOR");
+    if (emulator != nullptr && !emulator->empty()) {
+      std::vector<std::string> emulatorWithArgs = cmExpandedList(*emulator);
       std::string emulatorExe(emulatorWithArgs[0]);
       cmSystemTools::ConvertToUnixSlashes(emulatorExe);
       os << cmOutputConverter::EscapeForCMake(emulatorExe) << " ";
@@ -132,7 +135,7 @@ void cmTestGenerator::GenerateScriptForConfig(std::ostream& os,
             ge.Parse(i.second)->Evaluate(this->LG, config));
   }
   this->GenerateInternalProperties(os);
-  os << ")" << std::endl;
+  os << ")\n";
 }
 
 void cmTestGenerator::GenerateScriptNoConfig(std::ostream& os, Indent indent)
@@ -174,9 +177,9 @@ void cmTestGenerator::GenerateOldStyle(std::ostream& fout, Indent indent)
       }
       fout << c;
     }
-    fout << "\"";
+    fout << '"';
   }
-  fout << ")" << std::endl;
+  fout << ")\n";
 
   // Output properties for the test.
   fout << indent << "set_tests_properties(" << this->Test->GetName()
@@ -186,7 +189,7 @@ void cmTestGenerator::GenerateOldStyle(std::ostream& fout, Indent indent)
          << cmOutputConverter::EscapeForCMake(i.second);
   }
   this->GenerateInternalProperties(fout);
-  fout << ")" << std::endl;
+  fout << ")\n";
 }
 
 void cmTestGenerator::GenerateInternalProperties(std::ostream& os)
@@ -211,7 +214,7 @@ void cmTestGenerator::GenerateInternalProperties(std::ostream& os)
     prependTripleSeparator = true;
   }
 
-  os << "\"";
+  os << '"';
 }
 
 std::vector<std::string> cmTestGenerator::EvaluateCommandLineArguments(

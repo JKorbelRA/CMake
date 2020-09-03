@@ -5,11 +5,11 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmInstallGenerator.h"
-#include "cmScriptGenerator.h"
-
 #include <iosfwd>
 #include <string>
+
+#include "cmInstallGenerator.h"
+#include "cmScriptGenerator.h"
 
 class cmLocalGenerator;
 
@@ -19,8 +19,9 @@ class cmLocalGenerator;
 class cmInstallScriptGenerator : public cmInstallGenerator
 {
 public:
-  cmInstallScriptGenerator(const char* script, bool code,
-                           const char* component, bool exclude_from_all);
+  cmInstallScriptGenerator(std::string script, bool code,
+                           std::string const& component,
+                           bool exclude_from_all);
   ~cmInstallScriptGenerator() override;
 
   bool Compute(cmLocalGenerator* lg) override;
@@ -32,8 +33,8 @@ protected:
   void AddScriptInstallRule(std::ostream& os, Indent indent,
                             std::string const& script);
 
-  std::string Script;
-  bool Code;
+  std::string const Script;
+  bool const Code;
   cmLocalGenerator* LocalGenerator;
   bool AllowGenex;
 };

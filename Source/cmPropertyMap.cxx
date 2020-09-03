@@ -20,11 +20,11 @@ void cmPropertyMap::SetProperty(const std::string& name, const char* value)
   Map_[name] = value;
 }
 
-void cmPropertyMap::AppendProperty(const std::string& name, const char* value,
-                                   bool asString)
+void cmPropertyMap::AppendProperty(const std::string& name,
+                                   const std::string& value, bool asString)
 {
   // Skip if nothing to append.
-  if (!value || !*value) {
+  if (value.empty()) {
     return;
   }
 
@@ -42,13 +42,11 @@ void cmPropertyMap::RemoveProperty(const std::string& name)
   Map_.erase(name);
 }
 
-const char* cmPropertyMap::GetPropertyValue(const std::string& name) const
+cmProp cmPropertyMap::GetPropertyValue(const std::string& name) const
 {
-  {
-    auto it = Map_.find(name);
-    if (it != Map_.end()) {
-      return it->second.c_str();
-    }
+  auto it = Map_.find(name);
+  if (it != Map_.end()) {
+    return &it->second;
   }
   return nullptr;
 }
@@ -66,7 +64,7 @@ std::vector<std::string> cmPropertyMap::GetKeys() const
 
 std::vector<std::pair<std::string, std::string>> cmPropertyMap::GetList() const
 {
-  typedef std::pair<std::string, std::string> StringPair;
+  using StringPair = std::pair<std::string, std::string>;
   std::vector<StringPair> kvList;
   kvList.reserve(Map_.size());
   for (auto const& item : Map_) {

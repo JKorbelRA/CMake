@@ -2,19 +2,43 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCustomCommandGenerator.h"
 
-#include "cmAlgorithms.h"
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+#include <cmext/algorithm>
+
 #include "cmCustomCommand.h"
 #include "cmCustomCommandLines.h"
 #include "cmGeneratorExpression.h"
 #include "cmGeneratorTarget.h"
 #include "cmLocalGenerator.h"
 #include "cmMakefile.h"
+#include "cmProperty.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 
-#include <memory> // IWYU pragma: keep
-#include <stddef.h>
-#include <utility>
+namespace {
+void AppendPaths(const std::vector<std::string>& inputs,
+                 cmGeneratorExpression const& ge, cmLocalGenerator* lg,
+                 std::string const& config, std::vector<std::string>& output)
+{
+  for (std::string const& in : inputs) {
+    std::unique_ptr<cmCompiledGeneratorExpression> cge = ge.Parse(in);
+    std::vector<std::string> result =
+      cmExpandedList(cge->Evaluate(lg, config));
+    for (std::string& it : result) {
+      cmSystemTools::ConvertToUnixSlashes(it);
+      if (cmSystemTools::FileIsFullPath(it)) {
+        it = cmSystemTools::CollapseFullPath(
+          it, lg->GetMakefile()->GetHomeOutputDirectory());
+      }
+    }
+    cm::append(output, result);
+  }
+}
+}
 
 cmCustomCommandGenerator::cmCustomCommandGenerator(cmCustomCommand const& cc,
                                                    std::string config,
@@ -24,17 +48,18 @@ cmCustomCommandGenerator::cmCustomCommandGenerator(cmCustomCommand const& cc,
   , LG(lg)
   , OldStyle(cc.GetEscapeOldStyle())
   , MakeVars(cc.GetEscapeAllowMakeVars())
-  , GE(new cmGeneratorExpression(cc.GetBacktrace()))
+  , EmulatorsWithArguments(cc.GetCommandLines().size())
 {
+  cmGeneratorExpression ge(cc.GetBacktrace());
+
   const cmCustomCommandLines& cmdlines = this->CC.GetCommandLines();
   for (cmCustomCommandLine const& cmdline : cmdlines) {
     cmCustomCommandLine argv;
     for (std::string const& clarg : cmdline) {
-      std::unique_ptr<cmCompiledGeneratorExpression> cge =
-        this->GE->Parse(clarg);
+      std::unique_ptr<cmCompiledGeneratorExpression> cge = ge.Parse(clarg);
       std::string parsed_arg = cge->Evaluate(this->LG, this->Config);
       if (this->CC.GetCommandExpandLists()) {
-        cmAppend(argv, cmSystemTools::ExpandedListArgument(parsed_arg));
+        cm::append(argv, cmExpandedList(parsed_arg));
       } else {
         argv.push_back(std::move(parsed_arg));
       }
@@ -44,29 +69,20 @@ cmCustomCommandGenerator::cmCustomCommandGenerator(cmCustomCommand const& cc,
     // lists on an empty command may have left this empty.
     // FIXME: Should we define behavior for removing empty commands?
     if (argv.empty()) {
-      argv.push_back(std::string());
+      argv.emplace_back();
     }
 
     this->CommandLines.push_back(std::move(argv));
   }
 
-  std::vector<std::string> depends = this->CC.GetDepends();
-  for (std::string const& d : depends) {
-    std::unique_ptr<cmCompiledGeneratorExpression> cge = this->GE->Parse(d);
-    std::vector<std::string> result = cmSystemTools::ExpandedListArgument(
-      cge->Evaluate(this->LG, this->Config));
-    for (std::string& it : result) {
-      if (cmSystemTools::FileIsFullPath(it)) {
-        it = cmSystemTools::CollapseFullPath(it);
-      }
-    }
-    cmAppend(this->Depends, result);
-  }
+  AppendPaths(cc.GetByproducts(), ge, this->LG, this->Config,
+              this->Byproducts);
+  AppendPaths(cc.GetDepends(), ge, this->LG, this->Config, this->Depends);
 
   const std::string& workingdirectory = this->CC.GetWorkingDirectory();
   if (!workingdirectory.empty()) {
     std::unique_ptr<cmCompiledGeneratorExpression> cge =
-      this->GE->Parse(workingdirectory);
+      ge.Parse(workingdirectory);
     this->WorkingDirectory = cge->Evaluate(this->LG, this->Config);
     // Convert working directory to a full path.
     if (!this->WorkingDirectory.empty()) {
@@ -77,11 +93,6 @@ cmCustomCommandGenerator::cmCustomCommandGenerator(cmCustomCommand const& cc,
   }
 
   this->FillEmulatorsWithArguments();
-}
-
-cmCustomCommandGenerator::~cmCustomCommandGenerator()
-{
-  delete this->GE;
 }
 
 unsigned int cmCustomCommandGenerator::GetNumberOfCommands() const
@@ -101,15 +112,13 @@ void cmCustomCommandGenerator::FillEmulatorsWithArguments()
     if (target && target->GetType() == cmStateEnums::EXECUTABLE &&
         !target->IsImported()) {
 
-      const char* emulator_property =
+      cmProp emulator_property =
         target->GetProperty("CROSSCOMPILING_EMULATOR");
       if (!emulator_property) {
         continue;
       }
 
-      this->EmulatorsWithArguments.emplace_back();
-      cmSystemTools::ExpandListArgument(emulator_property,
-                                        this->EmulatorsWithArguments[c]);
+      cmExpandList(*emulator_property, this->EmulatorsWithArguments[c]);
     }
   }
 }
@@ -131,7 +140,7 @@ const char* cmCustomCommandGenerator::GetArgv0Location(unsigned int c) const
       (target->IsImported() ||
        target->GetProperty("CROSSCOMPILING_EMULATOR") ||
        !this->LG->GetMakefile()->IsOn("CMAKE_CROSSCOMPILING"))) {
-    return target->GetLocation(this->Config);
+    return target->GetLocation(this->Config).c_str();
   }
   return nullptr;
 }
@@ -169,9 +178,7 @@ std::string escapeForShellOldStyle(const std::string& str)
   std::string temp = str;
   if (temp.find(" ") != std::string::npos &&
       temp.find("\"") == std::string::npos) {
-    result = "\"";
-    result += str;
-    result += "\"";
+    result = cmStrCat('"', str, '"');
     return result;
   }
   return str;
@@ -197,7 +204,9 @@ void cmCustomCommandGenerator::AppendArguments(unsigned int c,
       if (this->OldStyle) {
         cmd += escapeForShellOldStyle(emulator[j]);
       } else {
-        cmd += this->LG->EscapeForShell(emulator[j], this->MakeVars);
+        cmd +=
+          this->LG->EscapeForShell(emulator[j], this->MakeVars, false, false,
+                                   this->MakeVars && this->LG->IsNinjaMulti());
       }
     }
 
@@ -218,7 +227,9 @@ void cmCustomCommandGenerator::AppendArguments(unsigned int c,
     if (this->OldStyle) {
       cmd += escapeForShellOldStyle(arg);
     } else {
-      cmd += this->LG->EscapeForShell(arg, this->MakeVars);
+      cmd +=
+        this->LG->EscapeForShell(arg, this->MakeVars, false, false,
+                                 this->MakeVars && this->LG->IsNinjaMulti());
     }
   }
 }
@@ -240,7 +251,7 @@ std::vector<std::string> const& cmCustomCommandGenerator::GetOutputs() const
 
 std::vector<std::string> const& cmCustomCommandGenerator::GetByproducts() const
 {
-  return this->CC.GetByproducts();
+  return this->Byproducts;
 }
 
 std::vector<std::string> const& cmCustomCommandGenerator::GetDepends() const

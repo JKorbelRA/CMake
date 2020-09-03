@@ -22,6 +22,27 @@ This module defines the following :prop_tgt:`IMPORTED` targets:
   The OpenSSL ``ssl`` library, if found.
 ``OpenSSL::Crypto``
   The OpenSSL ``crypto`` library, if found.
+``OpenSSL::applink``
+  The OpenSSL ``applink`` components that might be need to be compiled into
+  projects under MSVC. This target is available only if found OpenSSL version
+  is not less than 0.9.8. By linking this target the above OpenSSL targets can
+  be linked even if the project has different MSVC runtime configurations with
+  the above OpenSSL targets. This target has no effect on plaforms other than
+  MSVC.
+
+NOTE: Due to how ``INTERFACE_SOURCES`` are consumed by the consuming target,
+unless you certainly know what you are doing, it is always prefered to link
+``OpenSSL::applink`` target as ``PRIVATE`` and to make sure that this target is
+linked at most once for the whole dependency graph of any library or
+executable:
+
+.. code-block:: cmake
+
+   target_link_libraries(myTarget PRIVATE OpenSSL::applink)
+
+Otherwise you would probably encounter unexpected random problems when building
+and linking, as both the ISO C and the ISO C++ standard claims almost nothing
+about what a link process should be.
 
 Result Variables
 ^^^^^^^^^^^^^^^^
@@ -35,12 +56,20 @@ This module will set the following variables in your project:
   The OpenSSL include directory.
 ``OPENSSL_CRYPTO_LIBRARY``
   The OpenSSL crypto library.
+``OPENSSL_CRYPTO_LIBRARIES``
+  The OpenSSL crypto library and its dependencies.
 ``OPENSSL_SSL_LIBRARY``
   The OpenSSL SSL library.
+``OPENSSL_SSL_LIBRARIES``
+  The OpenSSL SSL library and its dependencies.
 ``OPENSSL_LIBRARIES``
-  All OpenSSL libraries.
+  All OpenSSL libraries and their dependencies.
 ``OPENSSL_VERSION``
   This is set to ``$major.$minor.$revision$patch`` (e.g. ``0.9.8s``).
+``OPENSSL_APPLINK_SOURCE``
+  The sources in the target ``OpenSSL::applink`` that is mentioned above. This
+  variable shall always be undefined if found openssl version is less than
+  0.9.8 or if platform is not MSVC.
 
 Hints
 ^^^^^
@@ -49,6 +78,32 @@ Set ``OPENSSL_ROOT_DIR`` to the root directory of an OpenSSL installation.
 Set ``OPENSSL_USE_STATIC_LIBS`` to ``TRUE`` to look for static libraries.
 Set ``OPENSSL_MSVC_STATIC_RT`` set ``TRUE`` to choose the MT version of the lib.
 #]=======================================================================]
+
+macro(_OpenSSL_test_and_find_dependencies ssl_library crypto_library)
+  if((CMAKE_SYSTEM_NAME STREQUAL "Linux") AND
+     (("${ssl_library}" MATCHES "\\${CMAKE_STATIC_LIBRARY_SUFFIX}$") OR
+      ("${crypto_library}" MATCHES "\\${CMAKE_STATIC_LIBRARY_SUFFIX}$")))
+    set(_OpenSSL_has_dependencies TRUE)
+    find_package(Threads)
+  else()
+    set(_OpenSSL_has_dependencies FALSE)
+  endif()
+endmacro()
+
+function(_OpenSSL_add_dependencies libraries_var)
+  if(CMAKE_THREAD_LIBS_INIT)
+    list(APPEND ${libraries_var} ${CMAKE_THREAD_LIBS_INIT})
+  endif()
+  list(APPEND ${libraries_var} ${CMAKE_DL_LIBS})
+  set(${libraries_var} ${${libraries_var}} PARENT_SCOPE)
+endfunction()
+
+function(_OpenSSL_target_add_dependencies target)
+  if(_OpenSSL_has_dependencies)
+    set_property( TARGET ${target} APPEND PROPERTY INTERFACE_LINK_LIBRARIES Threads::Threads )
+    set_property( TARGET ${target} APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${CMAKE_DL_LIBS} )
+  endif()
+endfunction()
 
 if (UNIX)
   find_package(PkgConfig QUIET)
@@ -101,6 +156,7 @@ find_path(OPENSSL_INCLUDE_DIR
   ${_OPENSSL_ROOT_HINTS_AND_PATHS}
   HINTS
     ${_OPENSSL_INCLUDEDIR}
+    ${_OPENSSL_INCLUDE_DIRS}
   PATH_SUFFIXES
     include
 )
@@ -289,6 +345,7 @@ else()
     ${_OPENSSL_ROOT_HINTS_AND_PATHS}
     HINTS
       ${_OPENSSL_LIBDIR}
+      ${_OPENSSL_LIBRARY_DIRS}
     PATH_SUFFIXES
       lib
   )
@@ -300,16 +357,23 @@ else()
     ${_OPENSSL_ROOT_HINTS_AND_PATHS}
     HINTS
       ${_OPENSSL_LIBDIR}
+      ${_OPENSSL_LIBRARY_DIRS}
     PATH_SUFFIXES
       lib
   )
 
   mark_as_advanced(OPENSSL_CRYPTO_LIBRARY OPENSSL_SSL_LIBRARY)
 
-  # compat defines
-  set(OPENSSL_SSL_LIBRARIES ${OPENSSL_SSL_LIBRARY})
-  set(OPENSSL_CRYPTO_LIBRARIES ${OPENSSL_CRYPTO_LIBRARY})
+endif()
 
+set(OPENSSL_SSL_LIBRARIES ${OPENSSL_SSL_LIBRARY})
+set(OPENSSL_CRYPTO_LIBRARIES ${OPENSSL_CRYPTO_LIBRARY})
+set(OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARIES} )
+_OpenSSL_test_and_find_dependencies("${OPENSSL_SSL_LIBRARY}" "${OPENSSL_CRYPTO_LIBRARY}")
+if(_OpenSSL_has_dependencies)
+  _OpenSSL_add_dependencies( OPENSSL_SSL_LIBRARIES )
+  _OpenSSL_add_dependencies( OPENSSL_CRYPTO_LIBRARIES )
+  _OpenSSL_add_dependencies( OPENSSL_LIBRARIES )
 endif()
 
 function(from_hex HEX DEC)
@@ -376,10 +440,19 @@ if(OPENSSL_INCLUDE_DIR AND EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
     endif ()
 
     set(OPENSSL_VERSION "${OPENSSL_VERSION_MAJOR}.${OPENSSL_VERSION_MINOR}.${OPENSSL_VERSION_FIX}${OPENSSL_VERSION_PATCH_STRING}")
+  else ()
+    # Since OpenSSL 3.0.0, the new version format is MAJOR.MINOR.PATCH and
+    # a new OPENSSL_VERSION_STR macro contains exactly that
+    file(STRINGS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h" OPENSSL_VERSION_STR
+         REGEX "^#[\t ]*define[\t ]+OPENSSL_VERSION_STR[\t ]+\"([0-9])+\\.([0-9])+\\.([0-9])+\".*")
+    string(REGEX REPLACE "^.*OPENSSL_VERSION_STR[\t ]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*$"
+           "\\1" OPENSSL_VERSION_STR "${OPENSSL_VERSION_STR}")
+
+    set(OPENSSL_VERSION "${OPENSSL_VERSION_STR}")
+
+    unset(OPENSSL_VERSION_STR)
   endif ()
 endif ()
-
-set(OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY} )
 
 foreach(_comp IN LISTS OpenSSL_FIND_COMPONENTS)
   if(_comp STREQUAL "Crypto")
@@ -421,7 +494,7 @@ find_package_handle_standard_args(OpenSSL
     "Could NOT find OpenSSL, try to set the path to OpenSSL root folder in the system variable OPENSSL_ROOT_DIR"
 )
 
-mark_as_advanced(OPENSSL_INCLUDE_DIR OPENSSL_LIBRARIES)
+mark_as_advanced(OPENSSL_INCLUDE_DIR)
 
 if(OPENSSL_FOUND)
   if(NOT TARGET OpenSSL::Crypto AND
@@ -451,6 +524,7 @@ if(OPENSSL_FOUND)
         IMPORTED_LINK_INTERFACE_LANGUAGES_DEBUG "C"
         IMPORTED_LOCATION_DEBUG "${LIB_EAY_LIBRARY_DEBUG}")
     endif()
+    _OpenSSL_target_add_dependencies(OpenSSL::Crypto)
   endif()
 
   if(NOT TARGET OpenSSL::SSL AND
@@ -483,6 +557,29 @@ if(OPENSSL_FOUND)
     if(TARGET OpenSSL::Crypto)
       set_target_properties(OpenSSL::SSL PROPERTIES
         INTERFACE_LINK_LIBRARIES OpenSSL::Crypto)
+    endif()
+    _OpenSSL_target_add_dependencies(OpenSSL::SSL)
+  endif()
+
+  if("${OPENSSL_VERSION_MAJOR}.${OPENSSL_VERSION_MAJOR}.${OPENSSL_VERSION_FIX}" VERSION_GREATER_EQUAL "0.9.8")
+    if(MSVC)
+      if(EXISTS "${OPENSSL_INCLUDE_DIR}")
+        set(_OPENSSL_applink_paths PATHS ${OPENSSL_INCLUDE_DIR})
+      endif()
+      find_file(OPENSSL_APPLINK_SOURCE
+        NAMES
+          openssl/applink.c
+        ${_OPENSSL_applink_paths}
+        NO_DEFAULT_PATH)
+      if(OPENSSL_APPLINK_SOURCE)
+        set(_OPENSSL_applink_interface_srcs ${OPENSSL_APPLINK_SOURCE})
+      endif()
+    endif()
+    if(NOT TARGET OpenSSL::applink)
+      add_library(OpenSSL::applink INTERFACE IMPORTED)
+      set_property(TARGET OpenSSL::applink APPEND
+        PROPERTY INTERFACE_SOURCES
+          ${_OPENSSL_applink_interface_srcs})
     endif()
   endif()
 endif()

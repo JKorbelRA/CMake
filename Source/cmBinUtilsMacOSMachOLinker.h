@@ -4,13 +4,13 @@
 #ifndef cmBinUtilsMacOSMachOLinker_h
 #define cmBinUtilsMacOSMachOLinker_h
 
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "cmBinUtilsLinker.h"
 #include "cmBinUtilsMacOSMachOGetRuntimeDependenciesTool.h"
 #include "cmStateTypes.h"
-
-#include <memory> // IWYU pragma: keep
-#include <string>
-#include <vector>
 
 class cmRuntimeDependencyArchive;
 

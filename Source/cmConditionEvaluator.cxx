@@ -2,22 +2,24 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmConditionEvaluator.h"
 
-#include "cmsys/RegularExpression.hxx"
-#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
 #include <sstream>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <utility>
 
-#include "cmAlgorithms.h"
+#include <cmext/algorithm>
+
+#include "cmsys/RegularExpression.hxx"
+
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmState.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmake.h"
 
-class cmCommand;
 class cmTest;
 
 static std::string const keyAND = "AND";
@@ -219,10 +221,10 @@ bool cmConditionEvaluator::GetBooleanValue(
   }
 
   // Check named constants.
-  if (cmSystemTools::IsOn(arg.c_str())) {
+  if (cmIsOn(arg.GetValue())) {
     return true;
   }
-  if (cmSystemTools::IsOff(arg.c_str())) {
+  if (cmIsOff(arg.GetValue())) {
     return false;
   }
 
@@ -238,7 +240,7 @@ bool cmConditionEvaluator::GetBooleanValue(
 
   // Check definition.
   const char* def = this->GetDefinitionIfUnquoted(arg);
-  return !cmSystemTools::IsOff(def);
+  return !cmIsOff(def);
 }
 
 //=========================================================================
@@ -255,14 +257,14 @@ bool cmConditionEvaluator::GetBooleanValueOld(
       return true;
     }
     const char* def = this->GetDefinitionIfUnquoted(arg);
-    return !cmSystemTools::IsOff(def);
+    return !cmIsOff(def);
   }
   // Old GetVariableOrNumber behavior.
   const char* def = this->GetDefinitionIfUnquoted(arg);
   if (!def && atoi(arg.c_str())) {
     def = arg.c_str();
   }
-  return !cmSystemTools::IsOff(def);
+  return !cmIsOff(def);
 }
 
 //=========================================================================
@@ -367,7 +369,7 @@ bool cmConditionEvaluator::HandleLevel0(cmArgumentList& newArgs,
   int reducible;
   do {
     reducible = 0;
-    cmArgumentList::iterator arg = newArgs.begin();
+    auto arg = newArgs.begin();
     while (arg != newArgs.end()) {
       if (IsKeyword(keyParenL, *arg)) {
         // search for the closing paren for this opening one
@@ -393,9 +395,9 @@ bool cmConditionEvaluator::HandleLevel0(cmArgumentList& newArgs,
         std::vector<cmExpandedCommandArgument> newArgs2;
 
         // copy to the list structure
-        cmArgumentList::iterator argP1 = arg;
+        auto argP1 = arg;
         argP1++;
-        cmAppend(newArgs2, argP1, argClose);
+        cm::append(newArgs2, argP1, argClose);
         newArgs2.pop_back();
         // now recursively invoke IsTrue to handle the values inside the
         // parenthetical expression
@@ -424,7 +426,7 @@ bool cmConditionEvaluator::HandleLevel1(cmArgumentList& newArgs, std::string&,
   int reducible;
   do {
     reducible = 0;
-    cmArgumentList::iterator arg = newArgs.begin();
+    auto arg = newArgs.begin();
     cmArgumentList::iterator argP1;
     cmArgumentList::iterator argP2;
     while (arg != newArgs.end()) {
@@ -452,7 +454,7 @@ bool cmConditionEvaluator::HandleLevel1(cmArgumentList& newArgs, std::string&,
       }
       // does a command exist
       if (this->IsKeyword(keyCOMMAND, *arg) && argP1 != newArgs.end()) {
-        cmCommand* command =
+        cmState::Command command =
           this->Makefile.GetState()->GetCommand(argP1->c_str());
         this->HandlePredicate(command != nullptr, reducible, arg, newArgs,
                               argP1, argP2);
@@ -491,12 +493,12 @@ bool cmConditionEvaluator::HandleLevel1(cmArgumentList& newArgs, std::string&,
       if (this->IsKeyword(keyDEFINED, *arg) && argP1 != newArgs.end()) {
         size_t argP1len = argP1->GetValue().size();
         bool bdef = false;
-        if (argP1len > 4 && argP1->GetValue().substr(0, 4) == "ENV{" &&
+        if (argP1len > 4 && cmHasLiteralPrefix(argP1->GetValue(), "ENV{") &&
             argP1->GetValue().operator[](argP1len - 1) == '}') {
           std::string env = argP1->GetValue().substr(4, argP1len - 5);
           bdef = cmSystemTools::HasEnv(env);
         } else if (argP1len > 6 &&
-                   argP1->GetValue().substr(0, 6) == "CACHE{" &&
+                   cmHasLiteralPrefix(argP1->GetValue(), "CACHE{") &&
                    argP1->GetValue().operator[](argP1len - 1) == '}') {
           std::string cache = argP1->GetValue().substr(6, argP1len - 7);
           bdef =
@@ -524,7 +526,7 @@ bool cmConditionEvaluator::HandleLevel2(cmArgumentList& newArgs,
   const char* def2;
   do {
     reducible = 0;
-    cmArgumentList::iterator arg = newArgs.begin();
+    auto arg = newArgs.begin();
     cmArgumentList::iterator argP1;
     cmArgumentList::iterator argP2;
     while (arg != newArgs.end()) {
@@ -668,10 +670,9 @@ bool cmConditionEvaluator::HandleLevel2(cmArgumentList& newArgs,
           def2 = this->Makefile.GetDefinition(argP2->GetValue());
 
           if (def2) {
-            std::vector<std::string> list;
-            cmSystemTools::ExpandListArgument(def2, list, true);
+            std::vector<std::string> list = cmExpandedList(def2, true);
 
-            result = std::find(list.begin(), list.end(), def) != list.end();
+            result = cm::contains(list, def);
           }
 
           this->HandleBinaryOp(result, reducible, arg, newArgs, argP1, argP2);
@@ -701,7 +702,7 @@ bool cmConditionEvaluator::HandleLevel3(cmArgumentList& newArgs,
   int reducible;
   do {
     reducible = 0;
-    cmArgumentList::iterator arg = newArgs.begin();
+    auto arg = newArgs.begin();
     cmArgumentList::iterator argP1;
     cmArgumentList::iterator argP2;
     while (arg != newArgs.end()) {
@@ -729,7 +730,7 @@ bool cmConditionEvaluator::HandleLevel4(cmArgumentList& newArgs,
   bool rhs;
   do {
     reducible = 0;
-    cmArgumentList::iterator arg = newArgs.begin();
+    auto arg = newArgs.begin();
     cmArgumentList::iterator argP1;
     cmArgumentList::iterator argP2;
     while (arg != newArgs.end()) {

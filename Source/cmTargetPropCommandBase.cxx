@@ -2,11 +2,24 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmTargetPropCommandBase.h"
 
+#include "cmExecutionStatus.h"
 #include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
+#include "cmProperty.h"
 #include "cmStateTypes.h"
 #include "cmTarget.h"
 #include "cmake.h"
+
+cmTargetPropCommandBase::cmTargetPropCommandBase(cmExecutionStatus& status)
+  : Makefile(&status.GetMakefile())
+  , Status(status)
+{
+}
+
+void cmTargetPropCommandBase::SetError(std::string const& e)
+{
+  this->Status.SetError(e);
+}
 
 bool cmTargetPropCommandBase::HandleArguments(
   std::vector<std::string> const& args, const std::string& prop,
@@ -32,12 +45,13 @@ bool cmTargetPropCommandBase::HandleArguments(
     this->HandleMissingTarget(args[0]);
     return false;
   }
-  if ((this->Target->GetType() != cmStateEnums::SHARED_LIBRARY) &&
+  if ((this->Target->GetType() != cmStateEnums::EXECUTABLE) &&
       (this->Target->GetType() != cmStateEnums::STATIC_LIBRARY) &&
-      (this->Target->GetType() != cmStateEnums::OBJECT_LIBRARY) &&
+      (this->Target->GetType() != cmStateEnums::SHARED_LIBRARY) &&
       (this->Target->GetType() != cmStateEnums::MODULE_LIBRARY) &&
+      (this->Target->GetType() != cmStateEnums::OBJECT_LIBRARY) &&
       (this->Target->GetType() != cmStateEnums::INTERFACE_LIBRARY) &&
-      (this->Target->GetType() != cmStateEnums::EXECUTABLE)) {
+      (this->Target->GetType() != cmStateEnums::UNKNOWN_LIBRARY)) {
     this->SetError("called with non-compilable target type");
     return false;
   }
@@ -61,6 +75,17 @@ bool cmTargetPropCommandBase::HandleArguments(
       return false;
     }
     prepend = true;
+    ++argIndex;
+  }
+
+  if ((flags & PROCESS_REUSE_FROM) && args[argIndex] == "REUSE_FROM") {
+    if (args.size() != 3) {
+      this->SetError("called with incorrect number of arguments");
+      return false;
+    }
+    ++argIndex;
+
+    this->Target->SetProperty("PRECOMPILE_HEADERS_REUSE_FROM", args[argIndex]);
     ++argIndex;
   }
 
@@ -133,12 +158,11 @@ void cmTargetPropCommandBase::HandleInterfaceContent(
 {
   if (prepend) {
     const std::string propName = std::string("INTERFACE_") + this->Property;
-    const char* propValue = tgt->GetProperty(propName);
-    const std::string totalContent = this->Join(content) +
-      (propValue ? std::string(";") + propValue : std::string());
-    tgt->SetProperty(propName, totalContent.c_str());
+    cmProp propValue = tgt->GetProperty(propName);
+    const std::string totalContent =
+      this->Join(content) + (propValue ? (";" + *propValue) : std::string());
+    tgt->SetProperty(propName, totalContent);
   } else {
-    tgt->AppendProperty("INTERFACE_" + this->Property,
-                        this->Join(content).c_str());
+    tgt->AppendProperty("INTERFACE_" + this->Property, this->Join(content));
   }
 }

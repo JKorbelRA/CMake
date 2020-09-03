@@ -5,16 +5,18 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmDuration.h"
-#include "cmProcessOutput.h"
-
 #include <chrono>
+#include <ctime>
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <sstream>
 #include <string>
-#include <time.h>
 #include <vector>
+
+#include <cm/string_view>
+
+#include "cmDuration.h"
+#include "cmProcessOutput.h"
 
 class cmCTestBuildHandler;
 class cmCTestBuildAndTestHandler;
@@ -41,7 +43,7 @@ class cmXMLWriter;
 class cmCTest
 {
 public:
-  typedef cmProcessOutput::Encoding Encoding;
+  using Encoding = cmProcessOutput::Encoding;
   /** Enumerate parts of the testing and submission process.  */
   enum Part
   {
@@ -140,7 +142,8 @@ public:
 
   std::string GetTestModelString();
   static int GetTestModelFromString(const char* str);
-  static std::string CleanString(const std::string& str);
+  static std::string CleanString(const std::string& str,
+                                 std::string::size_type spos = 0);
   std::string GetCTestConfiguration(const std::string& name);
   void SetCTestConfiguration(const char* name, const char* value,
                              bool suppress = false);
@@ -200,6 +203,9 @@ public:
 
   bool ShouldCompressTestOutput();
   bool CompressString(std::string& str);
+
+  bool GetStopOnFailure() const;
+  void SetStopOnFailure(bool stop);
 
   std::chrono::system_clock::time_point GetStopTime() const;
   void SetStopTime(std::string const& time);
@@ -404,9 +410,9 @@ public:
 
   std::vector<std::string>& GetInitialCommandLineArguments();
 
-  /** Set the track to submit to */
-  void SetSpecificTrack(const char* track);
-  const char* GetSpecificTrack();
+  /** Set the group to submit to */
+  void SetSpecificGroup(const char* group);
+  const char* GetSpecificGroup();
 
   void SetFailover(bool failover);
   bool GetFailover() const;
@@ -431,10 +437,24 @@ public:
   const std::map<std::string, std::string>& GetDefinitions() const;
 
   /** Return the number of times a test should be run */
-  int GetTestRepeat() const;
+  int GetRepeatCount() const;
 
-  /** Return true if test should run until fail */
-  bool GetRepeatUntilFail() const;
+  enum class Repeat
+  {
+    Never,
+    UntilFail,
+    UntilPass,
+    AfterTimeout,
+  };
+  Repeat GetRepeatMode() const;
+
+  enum class NoTests
+  {
+    Legacy,
+    Error,
+    Ignore
+  };
+  NoTests GetNoTestsMode() const;
 
   void GenerateSubprojectsOutput(cmXMLWriter& xml);
   std::vector<std::string> GetLabelsForSubprojects();
@@ -492,8 +512,8 @@ private:
                                std::vector<std::string> const& files);
 
   /** Check if the argument is the one specified */
-  bool CheckArgument(const std::string& arg, const char* varg1,
-                     const char* varg2 = nullptr);
+  static bool CheckArgument(const std::string& arg, cm::string_view varg1,
+                            const char* varg2 = nullptr);
 
   /** Output errors from a test */
   void OutputTestErrors(std::vector<char> const& process_output);

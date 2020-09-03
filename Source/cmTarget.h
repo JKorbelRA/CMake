@@ -6,7 +6,7 @@
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <iosfwd>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -15,11 +15,14 @@
 #include "cmAlgorithms.h"
 #include "cmListFileCache.h"
 #include "cmPolicies.h"
+#include "cmProperty.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmTargetLinkLibraryType.h"
 
 class cmCustomCommand;
 class cmGlobalGenerator;
+class cmInstallTargetGenerator;
 class cmMakefile;
 class cmMessenger;
 class cmPropertyMap;
@@ -41,15 +44,14 @@ public:
     VisibilityImportedGlobally
   };
 
-  enum CustomCommandType
+  enum class PerConfig
   {
-    PRE_BUILD,
-    PRE_LINK,
-    POST_BUILD
+    Yes,
+    No
   };
 
   cmTarget(std::string const& name, cmStateEnums::TargetType type,
-           Visibility vis, cmMakefile* mf);
+           Visibility vis, cmMakefile* mf, PerConfig perConfig);
 
   cmTarget(cmTarget const&) = delete;
   cmTarget(cmTarget&&) noexcept;
@@ -89,33 +91,34 @@ public:
   //! Get the list of the PRE_BUILD custom commands for this target
   std::vector<cmCustomCommand> const& GetPreBuildCommands() const;
   void AddPreBuildCommand(cmCustomCommand const& cmd);
+  void AddPreBuildCommand(cmCustomCommand&& cmd);
 
   //! Get the list of the PRE_LINK custom commands for this target
   std::vector<cmCustomCommand> const& GetPreLinkCommands() const;
   void AddPreLinkCommand(cmCustomCommand const& cmd);
+  void AddPreLinkCommand(cmCustomCommand&& cmd);
 
   //! Get the list of the POST_BUILD custom commands for this target
   std::vector<cmCustomCommand> const& GetPostBuildCommands() const;
   void AddPostBuildCommand(cmCustomCommand const& cmd);
+  void AddPostBuildCommand(cmCustomCommand&& cmd);
 
   //! Add sources to the target.
   void AddSources(std::vector<std::string> const& srcs);
   void AddTracedSources(std::vector<std::string> const& srcs);
-  cmSourceFile* AddSourceCMP0049(const std::string& src);
+  std::string GetSourceCMP0049(const std::string& src);
   cmSourceFile* AddSource(const std::string& src, bool before = false);
 
   //! how we identify a library, by name and type
-  typedef std::pair<std::string, cmTargetLinkLibraryType> LibraryID;
-  typedef std::vector<LibraryID> LinkLibraryVectorType;
+  using LibraryID = std::pair<std::string, cmTargetLinkLibraryType>;
+  using LinkLibraryVectorType = std::vector<LibraryID>;
   LinkLibraryVectorType const& GetOriginalLinkLibraries() const;
 
   //! Clear the dependency information recorded for this target, if any.
   void ClearDependencyInformation(cmMakefile& mf);
 
-  void AddLinkLibrary(cmMakefile& mf, const std::string& lib,
-                      cmTargetLinkLibraryType llt);
   void AddLinkLibrary(cmMakefile& mf, std::string const& lib,
-                      std::string const& libRef, cmTargetLinkLibraryType llt);
+                      cmTargetLinkLibraryType llt);
 
   enum TLLSignature
   {
@@ -146,6 +149,9 @@ public:
   bool GetHaveInstallRule() const;
   void SetHaveInstallRule(bool hir);
 
+  void AddInstallGenerator(cmInstallTargetGenerator* g);
+  std::vector<cmInstallTargetGenerator*> const& GetInstallGenerators() const;
+
   /**
    * Get/Set whether this target was auto-created by a generator.
    */
@@ -157,31 +163,42 @@ public:
    * name as would be specified to the ADD_EXECUTABLE or UTILITY_SOURCE
    * commands. It is not a full path nor does it have an extension.
    */
-  void AddUtility(std::string const& name, cmMakefile* mf = nullptr);
+  void AddUtility(std::string const& name, bool cross,
+                  cmMakefile* mf = nullptr);
   //! Get the utilities used by this target
-  std::set<BT<std::string>> const& GetUtilities() const;
+  std::set<BT<std::pair<std::string, bool>>> const& GetUtilities() const;
 
   //! Set/Get a property of this target file
   void SetProperty(const std::string& prop, const char* value);
-  void AppendProperty(const std::string& prop, const char* value,
+  void SetProperty(const std::string& prop, const std::string& value)
+  {
+    SetProperty(prop, value.c_str());
+  }
+  void AppendProperty(const std::string& prop, const std::string& value,
                       bool asString = false);
   //! Might return a nullptr if the property is not set or invalid
-  const char* GetProperty(const std::string& prop) const;
+  cmProp GetProperty(const std::string& prop) const;
   //! Always returns a valid pointer
-  const char* GetSafeProperty(const std::string& prop) const;
+  std::string const& GetSafeProperty(std::string const& prop) const;
   bool GetPropertyAsBool(const std::string& prop) const;
   void CheckProperty(const std::string& prop, cmMakefile* context) const;
-  const char* GetComputedProperty(const std::string& prop,
-                                  cmMessenger* messenger,
-                                  cmListFileBacktrace const& context) const;
+  cmProp GetComputedProperty(const std::string& prop, cmMessenger* messenger,
+                             cmListFileBacktrace const& context) const;
   //! Get all properties
   cmPropertyMap const& GetProperties() const;
 
+  //! Return whether or not the target is for a DLL platform.
+  bool IsDLLPlatform() const;
+
+  //! Return whether or not we are targeting AIX.
+  bool IsAIX() const;
+
   bool IsImported() const;
   bool IsImportedGloballyVisible() const;
+  bool IsPerConfig() const;
 
-  bool GetMappedConfig(std::string const& desired_config, const char** loc,
-                       const char** imp, std::string& suffix) const;
+  bool GetMappedConfig(std::string const& desired_config, cmProp& loc,
+                       cmProp& imp, std::string& suffix) const;
 
   //! Return whether this target is an executable with symbol exports enabled.
   bool IsExecutableWithExports() const;
@@ -205,6 +222,8 @@ public:
                         cmListFileBacktrace const& bt, bool before = false);
   void InsertLinkDirectory(std::string const& entry,
                            cmListFileBacktrace const& bt, bool before = false);
+  void InsertPrecompileHeader(std::string const& entry,
+                              cmListFileBacktrace const& bt);
 
   void AppendBuildInterfaceIncludes();
 
@@ -225,6 +244,9 @@ public:
 
   cmStringRange GetCompileDefinitionsEntries() const;
   cmBacktraceRange GetCompileDefinitionsBacktraces() const;
+
+  cmStringRange GetPrecompileHeadersEntries() const;
+  cmBacktraceRange GetPrecompileHeadersBacktraces() const;
 
   cmStringRange GetSourceEntries() const;
   cmBacktraceRange GetSourceBacktraces() const;

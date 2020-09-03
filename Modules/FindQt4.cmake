@@ -670,7 +670,7 @@ if (QT_QMAKE_EXECUTABLE AND
           get_filename_component(qt_headers "${QT_QTCORE_INCLUDE_DIR}/../" ABSOLUTE)
           set(QT_HEADERS_DIR "${qt_headers}" CACHE INTERNAL "" FORCE)
         endif()
-      elseif()
+      else()
         message("Warning: QT_QMAKE_EXECUTABLE reported QT_INSTALL_HEADERS as ${qt_headers}")
         message("Warning: But QtCore couldn't be found.  Qt must NOT be installed correctly.")
       endif()
@@ -1318,10 +1318,18 @@ if (NOT QT_VERSION_MAJOR EQUAL 4)
       endif()
     endif()
 else()
+  if (CMAKE_FIND_PACKAGE_NAME STREQUAL "Qt")
+    # FindQt include()'s this module. It's an old pattern, but rather than
+    # trying to suppress this from outside the module (which is then sensitive
+    # to the contents, detect the case in this module and suppress it
+    # explicitly.
+    set(FPHSA_NAME_MISMATCHED 1)
+  endif ()
   FIND_PACKAGE_HANDLE_STANDARD_ARGS(Qt4 FOUND_VAR Qt4_FOUND
     REQUIRED_VARS ${_QT4_FOUND_REQUIRED_VARS}
     VERSION_VAR QTVERSION
     )
+  unset(FPHSA_NAME_MISMATCHED)
 endif()
 
 #######################################

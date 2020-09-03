@@ -3,6 +3,8 @@
 #ifndef cmGlobalVisualStudio10Generator_h
 #define cmGlobalVisualStudio10Generator_h
 
+#include <memory>
+
 #include "cmGlobalVisualStudio8Generator.h"
 #include "cmVisualStudio10ToolsetOptions.h"
 
@@ -14,13 +16,14 @@
 class cmGlobalVisualStudio10Generator : public cmGlobalVisualStudio8Generator
 {
 public:
-  static cmGlobalGeneratorFactory* NewFactory();
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory();
 
   bool MatchesGeneratorName(const std::string& name) const override;
 
   bool SetSystemName(std::string const& s, cmMakefile* mf) override;
   bool SetGeneratorPlatform(std::string const& p, cmMakefile* mf) override;
-  bool SetGeneratorToolset(std::string const& ts, cmMakefile* mf) override;
+  bool SetGeneratorToolset(std::string const& ts, bool build,
+                           cmMakefile* mf) override;
 
   std::vector<GeneratedMakeCommand> GenerateBuildCommand(
     const std::string& makeProgram, const std::string& projectName,
@@ -30,7 +33,8 @@ public:
       std::vector<std::string>()) override;
 
   //! create the correct local generator
-  cmLocalGenerator* CreateLocalGenerator(cmMakefile* mf) override;
+  std::unique_ptr<cmLocalGenerator> CreateLocalGenerator(
+    cmMakefile* mf) override;
 
   /**
    * Try to determine system information such as shared library
@@ -44,6 +48,9 @@ public:
   /** Generating for Nsight Tegra VS plugin?  */
   bool IsNsightTegra() const;
   std::string GetNsightTegraVersion() const;
+
+  /** The vctargets path for the target platform.  */
+  const char* GetCustomVCTargetsPath() const;
 
   /** The toolset name for the target platform.  */
   const char* GetPlatformToolset() const;
@@ -60,6 +67,10 @@ public:
   /** The cuda toolset version.  */
   const char* GetPlatformToolsetCuda() const;
   std::string const& GetPlatformToolsetCudaString() const;
+
+  /** The custom cuda install directory */
+  const char* GetPlatformToolsetCudaCustomDir() const;
+  std::string const& GetPlatformToolsetCudaCustomDirString() const;
 
   /** Return whether we need to use No/Debug instead of false/true
       for GenerateDebugInformation.  */
@@ -104,9 +115,13 @@ public:
   virtual bool IsDefaultToolset(const std::string& version) const;
   virtual std::string GetAuxiliaryToolset() const;
 
+  bool GetSupportsUnityBuilds() const { return this->SupportsUnityBuilds; }
+
   bool FindMakeProgram(cmMakefile* mf) override;
 
   bool IsIPOSupported() const override { return true; }
+
+  virtual bool IsStdOutEncodingSupported() const { return false; }
 
   static std::string GetInstalledNsightTegraVersion();
 
@@ -151,7 +166,9 @@ protected:
   std::string GeneratorToolset;
   std::string GeneratorToolsetVersion;
   std::string GeneratorToolsetHostArchitecture;
+  std::string GeneratorToolsetCustomVCTargetsDir;
   std::string GeneratorToolsetCuda;
+  std::string GeneratorToolsetCudaCustomDir;
   std::string DefaultPlatformToolset;
   std::string DefaultPlatformToolsetHostArchitecture;
   std::string WindowsTargetPlatformVersion;
@@ -167,6 +184,7 @@ protected:
   std::string DefaultMasmFlagTableName;
   std::string DefaultNasmFlagTableName;
   std::string DefaultRCFlagTableName;
+  bool SupportsUnityBuilds = false;
   bool SystemIsWindowsCE;
   bool SystemIsWindowsPhone;
   bool SystemIsWindowsStore;
@@ -201,6 +219,7 @@ private:
 
   bool ParseGeneratorToolset(std::string const& ts, cmMakefile* mf);
 
+  std::string CustomVCTargetsPath;
   std::string VCTargetsPath;
   bool FindVCTargetsPath(cmMakefile* mf);
 

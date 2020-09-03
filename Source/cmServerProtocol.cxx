@@ -2,27 +2,30 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmServerProtocol.h"
 
-#include "cmAlgorithms.h"
+#include <algorithm>
+#include <cassert>
+#include <functional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <cm/memory>
+#include <cmext/algorithm>
+
+#include <cm3p/uv.h>
+
 #include "cmExternalMakefileProjectGenerator.h"
 #include "cmFileMonitor.h"
 #include "cmGlobalGenerator.h"
 #include "cmJsonObjectDictionary.h"
 #include "cmJsonObjects.h"
 #include "cmMessageType.h"
+#include "cmProperty.h"
 #include "cmServer.h"
 #include "cmServerDictionary.h"
 #include "cmState.h"
 #include "cmSystemTools.h"
-#include "cm_uv.h"
 #include "cmake.h"
-
-#include <algorithm>
-#include <cassert>
-#include <functional>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 
 // Get rid of some windows macros:
 #undef max
@@ -166,7 +169,7 @@ bool cmServerProtocol::DoActivate(const cmServerRequest& /*request*/,
 
 std::pair<int, int> cmServerProtocol1::ProtocolVersion() const
 {
-  return std::make_pair(1, 2);
+  return { 1, 2 };
 }
 
 static void setErrorMessage(std::string* errorMessage, const std::string& text)
@@ -180,7 +183,7 @@ static bool getOrTestHomeDirectory(cmState* state, std::string& value,
                                    std::string* errorMessage)
 {
   const std::string cachedValue =
-    std::string(state->GetCacheEntryValue("CMAKE_HOME_DIRECTORY"));
+    *state->GetCacheEntryValue("CMAKE_HOME_DIRECTORY");
   if (value.empty()) {
     value = cachedValue;
     return true;
@@ -203,9 +206,7 @@ static bool getOrTestValue(cmState* state, const std::string& key,
                            const std::string& keyDescription,
                            std::string* errorMessage)
 {
-  const char* entry = state->GetCacheEntryValue(key);
-  const std::string cachedValue =
-    entry == nullptr ? std::string() : std::string(entry);
+  const std::string cachedValue = state->GetSafeCacheEntryValue(key);
   if (value.empty()) {
     value = cachedValue;
   }
@@ -378,8 +379,7 @@ void cmServerProtocol1::HandleCMakeFileChanges(const std::string& path,
   SendSignal(kFILE_CHANGE_SIGNAL, obj);
 }
 
-const cmServerResponse cmServerProtocol1::Process(
-  const cmServerRequest& request)
+cmServerResponse cmServerProtocol1::Process(const cmServerRequest& request)
 {
   assert(this->m_State >= STATE_ACTIVE);
 
@@ -434,7 +434,7 @@ cmServerResponse cmServerProtocol1::ProcessCache(
     keys = allKeys;
   } else {
     for (auto const& i : keys) {
-      if (std::find(allKeys.begin(), allKeys.end(), i) == allKeys.end()) {
+      if (!cm::contains(allKeys, i)) {
         return request.ReportError("Key \"" + i + "\" not found in cache.");
       }
     }
@@ -445,13 +445,13 @@ cmServerResponse cmServerProtocol1::ProcessCache(
     entry[kKEY_KEY] = key;
     entry[kTYPE_KEY] =
       cmState::CacheEntryTypeToString(state->GetCacheEntryType(key));
-    entry[kVALUE_KEY] = state->GetCacheEntryValue(key);
+    entry[kVALUE_KEY] = *state->GetCacheEntryValue(key);
 
     Json::Value props = Json::objectValue;
     bool haveProperties = false;
     for (auto const& prop : state->GetCacheEntryPropertyList(key)) {
       haveProperties = true;
-      props[prop] = state->GetCacheEntryProperty(key, prop);
+      props[prop] = *state->GetCacheEntryProperty(key, prop);
     }
     if (haveProperties) {
       entry[kPROPERTIES_KEY] = props;
@@ -563,7 +563,7 @@ cmServerResponse cmServerProtocol1::ProcessConfigure(
 
   if (cm->LoadCache(buildDir)) {
     // build directory has been set up before
-    const std::string* cachedSourceDir =
+    cmProp cachedSourceDir =
       cm->GetState()->GetInitializedCacheValue("CMAKE_HOME_DIRECTORY");
     if (!cachedSourceDir) {
       return request.ReportError("No CMAKE_HOME_DIRECTORY found in cache.");
@@ -573,7 +573,7 @@ cmServerResponse cmServerProtocol1::ProcessConfigure(
       cm->SetHomeDirectory(sourceDir);
     }
 
-    const std::string* cachedGenerator =
+    cmProp cachedGenerator =
       cm->GetState()->GetInitializedCacheValue("CMAKE_GENERATOR");
     if (cachedGenerator) {
       if (gg && gg->GetName() != *cachedGenerator) {
@@ -743,7 +743,7 @@ void cmServerProtocol1::GeneratorInformation::SetupGenerator(
   cm->SetHomeDirectory(SourceDirectory);
   cm->SetHomeOutputDirectory(BuildDirectory);
 
-  cmGlobalGenerator* gg = cm->CreateGlobalGenerator(fullGeneratorName);
+  auto gg = cm->CreateGlobalGenerator(fullGeneratorName);
   if (!gg) {
     setErrorMessage(
       errorMessage,
@@ -752,7 +752,7 @@ void cmServerProtocol1::GeneratorInformation::SetupGenerator(
     return;
   }
 
-  cm->SetGlobalGenerator(gg);
+  cm->SetGlobalGenerator(std::move(gg));
 
   cm->SetGeneratorToolset(Toolset);
   cm->SetGeneratorPlatform(Platform);

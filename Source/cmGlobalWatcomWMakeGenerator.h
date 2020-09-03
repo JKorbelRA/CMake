@@ -5,12 +5,13 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmGlobalGeneratorFactory.h"
-#include "cmGlobalUnixMakefileGenerator3.h"
-
 #include <iosfwd>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "cmGlobalGeneratorFactory.h"
+#include "cmGlobalUnixMakefileGenerator3.h"
 
 class cmMakefile;
 class cmake;
@@ -25,9 +26,10 @@ class cmGlobalWatcomWMakeGenerator : public cmGlobalUnixMakefileGenerator3
 {
 public:
   cmGlobalWatcomWMakeGenerator(cmake* cm);
-  static cmGlobalGeneratorFactory* NewFactory()
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory()
   {
-    return new cmGlobalGeneratorSimpleFactory<cmGlobalWatcomWMakeGenerator>();
+    return std::unique_ptr<cmGlobalGeneratorFactory>(
+      new cmGlobalGeneratorSimpleFactory<cmGlobalWatcomWMakeGenerator>());
   }
   //! Get the name for the generator.
   std::string GetName() const override
@@ -38,6 +40,9 @@ public:
 
   /** Get the documentation entry for this generator.  */
   static void GetDocumentation(cmDocumentationEntry& entry);
+
+  /** Tell the generator about the target system.  */
+  bool SetSystemName(std::string const& s, cmMakefile* mf) override;
 
   /**
    * Try to determine system information such as shared library

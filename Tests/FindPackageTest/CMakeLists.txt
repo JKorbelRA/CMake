@@ -391,16 +391,44 @@ try_compile(EXPORTER_COMPILED
 message(STATUS "Searching for export(PACKAGE) test project")
 set(CMakeTestExportPackage_DIR "" CACHE FILEPATH
   "Wipe out find results for testing." FORCE)
-find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
 
-message(STATUS "Searching for export(PACKAGE) test project with CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=TRUE")
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_USE_PACKAGE_REGISTRY=TRUE")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY TRUE)
+find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
+if(NOT CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be FOUND!")
+endif()
+unset(CMAKE_FIND_USE_PACKAGE_REGISTRY)
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=FALSE")
+set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY FALSE)
+find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
+if(NOT CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be FOUND!")
+endif()
+unset(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY)
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_USE_PACKAGE_REGISTRY=TRUE and CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=TRUE")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY TRUE)
 set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY TRUE)
+set(CMakeTestExportPackage_DIR FALSE)
+find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
+if(NOT CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be FOUND!")
+endif()
+unset(CMAKE_FIND_USE_PACKAGE_REGISTRY)
+unset(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY)
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_USE_PACKAGE_REGISTRY=FALSE and CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=FALSE")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY FALSE)
+set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY FALSE)
 set(CMakeTestExportPackage_DIR "" CACHE FILEPATH
   "Wipe out find results for testing." FORCE)
-find_package(CMakeTestExportPackage  1.${version} EXACT QUIET)
+find_package(CMakeTestExportPackage 1.${version} EXACT QUIET)
 if(CMakeTestExportPackage_FOUND)
-  message(SEND_ERROR "CMakeTestExportPackage should not be FOUND!")
+  message(SEND_ERROR "CMakeTestExportPackage should be not FOUND!")
 endif()
+unset(CMAKE_FIND_USE_PACKAGE_REGISTRY)
 unset(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY)
 
 message(STATUS "Remove export(PACKAGE) test project")
@@ -579,6 +607,26 @@ endif()
 
 set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
 set(CMAKE_PREFIX_PATH)
+set(CMAKE_MODULE_PATH)
+
+############################################################################
+##Test FIND_PACKAGE CMAKE_FIND_PACKAGE_PREFER_CONFIG - Do not recurse
+
+# No CMAKE_PREFIX_PATH
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfigRecurse)
+
+# Now prefer config mode
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+unset(ACME_FOUND)
+unset(ACME_CONFIG)
+
+find_package(ACME)
+if(ACME_FOUND AND ACME_CONFIG)
+    message(SEND_ERROR "Incorrectly found ACME in CONFIG mode, from the MODULE package")
+endif()
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
+set(CMAKE_MODULE_PATH)
 
 ############################################################################
 ##Test find_package CMAKE_FIND_PACKAGE_PREFER_CONFIG with module fallback
@@ -592,3 +640,22 @@ find_package(ACME REQUIRED)
 if(NOT ACME_FOUND)
     message(SEND_ERROR "Did not find ACME package")
 endif()
+
+############################################################################
+##Test find_package CMAKE_FIND_PACKAGE_PREFER_CONFIG with NO_MODULE
+
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfigOnlyModule)
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+
+find_package(ACME NO_MODULE)
+
+if(ACME_FOUND)
+    message(SEND_ERROR "Should not find ACME package")
+endif()
+
+############################################################################
+##Test find_package CMAKE_FIND_PACKAGE_PREFER_CONFIG with unknown package
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+find_package(DoesNotExist)

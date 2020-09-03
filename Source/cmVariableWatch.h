@@ -6,7 +6,7 @@
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -20,10 +20,9 @@ class cmMakefile;
 class cmVariableWatch
 {
 public:
-  typedef void (*WatchMethod)(const std::string& variable, int access_type,
-                              void* client_data, const char* newValue,
-                              const cmMakefile* mf);
-  typedef void (*DeleteData)(void* client_data);
+  using WatchMethod = void (*)(const std::string&, int, void*, const char*,
+                               const cmMakefile*);
+  using DeleteData = void (*)(void*);
 
   cmVariableWatch();
   ~cmVariableWatch();
@@ -47,7 +46,7 @@ public:
    */
   enum
   {
-    VARIABLE_READ_ACCESS = 0,
+    VARIABLE_READ_ACCESS,
     UNKNOWN_VARIABLE_READ_ACCESS,
     UNKNOWN_VARIABLE_DEFINED_ACCESS,
     VARIABLE_MODIFIED_ACCESS,
@@ -58,7 +57,7 @@ public:
   /**
    * Return the access as string
    */
-  static const char* GetAccessAsString(int access_type);
+  static const std::string& GetAccessAsString(int access_type);
 
 protected:
   struct Pair
@@ -77,8 +76,8 @@ protected:
     Pair& operator=(const Pair&) = delete;
   };
 
-  typedef std::vector<std::shared_ptr<Pair>> VectorOfPairs;
-  typedef std::map<std::string, VectorOfPairs> StringToVectorOfPairs;
+  using VectorOfPairs = std::vector<std::shared_ptr<Pair>>;
+  using StringToVectorOfPairs = std::map<std::string, VectorOfPairs>;
 
   StringToVectorOfPairs WatchMap;
 };

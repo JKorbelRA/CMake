@@ -2,7 +2,7 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmInstallTargetGenerator.h"
 
-#include <assert.h>
+#include <cassert>
 #include <map>
 #include <set>
 #include <sstream>
@@ -18,21 +18,23 @@
 #include "cmMessageType.h"
 #include "cmOutputConverter.h"
 #include "cmPolicies.h"
+#include "cmProperty.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmTarget.h"
 #include "cmake.h"
 
 cmInstallTargetGenerator::cmInstallTargetGenerator(
-  std::string targetName, const char* dest, bool implib,
-  const char* file_permissions, std::vector<std::string> const& configurations,
-  const char* component, MessageLevel message, bool exclude_from_all,
+  std::string targetName, std::string const& dest, bool implib,
+  std::string file_permissions, std::vector<std::string> const& configurations,
+  std::string const& component, MessageLevel message, bool exclude_from_all,
   bool optional, cmListFileBacktrace backtrace)
   : cmInstallGenerator(dest, configurations, component, message,
                        exclude_from_all)
   , TargetName(std::move(targetName))
   , Target(nullptr)
-  , FilePermissions(file_permissions)
+  , FilePermissions(std::move(file_permissions))
   , ImportLibrary(implib)
   , Optional(optional)
   , Backtrace(std::move(backtrace))
@@ -85,20 +87,18 @@ void cmInstallTargetGenerator::GenerateScriptForConfig(
   std::string fromDirConfig;
   if (this->Target->NeedRelinkBeforeInstall(config)) {
     fromDirConfig =
-      this->Target->GetLocalGenerator()->GetCurrentBinaryDirectory();
-    fromDirConfig += "/CMakeFiles";
-    fromDirConfig += "/CMakeRelink.dir/";
+      cmStrCat(this->Target->GetLocalGenerator()->GetCurrentBinaryDirectory(),
+               "/CMakeFiles/CMakeRelink.dir/");
   } else {
     cmStateEnums::ArtifactType artifact = this->ImportLibrary
       ? cmStateEnums::ImportLibraryArtifact
       : cmStateEnums::RuntimeBinaryArtifact;
-    fromDirConfig = this->Target->GetDirectory(config, artifact);
-    fromDirConfig += "/";
+    fromDirConfig =
+      cmStrCat(this->Target->GetDirectory(config, artifact), '/');
   }
 
-  std::string toDir =
-    this->ConvertToAbsoluteDestination(this->GetDestination(config));
-  toDir += "/";
+  std::string toDir = cmStrCat(
+    this->ConvertToAbsoluteDestination(this->GetDestination(config)), '/');
 
   // Compute the list of files to install for this target.
   std::vector<std::string> filesFrom;
@@ -134,8 +134,10 @@ void cmInstallTargetGenerator::GenerateScriptForConfig(
         cmMakefile const* mf = this->Target->Target->GetMakefile();
 
         // Get App Bundle Extension
-        const char* ext = this->Target->GetProperty("BUNDLE_EXTENSION");
-        if (!ext) {
+        std::string ext;
+        if (cmProp p = this->Target->GetProperty("BUNDLE_EXTENSION")) {
+          ext = *p;
+        } else {
           ext = "app";
         }
 
@@ -368,16 +370,15 @@ void cmInstallTargetGenerator::GetInstallObjectNames(
 {
   this->Target->GetTargetObjectNames(config, objects);
   for (std::string& o : objects) {
-    o = computeInstallObjectDir(this->Target, config) + "/" + o;
+    o = cmStrCat(computeInstallObjectDir(this->Target, config), "/", o);
   }
 }
 
 std::string cmInstallTargetGenerator::GetDestination(
   std::string const& config) const
 {
-  cmGeneratorExpression ge;
-  return ge.Parse(this->Destination)
-    ->Evaluate(this->Target->GetLocalGenerator(), config);
+  return cmGeneratorExpression::Evaluate(
+    this->Destination, this->Target->GetLocalGenerator(), config);
 }
 
 std::string cmInstallTargetGenerator::GetInstallFilename(
@@ -556,7 +557,8 @@ void cmInstallTargetGenerator::AddInstallNamePatchRule(
       // components of the install_name field then we need to create a
       // mapping to be applied after installation.
       std::string for_build = tgt->GetInstallNameDirForBuildTree(config);
-      std::string for_install = tgt->GetInstallNameDirForInstallTree();
+      std::string for_install = tgt->GetInstallNameDirForInstallTree(
+        config, "${CMAKE_INSTALL_PREFIX}");
       if (for_build != for_install) {
         // The directory portions differ.  Append the filename to
         // create the mapping.
@@ -579,7 +581,8 @@ void cmInstallTargetGenerator::AddInstallNamePatchRule(
   if (this->Target->GetType() == cmStateEnums::SHARED_LIBRARY) {
     std::string for_build =
       this->Target->GetInstallNameDirForBuildTree(config);
-    std::string for_install = this->Target->GetInstallNameDirForInstallTree();
+    std::string for_install = this->Target->GetInstallNameDirForInstallTree(
+      config, "${CMAKE_INSTALL_PREFIX}");
 
     if (this->Target->IsFrameworkOnApple() && for_install.empty()) {
       // Frameworks seem to have an id corresponding to their own full
@@ -592,8 +595,8 @@ void cmInstallTargetGenerator::AddInstallNamePatchRule(
     // on the installed file.
     if (for_build != for_install) {
       // Prepare to refer to the install-tree install_name.
-      new_id = for_install;
-      new_id += this->GetInstallFilename(this->Target, config, NameSO);
+      new_id = cmStrCat(
+        for_install, this->GetInstallFilename(this->Target, config, NameSO));
     }
   }
 
@@ -687,7 +690,8 @@ void cmInstallTargetGenerator::AddChrpathPatchRule(
     std::string installNameTool =
       mf->GetSafeDefinition("CMAKE_INSTALL_NAME_TOOL");
 
-    std::vector<std::string> oldRuntimeDirs, newRuntimeDirs;
+    std::vector<std::string> oldRuntimeDirs;
+    std::vector<std::string> newRuntimeDirs;
     cli->GetRPath(oldRuntimeDirs, false);
     cli->GetRPath(newRuntimeDirs, true);
 
@@ -766,11 +770,17 @@ void cmInstallTargetGenerator::AddChrpathPatchRule(
         this->IssueCMP0095Warning(newRpath);
         CM_FALLTHROUGH;
       case cmPolicies::OLD:
-        os << indent << "     NEW_RPATH \"" << newRpath << "\")\n";
+        os << indent << "     NEW_RPATH \"" << newRpath << "\"";
         break;
       default:
-        os << indent << "     NEW_RPATH " << escapedNewRpath << ")\n";
+        os << indent << "     NEW_RPATH " << escapedNewRpath;
         break;
+    }
+
+    if (this->Target->GetPropertyAsBool("INSTALL_REMOVE_ENVIRONMENT_RPATH")) {
+      os << "\n" << indent << "     INSTALL_REMOVE_ENVIRONMENT_RPATH)\n";
+    } else {
+      os << ")\n";
     }
   }
 }

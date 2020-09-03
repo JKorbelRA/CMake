@@ -4,15 +4,16 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cm_jsoncpp_value.h"
-#include "cm_thread.hxx"
-#include "cm_uv.h"
-
-#include "cmUVHandlePtr.h"
-
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <string>
 #include <vector>
+
+#include <cm/shared_mutex>
+
+#include <cm3p/json/value.h>
+#include <cm3p/uv.h>
+
+#include "cmUVHandlePtr.h"
 
 class cmConnection;
 class cmFileMonitor;
@@ -102,7 +103,7 @@ public:
   cmFileMonitor* FileMonitor() const;
 
 private:
-  void RegisterProtocol(cmServerProtocol* protocol);
+  void RegisterProtocol(std::unique_ptr<cmServerProtocol> protocol);
 
   // Callbacks from cmServerConnection:
 
@@ -148,12 +149,13 @@ private:
                        const DebugInfo* debug) const;
 
   static cmServerProtocol* FindMatchingProtocol(
-    const std::vector<cmServerProtocol*>& protocols, int major, int minor);
+    const std::vector<std::unique_ptr<cmServerProtocol>>& protocols, int major,
+    int minor);
 
   const bool SupportExperimental;
 
   cmServerProtocol* Protocol = nullptr;
-  std::vector<cmServerProtocol*> SupportedProtocols;
+  std::vector<std::unique_ptr<cmServerProtocol>> SupportedProtocols;
 
   friend class cmServerProtocol;
   friend class cmServerRequest;

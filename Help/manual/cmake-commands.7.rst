@@ -17,6 +17,7 @@ These commands are always available.
 
    /command/break
    /command/cmake_host_system_information
+   /command/cmake_language
    /command/cmake_minimum_required
    /command/cmake_parse_arguments
    /command/cmake_policy
@@ -112,6 +113,7 @@ These commands are available only in CMake projects.
    /command/target_link_directories
    /command/target_link_libraries
    /command/target_link_options
+   /command/target_precompile_headers
    /command/target_sources
    /command/try_compile
    /command/try_run

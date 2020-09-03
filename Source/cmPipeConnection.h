@@ -4,11 +4,12 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmUVHandlePtr.h"
 #include <string>
 
+#include <cm3p/uv.h>
+
 #include "cmConnection.h"
-#include "cm_uv.h"
+#include "cmUVHandlePtr.h"
 
 class cmPipeConnection : public cmEventBasedConnection
 {

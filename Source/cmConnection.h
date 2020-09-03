@@ -5,12 +5,13 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmUVHandlePtr.h"
-#include "cm_uv.h"
-
 #include <cstddef>
 #include <memory>
 #include <string>
+
+#include <cm3p/uv.h>
+
+#include "cmUVHandlePtr.h"
 
 class cmServerBase;
 

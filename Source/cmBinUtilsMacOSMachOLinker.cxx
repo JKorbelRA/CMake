@@ -3,14 +3,28 @@
 
 #include "cmBinUtilsMacOSMachOLinker.h"
 
-#include "cmAlgorithms.h"
-#include "cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool.h"
-#include "cmRuntimeDependencyArchive.h"
-#include "cmSystemTools.h"
-
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include <cm/memory>
+
+#include "cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool.h"
+#include "cmRuntimeDependencyArchive.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+
+namespace {
+bool IsMissingSystemDylib(std::string const& path)
+{
+  // Starting on macOS 11, the dynamic loader has a builtin cache of
+  // system-provided dylib files that do not exist on the filesystem.
+  // Tell our caller that these are expected to be missing.
+  return ((cmHasLiteralPrefix(path, "/System/Library/") ||
+           cmHasLiteralPrefix(path, "/usr/lib/")) &&
+          !cmSystemTools::PathExists(path));
+}
+}
 
 cmBinUtilsMacOSMachOLinker::cmBinUtilsMacOSMachOLinker(
   cmRuntimeDependencyArchive* archive)
@@ -57,7 +71,8 @@ bool cmBinUtilsMacOSMachOLinker::ScanDependencies(
 bool cmBinUtilsMacOSMachOLinker::ScanDependencies(
   std::string const& file, std::string const& executablePath)
 {
-  std::vector<std::string> libs, rpaths;
+  std::vector<std::string> libs;
+  std::vector<std::string> rpaths;
   if (!this->Tool->GetFileInfo(file, libs, rpaths)) {
     return false;
   }
@@ -79,7 +94,8 @@ bool cmBinUtilsMacOSMachOLinker::GetFileDependencies(
         return false;
       }
       if (resolved) {
-        if (!this->Archive->IsPostExcluded(path)) {
+        if (!this->Archive->IsPostExcluded(path) &&
+            !IsMissingSystemDylib(path)) {
           auto filename = cmSystemTools::GetFilenameName(path);
           bool unique;
           this->Archive->AddResolvedPath(filename, path, unique);

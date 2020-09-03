@@ -87,7 +87,7 @@ set(PostgreSQL_ROOT_DIR_MESSAGE "Set the PostgreSQL_ROOT system variable to wher
 
 
 set(PostgreSQL_KNOWN_VERSIONS ${PostgreSQL_ADDITIONAL_VERSIONS}
-    "11" "10" "9.6" "9.5" "9.4" "9.3" "9.2" "9.1" "9.0" "8.4" "8.3" "8.2" "8.1" "8.0")
+    "12" "11" "10" "9.6" "9.5" "9.4" "9.3" "9.2" "9.1" "9.0" "8.4" "8.3" "8.2" "8.1" "8.0")
 
 # Define additional search paths for root directories.
 set( PostgreSQL_ROOT_DIRECTORIES
@@ -105,10 +105,14 @@ foreach(suffix ${PostgreSQL_KNOWN_VERSIONS})
   endif()
   if(UNIX)
     list(APPEND PostgreSQL_LIBRARY_ADDITIONAL_SEARCH_SUFFIXES
+        "postgresql${suffix}"
         "pgsql-${suffix}/lib")
     list(APPEND PostgreSQL_INCLUDE_ADDITIONAL_SEARCH_SUFFIXES
+        "postgresql${suffix}"
+        "postgresql/${suffix}"
         "pgsql-${suffix}/include")
     list(APPEND PostgreSQL_TYPE_ADDITIONAL_SEARCH_SUFFIXES
+        "postgresql${suffix}/server"
         "postgresql/${suffix}/server"
         "pgsql-${suffix}/include/server")
   endif()
@@ -172,14 +176,21 @@ endfunction()
 # any PostgreSQL_LIBRARY that is already specified and skip the search.
 if(PostgreSQL_LIBRARY)
   set(PostgreSQL_LIBRARIES "${PostgreSQL_LIBRARY}")
+  get_filename_component(PostgreSQL_LIBRARY_DIR "${PostgreSQL_LIBRARY}" PATH)
 else()
   __postgresql_find_library(PostgreSQL_LIBRARY_RELEASE ${PostgreSQL_LIBRARY_TO_FIND})
   __postgresql_find_library(PostgreSQL_LIBRARY_DEBUG ${PostgreSQL_LIBRARY_TO_FIND}d)
   include(${CMAKE_CURRENT_LIST_DIR}/SelectLibraryConfigurations.cmake)
   select_library_configurations(PostgreSQL)
   mark_as_advanced(PostgreSQL_LIBRARY_RELEASE PostgreSQL_LIBRARY_DEBUG)
+  if(PostgreSQL_LIBRARY_RELEASE)
+    get_filename_component(PostgreSQL_LIBRARY_DIR "${PostgreSQL_LIBRARY_RELEASE}" PATH)
+  elseif(PostgreSQL_LIBRARY_DEBUG)
+    get_filename_component(PostgreSQL_LIBRARY_DIR "${PostgreSQL_LIBRARY_DEBUG}" PATH)
+  else()
+    set(PostgreSQL_LIBRARY_DIR "")
+  endif()
 endif()
-get_filename_component(PostgreSQL_LIBRARY_DIR ${PostgreSQL_LIBRARY} PATH)
 
 if (PostgreSQL_INCLUDE_DIR)
   # Some platforms include multiple pg_config.hs for multi-lib configurations
@@ -198,11 +209,22 @@ if (PostgreSQL_INCLUDE_DIR)
     endif()
   endforeach()
   if (_PostgreSQL_VERSION_NUM)
-    math(EXPR _PostgreSQL_major_version "${_PostgreSQL_VERSION_NUM} / 10000")
-    math(EXPR _PostgreSQL_minor_version "${_PostgreSQL_VERSION_NUM} % 10000")
-    set(PostgreSQL_VERSION_STRING "${_PostgreSQL_major_version}.${_PostgreSQL_minor_version}")
-    unset(_PostgreSQL_major_version)
-    unset(_PostgreSQL_minor_version)
+    # 9.x and older encoding
+    if (_PostgreSQL_VERSION_NUM LESS 100000)
+      math(EXPR _PostgreSQL_major_version "${_PostgreSQL_VERSION_NUM} / 10000")
+      math(EXPR _PostgreSQL_minor_version "${_PostgreSQL_VERSION_NUM} % 10000 / 100")
+      math(EXPR _PostgreSQL_patch_version "${_PostgreSQL_VERSION_NUM} % 100")
+      set(PostgreSQL_VERSION_STRING "${_PostgreSQL_major_version}.${_PostgreSQL_minor_version}.${_PostgreSQL_patch_version}")
+      unset(_PostgreSQL_major_version)
+      unset(_PostgreSQL_minor_version)
+      unset(_PostgreSQL_patch_version)
+    else ()
+      math(EXPR _PostgreSQL_major_version "${_PostgreSQL_VERSION_NUM} / 10000")
+      math(EXPR _PostgreSQL_minor_version "${_PostgreSQL_VERSION_NUM} % 10000")
+      set(PostgreSQL_VERSION_STRING "${_PostgreSQL_major_version}.${_PostgreSQL_minor_version}")
+      unset(_PostgreSQL_major_version)
+      unset(_PostgreSQL_minor_version)
+    endif ()
   else ()
     foreach(_PG_CONFIG_HEADER ${_PG_CONFIG_HEADERS})
       if(EXISTS "${_PG_CONFIG_HEADER}")

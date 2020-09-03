@@ -5,15 +5,17 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmGraphAdjacencyList.h"
-#include "cmLinkItem.h"
-#include "cmTargetLinkLibraryType.h"
-
 #include <map>
+#include <memory>
 #include <queue>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "cmGraphAdjacencyList.h"
+#include "cmLinkItem.h"
+#include "cmListFileCache.h"
+#include "cmTargetLinkLibraryType.h"
 
 class cmComputeComponentGraph;
 class cmGeneratorTarget;
@@ -37,13 +39,13 @@ public:
   // Basic information about each link item.
   struct LinkEntry
   {
-    std::string Item;
+    BT<std::string> Item;
     cmGeneratorTarget const* Target = nullptr;
     bool IsSharedDep = false;
     bool IsFlag = false;
   };
 
-  typedef std::vector<LinkEntry> EntryVector;
+  using EntryVector = std::vector<LinkEntry>;
   EntryVector const& Compute();
 
   void SetOldLinkDirMode(bool b);
@@ -105,14 +107,15 @@ private:
   };
   struct DependSetList : public std::vector<DependSet>
   {
+    bool Initialized = false;
   };
-  std::vector<DependSetList*> InferredDependSets;
+  std::vector<DependSetList> InferredDependSets;
   void InferDependencies();
 
   // Ordering constraint graph adjacency list.
-  typedef cmGraphNodeList NodeList;
-  typedef cmGraphEdgeList EdgeList;
-  typedef cmGraphAdjacencyList Graph;
+  using NodeList = cmGraphNodeList;
+  using EdgeList = cmGraphEdgeList;
+  using Graph = cmGraphAdjacencyList;
   Graph EntryConstraintGraph;
   void CleanConstraintGraph();
   void DisplayConstraintGraph();

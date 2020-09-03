@@ -25,7 +25,7 @@ public:
   }
   cmScriptGeneratorIndent Next(int step = 2) const
   {
-    return cmScriptGeneratorIndent(this->Level + step);
+    return { this->Level + step };
   }
 
 private:
@@ -56,7 +56,7 @@ public:
                 std::vector<std::string> const& configurationTypes);
 
 protected:
-  typedef cmScriptGeneratorIndent Indent;
+  using Indent = cmScriptGeneratorIndent;
   virtual void GenerateScript(std::ostream& os);
   virtual void GenerateScriptConfigs(std::ostream& os, Indent indent);
   virtual void GenerateScriptActions(std::ostream& os, Indent indent);
@@ -71,7 +71,7 @@ protected:
 
   std::string CreateConfigTest(const std::string& config);
   std::string CreateConfigTest(std::vector<std::string> const& configs);
-  std::string CreateComponentTest(const char* component);
+  std::string CreateComponentTest(const std::string& component);
 
   // Information shared by most generator types.
   std::string RuntimeConfigVariable;

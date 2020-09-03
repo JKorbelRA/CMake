@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 3.8)
 project(Assembler C)
 message("CTEST_FULL_OUTPUT ")
 set(CMAKE_VERBOSE_MAKEFILE 1)
@@ -7,9 +7,10 @@ set(SRCS)
 
 # (at least) the following toolchains can process assembler files directly
 # and also generate assembler files from C:
-if("${CMAKE_GENERATOR}" MATCHES "Makefile|Xcode" AND
+if("${CMAKE_GENERATOR}" MATCHES "Makefile|Xcode|Ninja" AND
     NOT CMAKE_OSX_ARCHITECTURES)
-  if((CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|HP|SunPro|XL)$") OR (CMAKE_C_COMPILER_ID STREQUAL "Intel"  AND  UNIX))
+  if((CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|HP|SunPro|XL)$") OR (CMAKE_C_COMPILER_ID STREQUAL "Intel"  AND  UNIX)
+     AND NOT (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND "x${CMAKE_C_COMPILER_FRONTEND_VARIANT}" STREQUAL "xMSVC"))
     set(C_FLAGS "${CMAKE_C_FLAGS}")
     separate_arguments(C_FLAGS)
     if(CMAKE_OSX_SYSROOT AND CMAKE_C_SYSROOT_FLAG AND NOT ";${C_FLAGS};" MATCHES ";${CMAKE_C_SYSROOT_FLAG};")
@@ -21,7 +22,11 @@ if("${CMAKE_GENERATOR}" MATCHES "Makefile|Xcode" AND
     set(SRCS main.s)
     add_custom_command(
       OUTPUT main.s
-      COMMAND ${CMAKE_C_COMPILER} ${C_FLAGS} -S ${CMAKE_CURRENT_SOURCE_DIR}/main.c -o main.s
+      COMMAND ${CMAKE_C_COMPILER} ${C_FLAGS}
+        "$<$<CONFIG:Debug>:${CMAKE_C_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDebugDLL}>"
+        "$<$<NOT:$<CONFIG:Debug>>:${CMAKE_C_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDLL}>"
+        -S ${CMAKE_CURRENT_SOURCE_DIR}/main.c -o main.s
+      COMMAND_EXPAND_LISTS
       DEPENDS main.c
       VERBATIM
       )

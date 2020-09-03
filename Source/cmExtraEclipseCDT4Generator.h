@@ -5,12 +5,12 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmExternalMakefileProjectGenerator.h"
-
 #include <iosfwd>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "cmExternalMakefileProjectGenerator.h"
 
 class cmLocalGenerator;
 class cmMakefile;
@@ -42,6 +42,9 @@ public:
 private:
   // create .project file in the source tree
   void CreateSourceProjectFile();
+
+  // create .settings/org.eclipse.core.resources.prefs
+  void CreateSettingsResourcePrefsFile();
 
   // create .project file
   void CreateProjectFile();
@@ -83,7 +86,7 @@ private:
     std::set<std::string>& emittedDirs);
 
   static void AddEnvVar(std::ostream& out, const char* envVar,
-                        cmLocalGenerator* lg);
+                        cmLocalGenerator& lg);
 
   void WriteGroups(std::vector<cmSourceGroup> const& sourceGroups,
                    std::string& linkName, cmXMLWriter& xml);

@@ -11,6 +11,7 @@
 #include "cmMessenger.h"
 #include "cmPolicies.h"
 #include "cmStateSnapshot.h"
+#include "cmStringAlgorithms.h"
 
 bool cmTargetPropertyComputer::HandleLocationPropertyPolicy(
   std::string const& tgtName, cmMessenger* messenger,
@@ -61,6 +62,7 @@ bool cmTargetPropertyComputer::WhiteListedInterfaceProperty(
     "COMPATIBLE_INTERFACE_NUMBER_MAX",
     "COMPATIBLE_INTERFACE_NUMBER_MIN",
     "COMPATIBLE_INTERFACE_STRING",
+    "DEPRECATION",
     "EXPORT_NAME",
     "EXPORT_PROPERTIES",
     "IMPORTED",

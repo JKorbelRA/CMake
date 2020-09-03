@@ -101,6 +101,7 @@ syn keyword cmakeProperty contained
             \ CLEAN_NO_CUSTOM
             \ CMAKE_CONFIGURE_DEPENDS
             \ CMAKE_CXX_KNOWN_FEATURES
+            \ CMAKE_CUDA_KNOWN_FEATURES
             \ CMAKE_C_KNOWN_FEATURES
             \ CMAKE_ROLE
             \ COMMON_LANGUAGE_RUNTIME
@@ -169,6 +170,7 @@ syn keyword cmakeProperty contained
             \ FRAMEWORK_VERSION
             \ Fortran_FORMAT
             \ Fortran_MODULE_DIRECTORY
+            \ Fortran_PREPROCESS
             \ GENERATED
             \ GENERATOR_FILE_NAME
             \ GENERATOR_IS_MULTI_CONFIG
@@ -220,6 +222,7 @@ syn keyword cmakeProperty contained
             \ JOB_POOLS
             \ JOB_POOL_COMPILE
             \ JOB_POOL_LINK
+            \ JOB_POOL_PRECOMPILE_HEADER
             \ KEEP_EXTENSION
             \ LABELS
             \ LANGUAGE
@@ -288,6 +291,7 @@ syn keyword cmakeProperty contained
             \ SKIP_AUTORCC
             \ SKIP_AUTOUIC
             \ SKIP_BUILD_RPATH
+            \ SKIP_REGULAR_EXPRESSION
             \ SKIP_RETURN_CODE
             \ SOURCES
             \ SOURCE_DIR
@@ -724,6 +728,7 @@ syn keyword cmakeVariable contained
             \ CMAKE_CUDA_COMPILER_AR
             \ CMAKE_CUDA_COMPILER_ARCHITECTURE_ID
             \ CMAKE_CUDA_COMPILER_EXTERNAL_TOOLCHAIN
+            \ CMAKE_CUDA_COMPILE_FEATURES
             \ CMAKE_CUDA_COMPILER_ID
             \ CMAKE_CUDA_COMPILER_LAUNCHER
             \ CMAKE_CUDA_COMPILER_LOADED
@@ -915,6 +920,7 @@ syn keyword cmakeVariable contained
             \ CMAKE_ECLIPSE_GENERATE_LINKED_RESOURCES
             \ CMAKE_ECLIPSE_GENERATE_SOURCE_PROJECT
             \ CMAKE_ECLIPSE_MAKE_ARGUMENTS
+            \ CMAKE_ECLIPSE_RESOURCE_ENCODING
             \ CMAKE_ECLIPSE_VERSION
             \ CMAKE_EDIT_COMMAND
             \ CMAKE_ENABLE_EXPORTS
@@ -948,6 +954,12 @@ syn keyword cmakeVariable contained
             \ CMAKE_FIND_ROOT_PATH_MODE_LIBRARY
             \ CMAKE_FIND_ROOT_PATH_MODE_PACKAGE
             \ CMAKE_FIND_ROOT_PATH_MODE_PROGRAM
+            \ CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH
+            \ CMAKE_FIND_USE_CMAKE_PATH
+            \ CMAKE_FIND_USE_CMAKE_SYSTEM_PATH
+            \ CMAKE_FIND_USE_PACKAGE_REGISTRY
+            \ CMAKE_FIND_USE_PACKAGE_ROOT_PATH
+            \ CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH
             \ CMAKE_FOLDER
             \ CMAKE_FRAMEWORK
             \ CMAKE_FRAMEWORK_PATH
@@ -1008,6 +1020,7 @@ syn keyword cmakeVariable contained
             \ CMAKE_Fortran_MODULE_DIRECTORY
             \ CMAKE_Fortran_OUTPUT_EXTENSION
             \ CMAKE_Fortran_PLATFORM_ID
+            \ CMAKE_Fortran_PREPROCESS
             \ CMAKE_Fortran_SIMULATE_ID
             \ CMAKE_Fortran_SIMULATE_VERSION
             \ CMAKE_Fortran_SIZEOF_DATA_PTR
@@ -1056,6 +1069,7 @@ syn keyword cmakeVariable contained
             \ CMAKE_JOB_POOLS
             \ CMAKE_JOB_POOL_COMPILE
             \ CMAKE_JOB_POOL_LINK
+            \ CMAKE_JOB_POOL_PRECOMPILE_HEADER
             \ CMAKE_Java
             \ CMAKE_Java_ANDROID_TOOLCHAIN_MACHINE
             \ CMAKE_Java_ANDROID_TOOLCHAIN_PREFIX
@@ -1765,6 +1779,7 @@ syn keyword cmakeKWadd_test contained
             \ NAME
             \ OFF
             \ PASS_REGULAR_EXPRESSION
+            \ SKIP_REGULAR_EXPRESSION
             \ TARGET_FILE
             \ WILL_FAIL
             \ WORKING_DIRECTORY
@@ -2853,6 +2868,11 @@ syn keyword cmakeKWtarget_link_options contained
             \ _LINKER_WRAPPER_FLAG
             \ _LINKER_WRAPPER_FLAG_SEP
 
+syn keyword cmakeKWtarget_precompile_headers contained
+            \ INTERFACE
+            \ PRIVATE
+            \ PUBLIC
+
 syn keyword cmakeKWtarget_sources contained
             \ ALIAS
             \ IMPORTED
@@ -3157,6 +3177,7 @@ syn keyword cmakeCommand
             \ target_link_directories
             \ target_link_libraries
             \ target_link_options
+            \ target_precompile_headers
             \ target_sources
             \ try_compile
             \ try_run
@@ -3313,6 +3334,7 @@ hi def link cmakeKWtarget_include_directories ModeMsg
 hi def link cmakeKWtarget_link_directories ModeMsg
 hi def link cmakeKWtarget_link_libraries ModeMsg
 hi def link cmakeKWtarget_link_options ModeMsg
+hi def link cmakeKWtarget_precompile_headers ModeMsg
 hi def link cmakeKWtarget_sources ModeMsg
 hi def link cmakeKWtry_compile ModeMsg
 hi def link cmakeKWtry_run ModeMsg

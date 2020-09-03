@@ -5,10 +5,10 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cm_jsoncpp_value.h"
-
 #include <string>
 #include <vector>
+
+#include <cm3p/json/value.h>
 
 class cmake;
 class cmGlobalGenerator;

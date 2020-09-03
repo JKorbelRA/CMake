@@ -5,10 +5,11 @@
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "cm_uv.h"
+#include <cm3p/uv.h>
 
 class cmRootWatcher;
 
@@ -30,5 +31,5 @@ public:
   std::vector<std::string> WatchedDirectories() const;
 
 private:
-  cmRootWatcher* Root;
+  std::unique_ptr<cmRootWatcher> Root;
 };

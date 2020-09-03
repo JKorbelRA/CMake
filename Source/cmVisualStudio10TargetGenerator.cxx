@@ -2,7 +2,16 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmVisualStudio10TargetGenerator.h"
 
-#include "cmAlgorithms.h"
+#include <iterator>
+#include <set>
+
+#include <cm/memory>
+#include <cm/string_view>
+#include <cm/vector>
+#include <cmext/algorithm>
+
+#include "windows.h"
+
 #include "cmComputeLinkInformation.h"
 #include "cmCustomCommand.h"
 #include "cmCustomCommandGenerator.h"
@@ -10,17 +19,14 @@
 #include "cmGeneratorExpression.h"
 #include "cmGeneratorTarget.h"
 #include "cmGlobalVisualStudio10Generator.h"
+#include "cmGlobalVisualStudioVersionedGenerator.h"
 #include "cmLinkLineDeviceComputer.h"
 #include "cmLocalVisualStudio10Generator.h"
 #include "cmMakefile.h"
 #include "cmSourceFile.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmVisualStudioGeneratorOptions.h"
-#include "windows.h"
-
-#include <iterator>
-#include <memory> // IWYU pragma: keep
-#include <set>
 
 static void ConvertToWindowsSlash(std::string& s);
 
@@ -50,7 +56,7 @@ struct cmVisualStudio10TargetGenerator::Elem
   bool HasContent = false;
   std::string Tag;
 
-  Elem(std::ostream& s, const char* tag)
+  Elem(std::ostream& s, const std::string& tag)
     : S(s)
     , Indent(0)
     , Tag(tag)
@@ -58,10 +64,10 @@ struct cmVisualStudio10TargetGenerator::Elem
     this->StartElement();
   }
   Elem(const Elem&) = delete;
-  Elem(Elem& par, const char* tag)
+  Elem(Elem& par, cm::string_view tag)
     : S(par.S)
     , Indent(par.Indent + 1)
-    , Tag(tag)
+    , Tag(std::string(tag))
   {
     par.SetHasElements();
     this->StartElement();
@@ -69,28 +75,28 @@ struct cmVisualStudio10TargetGenerator::Elem
   void SetHasElements()
   {
     if (!HasElements) {
-      this->S << ">\n";
+      this->S << ">";
       HasElements = true;
     }
   }
   std::ostream& WriteString(const char* line);
   void StartElement() { this->WriteString("<") << this->Tag; }
-  void Element(const char* tag, const std::string& val)
+  void Element(cm::string_view tag, std::string val)
   {
-    Elem(*this, tag).Content(val);
+    Elem(*this, tag).Content(std::move(val));
   }
-  Elem& Attribute(const char* an, const std::string& av)
+  Elem& Attribute(const char* an, std::string av)
   {
-    this->S << " " << an << "=\"" << cmVS10EscapeAttr(av) << "\"";
+    this->S << " " << an << "=\"" << cmVS10EscapeAttr(std::move(av)) << "\"";
     return *this;
   }
-  void Content(const std::string& val)
+  void Content(std::string val)
   {
     if (!this->HasContent) {
       this->S << ">";
       this->HasContent = true;
     }
-    this->S << cmVS10EscapeXML(val);
+    this->S << cmVS10EscapeXML(std::move(val));
   }
   ~Elem()
   {
@@ -101,26 +107,21 @@ struct cmVisualStudio10TargetGenerator::Elem
 
     if (HasElements) {
       this->WriteString("</") << this->Tag << ">";
-      if (this->Indent > 0) {
-        this->S << '\n';
-      } else {
-        // special case: don't print EOL at EOF
-      }
     } else if (HasContent) {
-      this->S << "</" << this->Tag << ">\n";
+      this->S << "</" << this->Tag << ">";
     } else {
-      this->S << " />\n";
+      this->S << " />";
     }
   }
 
-  void WritePlatformConfigTag(const char* tag, const std::string& cond,
+  void WritePlatformConfigTag(const std::string& tag, const std::string& cond,
                               const std::string& content);
 };
 
 class cmVS10GeneratorOptions : public cmVisualStudioGeneratorOptions
 {
 public:
-  typedef cmVisualStudio10TargetGenerator::Elem Elem;
+  using Elem = cmVisualStudio10TargetGenerator::Elem;
   cmVS10GeneratorOptions(cmLocalVisualStudioGenerator* lg, Tool tool,
                          cmVS7FlagTable const* table,
                          cmVisualStudio10TargetGenerator* g = nullptr)
@@ -129,8 +130,8 @@ public:
   {
   }
 
-  void OutputFlag(std::ostream& /*fout*/, int /*indent*/, const char* tag,
-                  const std::string& content) override
+  void OutputFlag(std::ostream& /*fout*/, int /*indent*/,
+                  const std::string& tag, const std::string& content) override
   {
     if (!this->GetConfiguration().empty()) {
       // if there are configuration specific flags, then
@@ -248,6 +249,7 @@ cmVisualStudio10TargetGenerator::cmVisualStudio10TargetGenerator(
     this->LocalGenerator->GetTargetDirectory(this->GeneratorTarget);
   this->InSourceBuild = (this->Makefile->GetCurrentSourceDirectory() ==
                          this->Makefile->GetCurrentBinaryDirectory());
+  this->ClassifyAllConfigSources();
 }
 
 cmVisualStudio10TargetGenerator::~cmVisualStudio10TargetGenerator()
@@ -272,7 +274,7 @@ std::string cmVisualStudio10TargetGenerator::CalcCondition(
 }
 
 void cmVisualStudio10TargetGenerator::Elem::WritePlatformConfigTag(
-  const char* tag, const std::string& cond, const std::string& content)
+  const std::string& tag, const std::string& cond, const std::string& content)
 {
   Elem(*this, tag).Attribute("Condition", cond).Content(content);
 }
@@ -280,6 +282,7 @@ void cmVisualStudio10TargetGenerator::Elem::WritePlatformConfigTag(
 std::ostream& cmVisualStudio10TargetGenerator::Elem::WriteString(
   const char* line)
 {
+  this->S << '\n';
   this->S.fill(' ');
   this->S.width(this->Indent * 2);
   // write an empty string to get the fill level indent to print
@@ -332,9 +335,9 @@ void cmVisualStudio10TargetGenerator::Generate()
   }
   // Tell the global generator the name of the project file
   this->GeneratorTarget->Target->SetProperty("GENERATOR_FILE_NAME",
-                                             this->Name.c_str());
+                                             this->Name);
   this->GeneratorTarget->Target->SetProperty("GENERATOR_FILE_NAME_EXT",
-                                             ProjectFileExtension.c_str());
+                                             ProjectFileExtension);
   this->DotNetHintReferences.clear();
   this->AdditionalUsingDirectories.clear();
   if (this->GeneratorTarget->GetType() <= cmStateEnums::OBJECT_LIBRARY) {
@@ -363,10 +366,9 @@ void cmVisualStudio10TargetGenerator::Generate()
       return;
     }
   }
-  std::string path = this->LocalGenerator->GetCurrentBinaryDirectory();
-  path += "/";
-  path += this->Name;
-  path += ProjectFileExtension;
+  std::string path =
+    cmStrCat(this->LocalGenerator->GetCurrentBinaryDirectory(), '/',
+             this->Name, ProjectFileExtension);
   cmGeneratedFileStream BuildFileStream(path);
   const std::string PathToProjectFile = path;
   BuildFileStream.SetCopyIfDifferent(true);
@@ -375,8 +377,7 @@ void cmVisualStudio10TargetGenerator::Generate()
   char magic[] = { char(0xEF), char(0xBB), char(0xBF) };
   BuildFileStream.write(magic, 3);
   BuildFileStream << "<?xml version=\"1.0\" encoding=\""
-                  << this->GlobalGenerator->Encoding() << "\"?>"
-                  << "\n";
+                  << this->GlobalGenerator->Encoding() << "\"?>";
   {
     Elem e0(BuildFileStream, "Project");
     e0.Attribute("DefaultTargets", "Build");
@@ -432,32 +433,32 @@ void cmVisualStudio10TargetGenerator::Generate()
         this->VerifyNecessaryFiles();
       }
 
-      const char* vsProjectTypes =
+      cmProp vsProjectTypes =
         this->GeneratorTarget->GetProperty("VS_GLOBAL_PROJECT_TYPES");
       if (vsProjectTypes) {
         const char* tagName = "ProjectTypes";
         if (this->ProjectType == csproj) {
           tagName = "ProjectTypeGuids";
         }
-        e1.Element(tagName, vsProjectTypes);
+        e1.Element(tagName, *vsProjectTypes);
       }
 
-      const char* vsProjectName =
+      cmProp vsProjectName =
         this->GeneratorTarget->GetProperty("VS_SCC_PROJECTNAME");
-      const char* vsLocalPath =
+      cmProp vsLocalPath =
         this->GeneratorTarget->GetProperty("VS_SCC_LOCALPATH");
-      const char* vsProvider =
+      cmProp vsProvider =
         this->GeneratorTarget->GetProperty("VS_SCC_PROVIDER");
 
       if (vsProjectName && vsLocalPath && vsProvider) {
-        e1.Element("SccProjectName", vsProjectName);
-        e1.Element("SccLocalPath", vsLocalPath);
-        e1.Element("SccProvider", vsProvider);
+        e1.Element("SccProjectName", *vsProjectName);
+        e1.Element("SccLocalPath", *vsLocalPath);
+        e1.Element("SccProvider", *vsProvider);
 
-        const char* vsAuxPath =
+        cmProp vsAuxPath =
           this->GeneratorTarget->GetProperty("VS_SCC_AUXPATH");
         if (vsAuxPath) {
-          e1.Element("SccAuxPath", vsAuxPath);
+          e1.Element("SccAuxPath", *vsAuxPath);
         }
       }
 
@@ -465,45 +466,54 @@ void cmVisualStudio10TargetGenerator::Generate()
         e1.Element("WinMDAssembly", "true");
       }
 
-      const char* vsGlobalKeyword =
+      cmProp vsGlobalKeyword =
         this->GeneratorTarget->GetProperty("VS_GLOBAL_KEYWORD");
       if (!vsGlobalKeyword) {
         e1.Element("Keyword", "Win32Proj");
       } else {
-        e1.Element("Keyword", vsGlobalKeyword);
+        e1.Element("Keyword", *vsGlobalKeyword);
       }
 
-      const char* vsGlobalRootNamespace =
+      cmProp vsGlobalRootNamespace =
         this->GeneratorTarget->GetProperty("VS_GLOBAL_ROOTNAMESPACE");
       if (vsGlobalRootNamespace) {
-        e1.Element("RootNamespace", vsGlobalRootNamespace);
+        e1.Element("RootNamespace", *vsGlobalRootNamespace);
       }
 
       e1.Element("Platform", this->Platform);
-      const char* projLabel =
-        this->GeneratorTarget->GetProperty("PROJECT_LABEL");
+      cmProp projLabel = this->GeneratorTarget->GetProperty("PROJECT_LABEL");
       if (!projLabel) {
-        projLabel = this->Name.c_str();
+        projLabel = &this->Name;
       }
-      e1.Element("ProjectName", projLabel);
+      e1.Element("ProjectName", *projLabel);
       {
-        // TODO: add deprecation warning for VS_* property?
-        const char* targetFrameworkVersion =
-          this->GeneratorTarget->GetProperty(
+        cmProp targetFramework =
+          this->GeneratorTarget->GetProperty("DOTNET_TARGET_FRAMEWORK");
+        if (targetFramework) {
+          if (std::strchr(targetFramework->c_str(), ';') != nullptr) {
+            e1.Element("TargetFrameworks", *targetFramework);
+          } else {
+            e1.Element("TargetFramework", *targetFramework);
+          }
+        } else {
+          // TODO: add deprecation warning for VS_* property?
+          cmProp p = this->GeneratorTarget->GetProperty(
             "VS_DOTNET_TARGET_FRAMEWORK_VERSION");
-        if (!targetFrameworkVersion) {
-          targetFrameworkVersion = this->GeneratorTarget->GetProperty(
-            "DOTNET_TARGET_FRAMEWORK_VERSION");
-        }
-        if (!targetFrameworkVersion && this->ProjectType == csproj &&
-            this->GlobalGenerator->TargetsWindowsCE() &&
-            this->GlobalGenerator->GetVersion() ==
-              cmGlobalVisualStudioGenerator::VS12) {
-          // VS12 .NETCF default to .NET framework 3.9
-          targetFrameworkVersion = "v3.9";
-        }
-        if (targetFrameworkVersion) {
-          e1.Element("TargetFrameworkVersion", targetFrameworkVersion);
+          if (!p) {
+            p = this->GeneratorTarget->GetProperty(
+              "DOTNET_TARGET_FRAMEWORK_VERSION");
+          }
+          const char* targetFrameworkVersion = p ? p->c_str() : nullptr;
+          if (!targetFrameworkVersion && this->ProjectType == csproj &&
+              this->GlobalGenerator->TargetsWindowsCE() &&
+              this->GlobalGenerator->GetVersion() ==
+                cmGlobalVisualStudioGenerator::VS12) {
+            // VS12 .NETCF default to .NET framework 3.9
+            targetFrameworkVersion = "v3.9";
+          }
+          if (targetFrameworkVersion) {
+            e1.Element("TargetFrameworkVersion", targetFrameworkVersion);
+          }
         }
         if (this->ProjectType == vcxproj &&
             this->GlobalGenerator->TargetsWindowsCE()) {
@@ -512,18 +522,22 @@ void cmVisualStudio10TargetGenerator::Generate()
         }
         if (this->ProjectType == csproj &&
             this->GlobalGenerator->TargetsWindowsCE()) {
-          const char* targetFrameworkId = this->GeneratorTarget->GetProperty(
+          cmProp targetFrameworkId = this->GeneratorTarget->GetProperty(
             "VS_TARGET_FRAMEWORK_IDENTIFIER");
-          if (!targetFrameworkId) {
-            targetFrameworkId = "WindowsEmbeddedCompact";
-          }
-          e1.Element("TargetFrameworkIdentifier", targetFrameworkId);
-          const char* targetFrameworkVer = this->GeneratorTarget->GetProperty(
+          e1.Element("TargetFrameworkIdentifier",
+                     targetFrameworkId ? *targetFrameworkId
+                                       : "WindowsEmbeddedCompact");
+          cmProp targetFrameworkVer = this->GeneratorTarget->GetProperty(
             "VS_TARGET_FRAMEWORKS_TARGET_VERSION");
-          if (!targetFrameworkVer) {
-            targetFrameworkVer = "v8.0";
-          }
-          e1.Element("TargetFrameworkTargetsVersion", targetFrameworkVer);
+          e1.Element("TargetFrameworkTargetsVersion",
+                     targetFrameworkVer ? *targetFrameworkVer : "v8.0");
+        }
+        if (!this->GlobalGenerator->GetPlatformToolsetCudaCustomDirString()
+               .empty()) {
+          e1.Element(
+            "CudaToolkitCustomDir",
+            this->GlobalGenerator->GetPlatformToolsetCudaCustomDirString() +
+              "nvcc");
         }
       }
 
@@ -535,21 +549,27 @@ void cmVisualStudio10TargetGenerator::Generate()
         e1.Element("VCProjectUpgraderObjectName", "NoUpgrade");
       }
 
+      if (const char* vcTargetsPath =
+            this->GlobalGenerator->GetCustomVCTargetsPath()) {
+        e1.Element("VCTargetsPath", vcTargetsPath);
+      }
+
       std::vector<std::string> keys = this->GeneratorTarget->GetPropertyKeys();
       for (std::string const& keyIt : keys) {
-        static const char* prefix = "VS_GLOBAL_";
-        if (keyIt.find(prefix) != 0)
+        static const cm::string_view prefix = "VS_GLOBAL_";
+        if (!cmHasPrefix(keyIt, prefix))
           continue;
-        std::string globalKey = keyIt.substr(strlen(prefix));
+        cm::string_view globalKey =
+          cm::string_view(keyIt).substr(prefix.length());
         // Skip invalid or separately-handled properties.
         if (globalKey.empty() || globalKey == "PROJECT_TYPES" ||
             globalKey == "ROOTNAMESPACE" || globalKey == "KEYWORD") {
           continue;
         }
-        const char* value = this->GeneratorTarget->GetProperty(keyIt);
+        cmProp value = this->GeneratorTarget->GetProperty(keyIt);
         if (!value)
           continue;
-        e1.Element(globalKey.c_str(), value);
+        e1.Element(globalKey, *value);
       }
 
       if (this->Managed) {
@@ -611,10 +631,17 @@ void cmVisualStudio10TargetGenerator::Generate()
       e1.SetHasElements();
 
       if (this->GlobalGenerator->IsCudaEnabled()) {
+        auto customDir =
+          this->GlobalGenerator->GetPlatformToolsetCudaCustomDirString();
+        std::string cudaPath = customDir.empty()
+          ? "$(VCTargetsPath)\\BuildCustomizations\\"
+          : customDir +
+            "CUDAVisualStudioIntegration\\extras\\"
+            "visual_studio_integration\\MSBuildExtensions\\";
         Elem(e1, "Import")
           .Attribute("Project",
-                     "$(VCTargetsPath)\\BuildCustomizations\\CUDA " +
-                       this->GlobalGenerator->GetPlatformToolsetCudaString() +
+                     std::move(cudaPath) + "CUDA " +
+                       this->GlobalGenerator->GetPlatformToolsetCuda() +
                        ".props");
       }
       if (this->GlobalGenerator->IsMasmEnabled()) {
@@ -627,9 +654,8 @@ void cmVisualStudio10TargetGenerator::Generate()
         std::string propsTemplate =
           GetCMakeFilePath("Templates/MSBuild/nasm.props.in");
 
-        std::string propsLocal;
-        propsLocal += this->DefaultArtifactDir;
-        propsLocal += "\\nasm.props";
+        std::string propsLocal =
+          cmStrCat(this->DefaultArtifactDir, "\\nasm.props");
         ConvertToWindowsSlash(propsLocal);
         this->Makefile->ConfigureFile(propsTemplate, propsLocal, false, true,
                                       true);
@@ -648,9 +674,8 @@ void cmVisualStudio10TargetGenerator::Generate()
           props = VS10_CSharp_USER_PROPS;
           break;
       }
-      if (const char* p =
-            this->GeneratorTarget->GetProperty("VS_USER_PROPS")) {
-        props = p;
+      if (cmProp p = this->GeneratorTarget->GetProperty("VS_USER_PROPS")) {
+        props = *p;
       }
       if (!props.empty()) {
         ConvertToWindowsSlash(props);
@@ -662,6 +687,8 @@ void cmVisualStudio10TargetGenerator::Generate()
 
       this->WritePlatformExtensions(e1);
     }
+
+    this->WriteDotNetDocumentationFile(e0);
     Elem(e0, "PropertyGroup").Attribute("Label", "UserMacros");
     this->WriteWinRTPackageCertificateKeyFile(e0);
     this->WritePathAndIncrementalLinkOptions(e0);
@@ -697,10 +724,17 @@ void cmVisualStudio10TargetGenerator::Generate()
       e1.SetHasElements();
       this->WriteTargetsFileReferences(e1);
       if (this->GlobalGenerator->IsCudaEnabled()) {
+        auto customDir =
+          this->GlobalGenerator->GetPlatformToolsetCudaCustomDirString();
+        std::string cudaPath = customDir.empty()
+          ? "$(VCTargetsPath)\\BuildCustomizations\\"
+          : customDir +
+            "CUDAVisualStudioIntegration\\extras\\"
+            "visual_studio_integration\\MSBuildExtensions\\";
         Elem(e1, "Import")
           .Attribute("Project",
-                     "$(VCTargetsPath)\\BuildCustomizations\\CUDA " +
-                       this->GlobalGenerator->GetPlatformToolsetCudaString() +
+                     std::move(cudaPath) + "CUDA " +
+                       this->GlobalGenerator->GetPlatformToolsetCuda() +
                        ".targets");
       }
       if (this->GlobalGenerator->IsMasmEnabled()) {
@@ -747,50 +781,41 @@ void cmVisualStudio10TargetGenerator::Generate()
 void cmVisualStudio10TargetGenerator::WritePackageReferences(Elem& e0)
 {
   std::vector<std::string> packageReferences;
-  if (const char* vsPackageReferences =
+  if (cmProp vsPackageReferences =
         this->GeneratorTarget->GetProperty("VS_PACKAGE_REFERENCES")) {
-    cmSystemTools::ExpandListArgument(vsPackageReferences, packageReferences);
+    cmExpandList(*vsPackageReferences, packageReferences);
   }
   if (!packageReferences.empty()) {
     Elem e1(e0, "ItemGroup");
     for (std::string const& ri : packageReferences) {
       size_t versionIndex = ri.find_last_of('_');
       if (versionIndex != std::string::npos) {
-        WritePackageReference(e1, ri.substr(0, versionIndex),
-                              ri.substr(versionIndex + 1));
+        Elem e2(e1, "PackageReference");
+        e2.Attribute("Include", ri.substr(0, versionIndex));
+        e2.Attribute("Version", ri.substr(versionIndex + 1));
       }
     }
   }
 }
 
-void cmVisualStudio10TargetGenerator::WritePackageReference(
-  Elem& e1, std::string const& ref, std::string const& version)
-{
-  Elem e2(e1, "PackageReference");
-  e2.Attribute("Include", ref);
-  e2.Attribute("Version", version);
-}
-
 void cmVisualStudio10TargetGenerator::WriteDotNetReferences(Elem& e0)
 {
   std::vector<std::string> references;
-  if (const char* vsDotNetReferences =
+  if (cmProp vsDotNetReferences =
         this->GeneratorTarget->GetProperty("VS_DOTNET_REFERENCES")) {
-    cmSystemTools::ExpandListArgument(vsDotNetReferences, references);
+    cmExpandList(*vsDotNetReferences, references);
   }
   cmPropertyMap const& props = this->GeneratorTarget->Target->GetProperties();
   for (auto const& i : props.GetList()) {
-    if (i.first.find("VS_DOTNET_REFERENCE_") == 0) {
-      std::string name = i.first.substr(20);
-      if (!name.empty()) {
-        std::string path = i.second;
-        if (!cmsys::SystemTools::FileIsFullPath(path)) {
-          path = this->Makefile->GetCurrentSourceDirectory() + "/" + path;
-        }
-        ConvertToWindowsSlash(path);
-        this->DotNetHintReferences[""].push_back(
-          DotNetHintReference(name, path));
+    static const cm::string_view vsDnRef = "VS_DOTNET_REFERENCE_";
+    if (cmHasPrefix(i.first, vsDnRef)) {
+      std::string path = i.second;
+      if (!cmsys::SystemTools::FileIsFullPath(path)) {
+        path = this->Makefile->GetCurrentSourceDirectory() + "/" + path;
       }
+      ConvertToWindowsSlash(path);
+      this->DotNetHintReferences[""].emplace_back(
+        DotNetHintReference(i.first.substr(vsDnRef.length()), path));
     }
   }
   if (!references.empty() || !this->DotNetHintReferences.empty()) {
@@ -803,7 +828,7 @@ void cmVisualStudio10TargetGenerator::WriteDotNetReferences(Elem& e0)
           cmsys::SystemTools::GetFilenameWithoutLastExtension(ri);
         std::string path = ri;
         ConvertToWindowsSlash(path);
-        this->DotNetHintReferences[""].push_back(
+        this->DotNetHintReferences[""].emplace_back(
           DotNetHintReference(name, path));
       } else {
         this->WriteDotNetReference(e1, ri, "", "");
@@ -835,9 +860,9 @@ void cmVisualStudio10TargetGenerator::WriteDotNetReference(
   e2.Element("ReferenceOutputAssembly", "true");
   if (!hint.empty()) {
     const char* privateReference = "True";
-    if (const char* value = this->GeneratorTarget->GetProperty(
+    if (cmProp value = this->GeneratorTarget->GetProperty(
           "VS_DOTNET_REFERENCES_COPY_LOCAL")) {
-      if (cmSystemTools::IsOff(value)) {
+      if (cmIsOff(*value)) {
         privateReference = "False";
       }
     }
@@ -849,11 +874,10 @@ void cmVisualStudio10TargetGenerator::WriteDotNetReference(
 
 void cmVisualStudio10TargetGenerator::WriteImports(Elem& e0)
 {
-  const char* imports =
+  cmProp imports =
     this->GeneratorTarget->Target->GetProperty("VS_PROJECT_IMPORT");
   if (imports) {
-    std::vector<std::string> argsSplit;
-    cmSystemTools::ExpandListArgument(std::string(imports), argsSplit, false);
+    std::vector<std::string> argsSplit = cmExpandedList(*imports, false);
     for (auto& path : argsSplit) {
       if (!cmsys::SystemTools::FileIsFullPath(path)) {
         path = this->Makefile->GetCurrentSourceDirectory() + "/" + path;
@@ -872,32 +896,38 @@ void cmVisualStudio10TargetGenerator::WriteDotNetReferenceCustomTags(
   static const std::string refpropPrefix = "VS_DOTNET_REFERENCEPROP_";
   static const std::string refpropInfix = "_TAG_";
   const std::string refPropFullPrefix = refpropPrefix + ref + refpropInfix;
-  typedef std::map<std::string, std::string> CustomTags;
+  using CustomTags = std::map<std::string, std::string>;
   CustomTags tags;
   cmPropertyMap const& props = this->GeneratorTarget->Target->GetProperties();
   for (const auto& i : props.GetList()) {
-    if (i.first.find(refPropFullPrefix) == 0) {
-      std::string refTag = i.first.substr(refPropFullPrefix.length());
-      std::string refVal = i.second;
-      if (!refTag.empty() && !refVal.empty()) {
-        tags[refTag] = refVal;
-      }
+    if (cmHasPrefix(i.first, refPropFullPrefix) && !i.second.empty()) {
+      tags[i.first.substr(refPropFullPrefix.length())] = i.second;
     }
   }
   for (auto const& tag : tags) {
-    e2.Element(tag.first.c_str(), tag.second);
+    e2.Element(tag.first, tag.second);
+  }
+}
+
+void cmVisualStudio10TargetGenerator::WriteDotNetDocumentationFile(Elem& e0)
+{
+  std::string const& documentationFile =
+    this->GeneratorTarget->GetSafeProperty("VS_DOTNET_DOCUMENTATION_FILE");
+
+  if (this->ProjectType == csproj && !documentationFile.empty()) {
+    Elem e1(e0, "PropertyGroup");
+    Elem e2(e1, "DocumentationFile");
+    e2.Content(documentationFile);
   }
 }
 
 void cmVisualStudio10TargetGenerator::WriteEmbeddedResourceGroup(Elem& e0)
 {
-  std::vector<cmSourceFile const*> resxObjs;
-  this->GeneratorTarget->GetResxSources(resxObjs, "");
-  if (!resxObjs.empty()) {
+  if (!this->ResxObjs.empty()) {
     Elem e1(e0, "ItemGroup");
     std::string srcDir = this->Makefile->GetCurrentSourceDirectory();
     ConvertToWindowsSlash(srcDir);
-    for (cmSourceFile const* oi : resxObjs) {
+    for (cmSourceFile const* oi : this->ResxObjs) {
       std::string obj = oi->GetFullPath();
       ConvertToWindowsSlash(obj);
       bool useRelativePath = false;
@@ -906,7 +936,7 @@ void cmVisualStudio10TargetGenerator::WriteEmbeddedResourceGroup(Elem& e0)
         // subdirectory
         // of the .csproj file, we have to use relative pathnames, otherwise
         // visual studio does not show the file in the IDE. Sorry.
-        if (obj.find(srcDir) == 0) {
+        if (cmHasPrefix(obj, srcDir)) {
           obj = this->ConvertPath(obj, true);
           ConvertToWindowsSlash(obj);
           useRelativePath = true;
@@ -935,17 +965,11 @@ void cmVisualStudio10TargetGenerator::WriteEmbeddedResourceGroup(Elem& e0)
         // If the resource was NOT added using a relative path (which should
         // be the default), we have to provide a link here
         if (!useRelativePath) {
-          std::string link;
-          if (obj.find(srcDir) == 0) {
-            link = obj.substr(srcDir.length() + 1);
-          } else if (obj.find(binDir) == 0) {
-            link = obj.substr(binDir.length() + 1);
-          } else {
+          std::string link = this->GetCSharpSourceLink(oi);
+          if (link.empty()) {
             link = cmsys::SystemTools::GetFilenameName(obj);
           }
-          if (!link.empty()) {
-            e2.Element("Link", link);
-          }
+          e2.Element("Link", link);
         }
         // Determine if this is a generated resource from a .Designer.cs file
         std::string designerResource =
@@ -954,15 +978,15 @@ void cmVisualStudio10TargetGenerator::WriteEmbeddedResourceGroup(Elem& e0)
           ".Designer.cs";
         if (cmsys::SystemTools::FileExists(designerResource)) {
           std::string generator = "PublicResXFileCodeGenerator";
-          if (const char* g = oi->GetProperty("VS_RESOURCE_GENERATOR")) {
-            generator = g;
+          if (cmProp g = oi->GetProperty("VS_RESOURCE_GENERATOR")) {
+            generator = *g;
           }
           if (!generator.empty()) {
             e2.Element("Generator", generator);
-            if (designerResource.find(srcDir) == 0) {
-              designerResource = designerResource.substr(srcDir.length() + 1);
-            } else if (designerResource.find(binDir) == 0) {
-              designerResource = designerResource.substr(binDir.length() + 1);
+            if (cmHasPrefix(designerResource, srcDir)) {
+              designerResource.erase(0, srcDir.length());
+            } else if (cmHasPrefix(designerResource, binDir)) {
+              designerResource.erase(0, binDir.length());
             } else {
               designerResource =
                 cmsys::SystemTools::GetFilenameName(designerResource);
@@ -973,13 +997,14 @@ void cmVisualStudio10TargetGenerator::WriteEmbeddedResourceGroup(Elem& e0)
         }
         const cmPropertyMap& props = oi->GetProperties();
         for (const std::string& p : props.GetKeys()) {
-          static const std::string propNamePrefix = "VS_CSHARP_";
-          if (p.find(propNamePrefix) == 0) {
-            std::string tagName = p.substr(propNamePrefix.length());
+          static const cm::string_view propNamePrefix = "VS_CSHARP_";
+          if (cmHasPrefix(p, propNamePrefix)) {
+            cm::string_view tagName =
+              cm::string_view(p).substr(propNamePrefix.length());
             if (!tagName.empty()) {
-              std::string value = props.GetPropertyValue(p);
+              const std::string& value = *props.GetPropertyValue(p);
               if (!value.empty()) {
-                e2.Element(tagName.c_str(), value);
+                e2.Element(tagName, value);
               }
             }
           }
@@ -991,16 +1016,14 @@ void cmVisualStudio10TargetGenerator::WriteEmbeddedResourceGroup(Elem& e0)
 
 void cmVisualStudio10TargetGenerator::WriteXamlFilesGroup(Elem& e0)
 {
-  std::vector<cmSourceFile const*> xamlObjs;
-  this->GeneratorTarget->GetXamlSources(xamlObjs, "");
-  if (!xamlObjs.empty()) {
+  if (!this->XamlObjs.empty()) {
     Elem e1(e0, "ItemGroup");
-    for (cmSourceFile const* oi : xamlObjs) {
+    for (cmSourceFile const* oi : this->XamlObjs) {
       std::string obj = oi->GetFullPath();
-      const char* xamlType;
-      const char* xamlTypeProperty = oi->GetProperty("VS_XAML_TYPE");
+      std::string xamlType;
+      cmProp xamlTypeProperty = oi->GetProperty("VS_XAML_TYPE");
       if (xamlTypeProperty) {
-        xamlType = xamlTypeProperty;
+        xamlType = *xamlTypeProperty;
       } else {
         xamlType = "Page";
       }
@@ -1008,25 +1031,6 @@ void cmVisualStudio10TargetGenerator::WriteXamlFilesGroup(Elem& e0)
       Elem e2(e1, xamlType);
       this->WriteSource(e2, oi);
       e2.SetHasElements();
-      if (this->ProjectType == csproj && !this->InSourceBuild) {
-        // add <Link> tag to written XAML source if necessary
-        const std::string& srcDir =
-          this->Makefile->GetCurrentSourceDirectory();
-        const std::string& binDir =
-          this->Makefile->GetCurrentBinaryDirectory();
-        std::string link;
-        if (obj.find(srcDir) == 0) {
-          link = obj.substr(srcDir.length() + 1);
-        } else if (obj.find(binDir) == 0) {
-          link = obj.substr(binDir.length() + 1);
-        } else {
-          link = cmsys::SystemTools::GetFilenameName(obj);
-        }
-        if (!link.empty()) {
-          ConvertToWindowsSlash(link);
-          e2.Element("Link", link);
-        }
-      }
       e2.Element("SubType", "Designer");
     }
   }
@@ -1071,9 +1075,9 @@ void cmVisualStudio10TargetGenerator::WriteTargetsFileReferences(Elem& e1)
 void cmVisualStudio10TargetGenerator::WriteWinRTReferences(Elem& e0)
 {
   std::vector<std::string> references;
-  if (const char* vsWinRTReferences =
+  if (cmProp vsWinRTReferences =
         this->GeneratorTarget->GetProperty("VS_WINRT_REFERENCES")) {
-    cmSystemTools::ExpandListArgument(vsWinRTReferences, references);
+    cmExpandList(*vsWinRTReferences, references);
   }
 
   if (this->GlobalGenerator->TargetsWindowsPhone() &&
@@ -1114,9 +1118,10 @@ void cmVisualStudio10TargetGenerator::WriteProjectConfigurationValues(Elem& e0)
 
     if (this->ProjectType != csproj) {
       std::string configType;
-      if (const char* vsConfigurationType =
+      if (cmProp vsConfigurationType =
             this->GeneratorTarget->GetProperty("VS_CONFIGURATION_TYPE")) {
-        configType = vsConfigurationType;
+        configType = cmGeneratorExpression::Evaluate(*vsConfigurationType,
+                                                     this->LocalGenerator, c);
       } else {
         switch (this->GeneratorTarget->GetType()) {
           case cmStateEnums::SHARED_LIBRARY:
@@ -1171,9 +1176,9 @@ void cmVisualStudio10TargetGenerator::WriteCEDebugProjectConfigurationValues(
   if (!this->GlobalGenerator->TargetsWindowsCE()) {
     return;
   }
-  const char* additionalFiles =
+  cmProp additionalFiles =
     this->GeneratorTarget->GetProperty("DEPLOYMENT_ADDITIONAL_FILES");
-  const char* remoteDirectory =
+  cmProp remoteDirectory =
     this->GeneratorTarget->GetProperty("DEPLOYMENT_REMOTE_DIRECTORY");
   if (!(additionalFiles || remoteDirectory)) {
     return;
@@ -1183,10 +1188,10 @@ void cmVisualStudio10TargetGenerator::WriteCEDebugProjectConfigurationValues(
     e1.Attribute("Condition", this->CalcCondition(c));
 
     if (remoteDirectory) {
-      e1.Element("RemoteDirectory", remoteDirectory);
+      e1.Element("RemoteDirectory", *remoteDirectory);
     }
     if (additionalFiles) {
-      e1.Element("CEAdditionalFiles", additionalFiles);
+      e1.Element("CEAdditionalFiles", *additionalFiles);
     }
   }
 }
@@ -1218,13 +1223,16 @@ void cmVisualStudio10TargetGenerator::WriteMSToolConfigurationValues(
       this->GeneratorTarget->GetPropertyAsBool("VS_WINRT_EXTENSIONS")) {
     e1.Element("CharacterSet", "Unicode");
   } else if (this->GeneratorTarget->GetType() <=
-               cmStateEnums::MODULE_LIBRARY &&
+               cmStateEnums::OBJECT_LIBRARY &&
              this->ClOptions[config]->UsingSBCS()) {
     e1.Element("CharacterSet", "NotSet");
   } else {
     e1.Element("CharacterSet", "MultiByte");
   }
-  if (const char* toolset = gg->GetPlatformToolset()) {
+  if (cmProp projectToolsetOverride =
+        this->GeneratorTarget->GetProperty("VS_PLATFORM_TOOLSET")) {
+    e1.Element("PlatformToolset", *projectToolsetOverride);
+  } else if (const char* toolset = gg->GetPlatformToolset()) {
     e1.Element("PlatformToolset", toolset);
   }
   if (this->GeneratorTarget->GetPropertyAsBool("VS_WINRT_COMPONENT") ||
@@ -1234,8 +1242,11 @@ void cmVisualStudio10TargetGenerator::WriteMSToolConfigurationValues(
   if (this->IPOEnabledConfigurations.count(config) > 0) {
     e1.Element("WholeProgramOptimization", "true");
   }
-  if (this->SpectreMitigationConfigurations.count(config) > 0) {
-    e1.Element("SpectreMitigation", "Spectre");
+  {
+    auto s = this->SpectreMitigation.find(config);
+    if (s != this->SpectreMitigation.end()) {
+      e1.Element("SpectreMitigation", s->second);
+    }
   }
 }
 
@@ -1264,16 +1275,19 @@ void cmVisualStudio10TargetGenerator::WriteMSToolConfigurationValuesManaged(
     o.RemoveFlag("Platform");
   }
 
-  if (const char* toolset = gg->GetPlatformToolset()) {
+  if (cmProp projectToolsetOverride =
+        this->GeneratorTarget->GetProperty("VS_PLATFORM_TOOLSET")) {
+    e1.Element("PlatformToolset", *projectToolsetOverride);
+  } else if (const char* toolset = gg->GetPlatformToolset()) {
     e1.Element("PlatformToolset", toolset);
   }
 
-  std::string postfixName = cmSystemTools::UpperCase(config);
-  postfixName += "_POSTFIX";
+  std::string postfixName =
+    cmStrCat(cmSystemTools::UpperCase(config), "_POSTFIX");
   std::string assemblyName = this->GeneratorTarget->GetOutputName(
     config, cmStateEnums::RuntimeBinaryArtifact);
-  if (const char* postfix = this->GeneratorTarget->GetProperty(postfixName)) {
-    assemblyName += postfix;
+  if (cmProp postfix = this->GeneratorTarget->GetProperty(postfixName)) {
+    assemblyName += *postfix;
   }
   e1.Element("AssemblyName", assemblyName);
 
@@ -1293,43 +1307,47 @@ void cmVisualStudio10TargetGenerator::WriteNsightTegraConfigurationValues(
   cmGlobalVisualStudio10Generator* gg = this->GlobalGenerator;
   const char* toolset = gg->GetPlatformToolset();
   e1.Element("NdkToolchainVersion", toolset ? toolset : "Default");
-  if (const char* minApi =
-        this->GeneratorTarget->GetProperty("ANDROID_API_MIN")) {
-    e1.Element("AndroidMinAPI", "android-" + std::string(minApi));
+  if (cmProp minApi = this->GeneratorTarget->GetProperty("ANDROID_API_MIN")) {
+    e1.Element("AndroidMinAPI", "android-" + *minApi);
   }
-  if (const char* api = this->GeneratorTarget->GetProperty("ANDROID_API")) {
-    e1.Element("AndroidTargetAPI", "android-" + std::string(api));
-  }
-
-  if (const char* cpuArch =
-        this->GeneratorTarget->GetProperty("ANDROID_ARCH")) {
-    e1.Element("AndroidArch", cpuArch);
+  if (cmProp api = this->GeneratorTarget->GetProperty("ANDROID_API")) {
+    e1.Element("AndroidTargetAPI", "android-" + *api);
   }
 
-  if (const char* stlType =
+  if (cmProp cpuArch = this->GeneratorTarget->GetProperty("ANDROID_ARCH")) {
+    e1.Element("AndroidArch", *cpuArch);
+  }
+
+  if (cmProp stlType =
         this->GeneratorTarget->GetProperty("ANDROID_STL_TYPE")) {
-    e1.Element("AndroidStlType", stlType);
+    e1.Element("AndroidStlType", *stlType);
   }
 }
 
 void cmVisualStudio10TargetGenerator::WriteCustomCommands(Elem& e0)
 {
   this->CSharpCustomCommandNames.clear();
-  std::vector<cmSourceFile const*> customCommands;
-  this->GeneratorTarget->GetCustomCommands(customCommands, "");
-  for (cmSourceFile const* si : customCommands) {
-    this->WriteCustomCommand(e0, si);
+
+  cmSourceFile const* srcCMakeLists =
+    this->LocalGenerator->CreateVCProjBuildRule();
+
+  for (cmGeneratorTarget::AllConfigSource const& si :
+       this->GeneratorTarget->GetAllConfigSources()) {
+    if (si.Source == srcCMakeLists) {
+      // Skip explicit reference to CMakeLists.txt source.
+      continue;
+    }
+    this->WriteCustomCommand(e0, si.Source);
   }
 
   // Add CMakeLists.txt file with rule to re-run CMake for user convenience.
   if (this->GeneratorTarget->GetType() != cmStateEnums::GLOBAL_TARGET &&
       this->GeneratorTarget->GetName() != CMAKE_CHECK_BUILD_SYSTEM_TARGET) {
-    if (cmSourceFile const* sf =
-          this->LocalGenerator->CreateVCProjBuildRule()) {
+    if (srcCMakeLists) {
       // Write directly rather than through WriteCustomCommand because
       // we do not want the de-duplication and it has no dependencies.
-      if (cmCustomCommand const* command = sf->GetCustomCommand()) {
-        this->WriteCustomRule(e0, sf, *command);
+      if (cmCustomCommand const* command = srcCMakeLists->GetCustomCommand()) {
+        this->WriteCustomRule(e0, srcCMakeLists, *command);
       }
     }
   }
@@ -1374,9 +1392,8 @@ void cmVisualStudio10TargetGenerator::WriteCustomRule(
         // preventing dependent rebuilds.
         this->ForceOld(sourcePath);
       } else {
-        std::string error = "Could not create file: [";
-        error += sourcePath;
-        error += "]  ";
+        std::string error =
+          cmStrCat("Could not create file: [", sourcePath, "]  ");
         cmSystemTools::Error(error + cmSystemTools::GetLastSystemError());
       }
     }
@@ -1390,22 +1407,21 @@ void cmVisualStudio10TargetGenerator::WriteCustomRule(
     spe2 = cm::make_unique<Elem>(*spe1, "CustomBuild");
     this->WriteSource(*spe2, source);
     spe2->SetHasElements();
+    if (command.GetStdPipesUTF8()) {
+      this->WriteStdOutEncodingUtf8(*spe2);
+    }
   } else {
     Elem e1(e0, "ItemGroup");
     Elem e2(e1, "None");
-    std::string link;
-    this->GetCSharpSourceLink(source, link);
     this->WriteSource(e2, source);
     e2.SetHasElements();
-    if (!link.empty()) {
-      e2.Element("Link", link);
-    }
   }
   for (std::string const& c : this->Configurations) {
     cmCustomCommandGenerator ccg(command, c, lg);
     std::string comment = lg->ConstructComment(ccg);
     comment = cmVS10EscapeComment(comment);
     std::string script = lg->ConstructScript(ccg);
+    bool symbolic = false;
     // input files for custom command
     std::stringstream additional_inputs;
     {
@@ -1432,6 +1448,12 @@ void cmVisualStudio10TargetGenerator::WriteCustomRule(
           ConvertToWindowsSlash(dep);
           additional_inputs << sep << dep;
           sep = ";";
+          if (!symbolic) {
+            if (cmSourceFile* sf = this->Makefile->GetSource(
+                  dep, cmSourceFileLocationKind::Known)) {
+              symbolic = sf->GetPropertyAsBool("SYMBOLIC");
+            }
+          }
         }
       }
       if (this->ProjectType != csproj) {
@@ -1447,6 +1469,12 @@ void cmVisualStudio10TargetGenerator::WriteCustomRule(
         ConvertToWindowsSlash(out);
         outputs << sep << out;
         sep = ";";
+        if (!symbolic) {
+          if (cmSourceFile* sf = this->Makefile->GetSource(
+                o, cmSourceFileLocationKind::Known)) {
+            symbolic = sf->GetPropertyAsBool("SYMBOLIC");
+          }
+        }
       }
     }
     if (this->ProjectType == csproj) {
@@ -1456,7 +1484,7 @@ void cmVisualStudio10TargetGenerator::WriteCustomRule(
                                   outputs.str(), comment);
     } else {
       this->WriteCustomRuleCpp(*spe2, c, script, additional_inputs.str(),
-                               outputs.str(), comment);
+                               outputs.str(), comment, symbolic);
     }
   }
 }
@@ -1464,7 +1492,7 @@ void cmVisualStudio10TargetGenerator::WriteCustomRule(
 void cmVisualStudio10TargetGenerator::WriteCustomRuleCpp(
   Elem& e2, std::string const& config, std::string const& script,
   std::string const& additional_inputs, std::string const& outputs,
-  std::string const& comment)
+  std::string const& comment, bool symbolic)
 {
   const std::string cond = this->CalcCondition(config);
   e2.WritePlatformConfigTag("Message", cond, comment);
@@ -1475,6 +1503,13 @@ void cmVisualStudio10TargetGenerator::WriteCustomRuleCpp(
       cmGlobalVisualStudioGenerator::VS10) {
     // VS >= 11 let us turn off linking of custom command outputs.
     e2.WritePlatformConfigTag("LinkObjects", cond, "false");
+  }
+  if (symbolic &&
+      this->LocalGenerator->GetVersion() >=
+        cmGlobalVisualStudioGenerator::VS16) {
+    // VS >= 16.4 warn if outputs are not created, but one of our
+    // outputs is marked SYMBOLIC and not expected to be created.
+    e2.WritePlatformConfigTag("VerifyInputsAndOutputsExist", cond, "false");
   }
 }
 
@@ -1545,19 +1580,16 @@ void cmVisualStudio10TargetGenerator::WriteGroups()
   this->AddMissingSourceGroups(groupsUsed, sourceGroups);
 
   // Write out group file
-  std::string path = this->LocalGenerator->GetCurrentBinaryDirectory();
-  path += "/";
-  path += this->Name;
-  path += computeProjectFileExtension(this->GeneratorTarget);
-  path += ".filters";
+  std::string path = cmStrCat(
+    this->LocalGenerator->GetCurrentBinaryDirectory(), '/', this->Name,
+    computeProjectFileExtension(this->GeneratorTarget), ".filters");
   cmGeneratedFileStream fout(path);
   fout.SetCopyIfDifferent(true);
   char magic[] = { char(0xEF), char(0xBB), char(0xBF) };
   fout.write(magic, 3);
 
   fout << "<?xml version=\"1.0\" encoding=\""
-       << this->GlobalGenerator->Encoding() << "\"?>"
-       << "\n";
+       << this->GlobalGenerator->Encoding() << "\"?>";
   {
     Elem e0(fout, "Project");
     e0.Attribute("ToolsVersion", this->GlobalGenerator->GetToolsVersion());
@@ -1596,11 +1628,9 @@ void cmVisualStudio10TargetGenerator::WriteGroups()
       }
     }
 
-    std::vector<cmSourceFile const*> resxObjs;
-    this->GeneratorTarget->GetResxSources(resxObjs, "");
-    if (!resxObjs.empty()) {
+    if (!this->ResxObjs.empty()) {
       Elem e1(e0, "ItemGroup");
-      for (cmSourceFile const* oi : resxObjs) {
+      for (cmSourceFile const* oi : this->ResxObjs) {
         std::string obj = oi->GetFullPath();
         ConvertToWindowsSlash(obj);
         Elem e2(e1, "EmbeddedResource");
@@ -1628,7 +1658,7 @@ void cmVisualStudio10TargetGenerator::WriteGroups()
         }
       }
 
-      if (!resxObjs.empty() || !this->AddedFiles.empty()) {
+      if (!this->ResxObjs.empty() || !this->AddedFiles.empty()) {
         std::string guidName = "SG_Filter_Resource Files";
         std::string guid = this->GlobalGenerator->GetGUID(guidName);
         Elem e2(e1, "Filter");
@@ -1696,7 +1726,7 @@ void cmVisualStudio10TargetGenerator::WriteGroupSources(
     std::string const& filter = sourceGroup->GetFullName();
     std::string path = this->ConvertPath(source, s.RelativePath);
     ConvertToWindowsSlash(path);
-    Elem e2(e1, name.c_str());
+    Elem e2(e1, name);
     e2.Attribute("Include", path);
     if (!filter.empty()) {
       e2.Element("Filter", filter);
@@ -1713,9 +1743,63 @@ void cmVisualStudio10TargetGenerator::WriteHeaderSource(Elem& e1,
   if (this->IsResxHeader(fileName)) {
     e2.Element("FileType", "CppForm");
   } else if (this->IsXamlHeader(fileName)) {
-    std::string xamlFileName = fileName.substr(0, fileName.find_last_of("."));
-    e2.Element("DependentUpon", xamlFileName);
+    e2.Element("DependentUpon",
+               fileName.substr(0, fileName.find_last_of(".")));
   }
+}
+
+void cmVisualStudio10TargetGenerator::ParseSettingsProperty(
+  const std::string& settingsPropertyValue, ConfigToSettings& toolSettings)
+{
+  if (!settingsPropertyValue.empty()) {
+    cmGeneratorExpression ge;
+
+    std::unique_ptr<cmCompiledGeneratorExpression> cge =
+      ge.Parse(settingsPropertyValue);
+
+    for (const std::string& config : this->Configurations) {
+      std::string evaluated = cge->Evaluate(this->LocalGenerator, config);
+
+      std::vector<std::string> settings = cmExpandedList(evaluated);
+      for (const std::string& setting : settings) {
+        const std::string::size_type assignment = setting.find('=');
+        if (assignment != std::string::npos) {
+          const std::string propName = setting.substr(0, assignment);
+          const std::string propValue = setting.substr(assignment + 1);
+
+          if (!propValue.empty()) {
+            toolSettings[config][propName] = propValue;
+          }
+        }
+      }
+    }
+  }
+}
+
+bool cmVisualStudio10TargetGenerator::PropertyIsSameInAllConfigs(
+  const ConfigToSettings& toolSettings, const std::string& propName)
+{
+  std::string firstPropValue = "";
+  for (const auto& configToSettings : toolSettings) {
+    const std::unordered_map<std::string, std::string>& settings =
+      configToSettings.second;
+
+    if (firstPropValue.empty()) {
+      if (settings.find(propName) != settings.end()) {
+        firstPropValue = settings.find(propName)->second;
+      }
+    }
+
+    if (settings.find(propName) == settings.end()) {
+      return false;
+    }
+
+    if (settings.find(propName)->second != firstPropValue) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 void cmVisualStudio10TargetGenerator::WriteExtraSource(Elem& e1,
@@ -1723,15 +1807,6 @@ void cmVisualStudio10TargetGenerator::WriteExtraSource(Elem& e1,
 {
   bool toolHasSettings = false;
   const char* tool = "None";
-  std::string shaderType;
-  std::string shaderEntryPoint;
-  std::string shaderModel;
-  std::string shaderAdditionalFlags;
-  std::string shaderDisableOptimizations;
-  std::string shaderEnableDebug;
-  std::string shaderObjectFileName;
-  std::string outputHeaderFile;
-  std::string variableName;
   std::string settingsGenerator;
   std::string settingsLastGenOutput;
   std::string sourceLink;
@@ -1739,76 +1814,84 @@ void cmVisualStudio10TargetGenerator::WriteExtraSource(Elem& e1,
   std::string copyToOutDir;
   std::string includeInVsix;
   std::string ext = cmSystemTools::LowerCase(sf->GetExtension());
-  if (this->ProjectType == csproj) {
-    // EVERY extra source file must have a <Link>, otherwise it might not
-    // be visible in Visual Studio at all. The path relative to current
-    // source- or binary-dir is used within the link, if the file is
-    // in none of these paths, it is added with the plain filename without
-    // any path. This means the file will show up at root-level of the csproj
-    // (where CMakeLists.txt etc. are).
-    if (!this->InSourceBuild) {
-      toolHasSettings = true;
-      std::string fullFileName = sf->GetFullPath();
-      std::string srcDir = this->Makefile->GetCurrentSourceDirectory();
-      std::string binDir = this->Makefile->GetCurrentBinaryDirectory();
-      if (fullFileName.find(binDir) != std::string::npos) {
-        sourceLink.clear();
-      } else if (fullFileName.find(srcDir) != std::string::npos) {
-        sourceLink = fullFileName.substr(srcDir.length() + 1);
-      } else {
-        // fallback: add plain filename without any path
-        sourceLink = cmsys::SystemTools::GetFilenameName(fullFileName);
-      }
-      if (!sourceLink.empty()) {
-        ConvertToWindowsSlash(sourceLink);
-      }
-    }
+  ConfigToSettings toolSettings;
+  for (const auto& config : this->Configurations) {
+    toolSettings[config];
+  }
+
+  if (this->ProjectType == csproj && !this->InSourceBuild) {
+    toolHasSettings = true;
   }
   if (ext == "hlsl") {
     tool = "FXCompile";
     // Figure out the type of shader compiler to use.
-    if (const char* st = sf->GetProperty("VS_SHADER_TYPE")) {
-      shaderType = st;
-      toolHasSettings = true;
+    if (cmProp st = sf->GetProperty("VS_SHADER_TYPE")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["ShaderType"] = *st;
+      }
     }
     // Figure out which entry point to use if any
-    if (const char* se = sf->GetProperty("VS_SHADER_ENTRYPOINT")) {
-      shaderEntryPoint = se;
-      toolHasSettings = true;
+    if (cmProp se = sf->GetProperty("VS_SHADER_ENTRYPOINT")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["EntryPointName"] = *se;
+      }
     }
     // Figure out which shader model to use if any
-    if (const char* sm = sf->GetProperty("VS_SHADER_MODEL")) {
-      shaderModel = sm;
-      toolHasSettings = true;
+    if (cmProp sm = sf->GetProperty("VS_SHADER_MODEL")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["ShaderModel"] = *sm;
+      }
     }
     // Figure out which output header file to use if any
-    if (const char* ohf = sf->GetProperty("VS_SHADER_OUTPUT_HEADER_FILE")) {
-      outputHeaderFile = ohf;
-      toolHasSettings = true;
+    if (cmProp ohf = sf->GetProperty("VS_SHADER_OUTPUT_HEADER_FILE")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["HeaderFileOutput"] = *ohf;
+      }
     }
     // Figure out which variable name to use if any
-    if (const char* vn = sf->GetProperty("VS_SHADER_VARIABLE_NAME")) {
-      variableName = vn;
-      toolHasSettings = true;
+    if (cmProp vn = sf->GetProperty("VS_SHADER_VARIABLE_NAME")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["VariableName"] = *vn;
+      }
     }
     // Figure out if there's any additional flags to use
-    if (const char* saf = sf->GetProperty("VS_SHADER_FLAGS")) {
-      shaderAdditionalFlags = saf;
-      toolHasSettings = true;
+    if (cmProp saf = sf->GetProperty("VS_SHADER_FLAGS")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["AdditionalOptions"] = *saf;
+      }
     }
     // Figure out if debug information should be generated
-    if (const char* sed = sf->GetProperty("VS_SHADER_ENABLE_DEBUG")) {
-      shaderEnableDebug = sed;
-      toolHasSettings = true;
+    if (cmProp sed = sf->GetProperty("VS_SHADER_ENABLE_DEBUG")) {
+      cmGeneratorExpression ge;
+      std::unique_ptr<cmCompiledGeneratorExpression> cge = ge.Parse(*sed);
+
+      for (const std::string& config : this->Configurations) {
+        std::string evaluated = cge->Evaluate(this->LocalGenerator, config);
+
+        if (!evaluated.empty()) {
+          toolSettings[config]["EnableDebuggingInformation"] =
+            cmIsOn(evaluated) ? "true" : "false";
+        }
+      }
     }
     // Figure out if optimizations should be disabled
-    if (const char* sdo = sf->GetProperty("VS_SHADER_DISABLE_OPTIMIZATIONS")) {
-      shaderDisableOptimizations = sdo;
-      toolHasSettings = true;
+    if (cmProp sdo = sf->GetProperty("VS_SHADER_DISABLE_OPTIMIZATIONS")) {
+      cmGeneratorExpression ge;
+      std::unique_ptr<cmCompiledGeneratorExpression> cge = ge.Parse(*sdo);
+
+      for (const std::string& config : this->Configurations) {
+        std::string evaluated = cge->Evaluate(this->LocalGenerator, config);
+
+        if (!evaluated.empty()) {
+          toolSettings[config]["DisableOptimizations"] =
+            cmIsOn(evaluated) ? "true" : "false";
+        }
+      }
     }
-    if (const char* sofn = sf->GetProperty("VS_SHADER_OBJECT_FILE_NAME")) {
-      shaderObjectFileName = sofn;
-      toolHasSettings = true;
+    if (cmProp sofn = sf->GetProperty("VS_SHADER_OBJECT_FILE_NAME")) {
+      for (const std::string& config : this->Configurations) {
+        toolSettings[config]["ObjectFileOutput"] = *sofn;
+      }
     }
   } else if (ext == "jpg" || ext == "png") {
     tool = "Image";
@@ -1828,9 +1911,9 @@ void cmVisualStudio10TargetGenerator::WriteExtraSource(Elem& e1,
   } else if (ext == "vsixmanifest") {
     subType = "Designer";
   }
-  if (const char* c = sf->GetProperty("VS_COPY_TO_OUT_DIR")) {
+  if (cmProp c = sf->GetProperty("VS_COPY_TO_OUT_DIR")) {
     tool = "Content";
-    copyToOutDir = c;
+    copyToOutDir = *c;
     toolHasSettings = true;
   }
   if (sf->GetPropertyAsBool("VS_INCLUDE_IN_VSIX")) {
@@ -1857,31 +1940,78 @@ void cmVisualStudio10TargetGenerator::WriteExtraSource(Elem& e1,
     }
   }
 
-  const char* toolOverride = sf->GetProperty("VS_TOOL_OVERRIDE");
-  if (toolOverride && *toolOverride) {
-    tool = toolOverride;
+  cmProp toolOverride = sf->GetProperty("VS_TOOL_OVERRIDE");
+  if (toolOverride && !toolOverride->empty()) {
+    tool = toolOverride->c_str();
   }
 
   std::string deployContent;
   std::string deployLocation;
   if (this->GlobalGenerator->TargetsWindowsPhone() ||
       this->GlobalGenerator->TargetsWindowsStore()) {
-    const char* content = sf->GetProperty("VS_DEPLOYMENT_CONTENT");
-    if (content && *content) {
+    cmProp content = sf->GetProperty("VS_DEPLOYMENT_CONTENT");
+    if (content && !content->empty()) {
       toolHasSettings = true;
-      deployContent = content;
+      deployContent = *content;
 
-      const char* location = sf->GetProperty("VS_DEPLOYMENT_LOCATION");
-      if (location && *location) {
-        deployLocation = location;
+      cmProp location = sf->GetProperty("VS_DEPLOYMENT_LOCATION");
+      if (location && !location->empty()) {
+        deployLocation = *location;
       }
     }
+  }
+
+  if (ParsedToolTargetSettings.find(tool) == ParsedToolTargetSettings.end()) {
+    cmProp toolTargetProperty = this->GeneratorTarget->Target->GetProperty(
+      "VS_SOURCE_SETTINGS_" + std::string(tool));
+    ConfigToSettings toolTargetSettings;
+    if (toolTargetProperty) {
+      ParseSettingsProperty(*toolTargetProperty, toolTargetSettings);
+    }
+
+    ParsedToolTargetSettings[tool] = toolTargetSettings;
+  }
+
+  for (const auto& configToSetting : ParsedToolTargetSettings[tool]) {
+    for (const auto& setting : configToSetting.second) {
+      toolSettings[configToSetting.first][setting.first] = setting.second;
+    }
+  }
+
+  if (cmProp p = sf->GetProperty("VS_SETTINGS")) {
+    ParseSettingsProperty(*p, toolSettings);
+  }
+
+  if (!toolSettings.empty()) {
+    toolHasSettings = true;
   }
 
   Elem e2(e1, tool);
   this->WriteSource(e2, sf);
   if (toolHasSettings) {
     e2.SetHasElements();
+
+    std::vector<std::string> writtenSettings;
+    for (const auto& configSettings : toolSettings) {
+      for (const auto& setting : configSettings.second) {
+
+        if (std::find(writtenSettings.begin(), writtenSettings.end(),
+                      setting.first) != writtenSettings.end()) {
+          continue;
+        }
+
+        if (PropertyIsSameInAllConfigs(toolSettings, setting.first)) {
+          e2.Element(setting.first, setting.second);
+          writtenSettings.push_back(setting.first);
+        } else {
+          e2.WritePlatformConfigTag(setting.first,
+                                    "'$(Configuration)|$(Platform)'=='" +
+                                      configSettings.first + "|" +
+                                      this->Platform + "'",
+                                    setting.second);
+        }
+      }
+    }
 
     if (!deployContent.empty()) {
       cmGeneratorExpression ge;
@@ -1908,81 +2038,12 @@ void cmVisualStudio10TargetGenerator::WriteExtraSource(Elem& e1,
         }
       }
     }
-    if (!shaderType.empty()) {
-      e2.Element("ShaderType", shaderType);
-    }
-    if (!shaderEntryPoint.empty()) {
-      e2.Element("EntryPointName", shaderEntryPoint);
-    }
-    if (!shaderModel.empty()) {
-      e2.Element("ShaderModel", shaderModel);
-    }
-    if (!outputHeaderFile.empty()) {
-      for (size_t i = 0; i != this->Configurations.size(); ++i) {
-        e2.WritePlatformConfigTag("HeaderFileOutput",
-                                  "'$(Configuration)|$(Platform)'=='" +
-                                    this->Configurations[i] + "|" +
-                                    this->Platform + "'",
-                                  outputHeaderFile);
-      }
-    }
-    if (!variableName.empty()) {
-      for (size_t i = 0; i != this->Configurations.size(); ++i) {
-        e2.WritePlatformConfigTag("VariableName",
-                                  "'$(Configuration)|$(Platform)'=='" +
-                                    this->Configurations[i] + "|" +
-                                    this->Platform + "'",
-                                  variableName);
-      }
-    }
-    if (!shaderEnableDebug.empty()) {
-      cmGeneratorExpression ge;
-      std::unique_ptr<cmCompiledGeneratorExpression> cge =
-        ge.Parse(shaderEnableDebug);
 
-      for (size_t i = 0; i != this->Configurations.size(); ++i) {
-        const std::string& enableDebug =
-          cge->Evaluate(this->LocalGenerator, this->Configurations[i]);
-        if (!enableDebug.empty()) {
-          e2.WritePlatformConfigTag(
-            "EnableDebuggingInformation",
-            "'$(Configuration)|$(Platform)'=='" + this->Configurations[i] +
-              "|" + this->Platform + "'",
-            cmSystemTools::IsOn(enableDebug) ? "true" : "false");
-        }
-      }
-    }
-    if (!shaderDisableOptimizations.empty()) {
-      cmGeneratorExpression ge;
-      std::unique_ptr<cmCompiledGeneratorExpression> cge =
-        ge.Parse(shaderDisableOptimizations);
-
-      for (size_t i = 0; i != this->Configurations.size(); ++i) {
-        const std::string& disableOptimizations =
-          cge->Evaluate(this->LocalGenerator, this->Configurations[i]);
-        if (!disableOptimizations.empty()) {
-          e2.WritePlatformConfigTag(
-            "DisableOptimizations",
-            "'$(Configuration)|$(Platform)'=='" + this->Configurations[i] +
-              "|" + this->Platform + "'",
-            (cmSystemTools::IsOn(disableOptimizations) ? "true" : "false"));
-        }
-      }
-    }
-    if (!shaderObjectFileName.empty()) {
-      e2.Element("ObjectFileOutput", shaderObjectFileName);
-    }
-    if (!shaderAdditionalFlags.empty()) {
-      e2.Element("AdditionalOptions", shaderAdditionalFlags);
-    }
     if (!settingsGenerator.empty()) {
       e2.Element("Generator", settingsGenerator);
     }
     if (!settingsLastGenOutput.empty()) {
       e2.Element("LastGenOutput", settingsLastGenOutput);
-    }
-    if (!sourceLink.empty()) {
-      e2.Element("Link", sourceLink);
     }
     if (!subType.empty()) {
       e2.Element("SubType", subType);
@@ -2036,6 +2097,20 @@ void cmVisualStudio10TargetGenerator::WriteSource(Elem& e2,
   ConvertToWindowsSlash(sourceFile);
   e2.Attribute("Include", sourceFile);
 
+  if (this->ProjectType == csproj && !this->InSourceBuild) {
+    // For out of source projects we have to provide a link (if not specified
+    // via property) for every source file (besides .cs files) otherwise they
+    // will not be visible in VS at all.
+    // First we check if the file is in a source group, then we check if the
+    // file path is relative to current source- or binary-dir, otherwise it is
+    // added with the plain filename without any path. This means the file will
+    // show up at root-level of the csproj (where CMakeLists.txt etc. are).
+    std::string link = this->GetCSharpSourceLink(sf);
+    if (link.empty())
+      link = cmsys::SystemTools::GetFilenameName(sf->GetFullPath());
+    e2.Element("Link", link);
+  }
+
   ToolSource toolSource = { sf, forceRelative };
   this->Tools[e2.Tag].push_back(toolSource);
 }
@@ -2045,6 +2120,15 @@ void cmVisualStudio10TargetGenerator::WriteAllSources(Elem& e0)
   if (this->GeneratorTarget->GetType() > cmStateEnums::UTILITY) {
     return;
   }
+
+  const bool haveUnityBuild =
+    this->GeneratorTarget->GetPropertyAsBool("UNITY_BUILD");
+
+  if (haveUnityBuild && this->GlobalGenerator->GetSupportsUnityBuilds()) {
+    Elem e1(e0, "PropertyGroup");
+    e1.Element("EnableUnitySupport", "true");
+  }
+
   Elem e1(e0, "ItemGroup");
   e1.SetHasElements();
 
@@ -2105,6 +2189,7 @@ void cmVisualStudio10TargetGenerator::WriteAllSources(Elem& e0)
       case cmGeneratorTarget::SourceKindModuleDefinition:
         tool = "None";
         break;
+      case cmGeneratorTarget::SourceKindUnityBatched:
       case cmGeneratorTarget::SourceKindObjectSource: {
         const std::string& lang = si.Source->GetLanguage();
         if (lang == "C" || lang == "CXX") {
@@ -2126,10 +2211,10 @@ void cmVisualStudio10TargetGenerator::WriteAllSources(Elem& e0)
         }
       } break;
       case cmGeneratorTarget::SourceKindResx:
-        // Handled elsewhere.
+        this->ResxObjs.push_back(si.Source);
         break;
       case cmGeneratorTarget::SourceKindXaml:
-        // Handled elsewhere.
+        this->XamlObjs.push_back(si.Source);
         break;
     }
 
@@ -2143,8 +2228,48 @@ void cmVisualStudio10TargetGenerator::WriteAllSources(Elem& e0)
 
       Elem e2(e1, tool);
       this->WriteSource(e2, si.Source);
+
+      bool useNativeUnityBuild = false;
+      if (haveUnityBuild && this->GlobalGenerator->GetSupportsUnityBuilds()) {
+        // Magic value taken from cmGlobalVisualStudioVersionedGenerator.cxx
+        static const std::string vs15 = "141";
+        std::string toolset =
+          this->GlobalGenerator->GetPlatformToolsetString();
+        cmSystemTools::ReplaceString(toolset, "v", "");
+
+        if (toolset.empty() ||
+            cmSystemTools::VersionCompareGreaterEq(toolset, vs15)) {
+          useNativeUnityBuild = true;
+        }
+      }
+
+      if (haveUnityBuild && strcmp(tool, "ClCompile") == 0 &&
+          si.Source->GetProperty("UNITY_SOURCE_FILE")) {
+        if (useNativeUnityBuild) {
+          e2.Attribute(
+            "IncludeInUnityFile",
+            si.Source->GetPropertyAsBool("SKIP_UNITY_BUILD_INCLUSION")
+              ? "false"
+              : "true");
+          e2.Attribute("CustomUnityFile", "true");
+
+          std::string unityDir = cmSystemTools::GetFilenamePath(
+            *si.Source->GetProperty("UNITY_SOURCE_FILE"));
+          e2.Attribute("UnityFilesDirectory", unityDir);
+        } else {
+          // Visual Studio versions prior to 2017 15.8 do not know about unity
+          // builds, thus we exclude the files alredy part of unity sources.
+          if (!si.Source->GetPropertyAsBool("SKIP_UNITY_BUILD_INCLUSION")) {
+            exclude_configs = si.Configs;
+          }
+        }
+      }
+
       if (si.Kind == cmGeneratorTarget::SourceKindObjectSource) {
         this->OutputSourceSpecificFlags(e2, si.Source);
+      }
+      if (si.Source->GetPropertyAsBool("SKIP_PRECOMPILE_HEADERS")) {
+        e2.Element("PrecompiledHeader", "NotUsing");
       }
       if (!exclude_configs.empty()) {
         this->WriteExcludeFromBuild(e2, exclude_configs);
@@ -2174,41 +2299,36 @@ void cmVisualStudio10TargetGenerator::OutputSourceSpecificFlags(
   bool configDependentDefines = false;
   std::string includes;
   bool configDependentIncludes = false;
-  if (const char* cflags = sf.GetProperty("COMPILE_FLAGS")) {
+  if (cmProp cflags = sf.GetProperty("COMPILE_FLAGS")) {
     configDependentFlags =
-      cmGeneratorExpression::Find(cflags) != std::string::npos;
-    flags += cflags;
+      cmGeneratorExpression::Find(*cflags) != std::string::npos;
+    flags += *cflags;
   }
-  if (const char* coptions = sf.GetProperty("COMPILE_OPTIONS")) {
+  if (cmProp coptions = sf.GetProperty("COMPILE_OPTIONS")) {
     configDependentOptions =
-      cmGeneratorExpression::Find(coptions) != std::string::npos;
-    options += coptions;
+      cmGeneratorExpression::Find(*coptions) != std::string::npos;
+    options += *coptions;
   }
-  if (const char* cdefs = sf.GetProperty("COMPILE_DEFINITIONS")) {
+  if (cmProp cdefs = sf.GetProperty("COMPILE_DEFINITIONS")) {
     configDependentDefines =
-      cmGeneratorExpression::Find(cdefs) != std::string::npos;
-    defines += cdefs;
+      cmGeneratorExpression::Find(*cdefs) != std::string::npos;
+    defines += *cdefs;
   }
-  if (const char* cincludes = sf.GetProperty("INCLUDE_DIRECTORIES")) {
+  if (cmProp cincludes = sf.GetProperty("INCLUDE_DIRECTORIES")) {
     configDependentIncludes =
-      cmGeneratorExpression::Find(cincludes) != std::string::npos;
-    includes += cincludes;
+      cmGeneratorExpression::Find(*cincludes) != std::string::npos;
+    includes += *cincludes;
   }
-  std::string lang =
-    this->GlobalGenerator->GetLanguageFromExtension(sf.GetExtension().c_str());
-  std::string sourceLang = this->LocalGenerator->GetSourceFileLanguage(sf);
-  const std::string& linkLanguage =
-    this->GeneratorTarget->GetLinkerLanguage("");
-  bool needForceLang = false;
-  // source file does not match its extension language
-  if (lang != sourceLang) {
-    needForceLang = true;
-    lang = sourceLang;
-  }
-  // if the source file does not match the linker language
-  // then force c or c++
+
+  // Force language if the file extension does not match.
+  // Note that MSVC treats the upper-case '.C' extension as C and not C++.
+  std::string const ext = sf.GetExtension();
+  std::string const extLang = ext == "C"
+    ? "C"
+    : this->GlobalGenerator->GetLanguageFromExtension(ext.c_str());
+  std::string lang = this->LocalGenerator->GetSourceFileLanguage(sf);
   const char* compileAs = 0;
-  if (needForceLang || (linkLanguage != lang)) {
+  if (lang != extLang) {
     if (lang == "CXX") {
       // force a C++ file type
       compileAs = "CompileAsCpp";
@@ -2217,6 +2337,7 @@ void cmVisualStudio10TargetGenerator::OutputSourceSpecificFlags(
       compileAs = "CompileAsC";
     }
   }
+
   bool noWinRT = this->TargetCompileAsWinRT && lang == "C";
   // for the first time we need a new line if there is something
   // produced here.
@@ -2230,20 +2351,37 @@ void cmVisualStudio10TargetGenerator::OutputSourceSpecificFlags(
   for (std::string const& config : this->Configurations) {
     std::string configUpper = cmSystemTools::UpperCase(config);
     std::string configDefines = defines;
-    std::string defPropName = "COMPILE_DEFINITIONS_";
-    defPropName += configUpper;
-    if (const char* ccdefs = sf.GetProperty(defPropName)) {
+    std::string defPropName = cmStrCat("COMPILE_DEFINITIONS_", configUpper);
+    if (cmProp ccdefs = sf.GetProperty(defPropName)) {
       if (!configDefines.empty()) {
         configDefines += ";";
       }
       configDependentDefines |=
-        cmGeneratorExpression::Find(ccdefs) != std::string::npos;
-      configDefines += ccdefs;
+        cmGeneratorExpression::Find(*ccdefs) != std::string::npos;
+      configDefines += *ccdefs;
     }
+
+    // Add precompile headers compile options.
+    std::string customAndPchOptions = options;
+    const std::string pchSource =
+      this->GeneratorTarget->GetPchSource(config, lang);
+    if (!pchSource.empty() && !sf.GetProperty("SKIP_PRECOMPILE_HEADERS")) {
+      std::string pchOptions;
+      if (sf.GetFullPath() == pchSource) {
+        pchOptions =
+          this->GeneratorTarget->GetPchCreateCompileOptions(config, lang);
+      } else {
+        pchOptions =
+          this->GeneratorTarget->GetPchUseCompileOptions(config, lang);
+      }
+      customAndPchOptions = cmStrCat(customAndPchOptions, ';', pchOptions);
+    }
+
     // if we have flags or defines for this config then
     // use them
     if (!flags.empty() || !options.empty() || !configDefines.empty() ||
-        !includes.empty() || compileAs || noWinRT) {
+        !includes.empty() || compileAs || noWinRT ||
+        !customAndPchOptions.empty()) {
       cmGlobalVisualStudio10Generator* gg = this->GlobalGenerator;
       cmIDEFlagTable const* flagtable = nullptr;
       const std::string& srclang = source->GetLanguage();
@@ -2276,20 +2414,24 @@ void cmVisualStudio10TargetGenerator::OutputSourceSpecificFlags(
       } else {
         clOptions.Parse(flags);
       }
-      if (!options.empty()) {
+      if (!customAndPchOptions.empty()) {
         std::string expandedOptions;
         if (configDependentOptions) {
           this->LocalGenerator->AppendCompileOptions(
             expandedOptions,
-            genexInterpreter.Evaluate(options, "COMPILE_OPTIONS"));
+            genexInterpreter.Evaluate(customAndPchOptions, "COMPILE_OPTIONS"));
         } else {
-          this->LocalGenerator->AppendCompileOptions(expandedOptions, options);
+          this->LocalGenerator->AppendCompileOptions(expandedOptions,
+                                                     customAndPchOptions);
         }
         clOptions.Parse(expandedOptions);
       }
       if (clOptions.HasFlag("DisableSpecificWarnings")) {
         clOptions.AppendFlag("DisableSpecificWarnings",
                              "%(DisableSpecificWarnings)");
+      }
+      if (clOptions.HasFlag("ForcedIncludeFiles")) {
+        clOptions.AppendFlag("ForcedIncludeFiles", "%(ForcedIncludeFiles)");
       }
       if (configDependentDefines) {
         clOptions.AddDefines(
@@ -2317,19 +2459,13 @@ void cmVisualStudio10TargetGenerator::OutputSourceSpecificFlags(
   }
   if (this->IsXamlSource(source->GetFullPath())) {
     const std::string& fileName = source->GetFullPath();
-    std::string xamlFileName = fileName.substr(0, fileName.find_last_of("."));
-    e2.Element("DependentUpon", xamlFileName);
+    e2.Element("DependentUpon",
+               fileName.substr(0, fileName.find_last_of(".")));
   }
   if (this->ProjectType == csproj) {
     std::string f = source->GetFullPath();
-    typedef std::map<std::string, std::string> CsPropMap;
+    using CsPropMap = std::map<std::string, std::string>;
     CsPropMap sourceFileTags;
-    // set <Link> tag if necessary
-    std::string link;
-    this->GetCSharpSourceLink(source, link);
-    if (!link.empty()) {
-      sourceFileTags["Link"] = link;
-    }
     this->GetCSharpSourceProperties(&sf, sourceFileTags);
     // write source file specific tags
     if (!sourceFileTags.empty()) {
@@ -2367,51 +2503,34 @@ void cmVisualStudio10TargetGenerator::WritePathAndIncrementalLinkOptions(
     const std::string cond = this->CalcCondition(config);
 
     if (ttype <= cmStateEnums::UTILITY) {
-      if (const char* workingDir = this->GeneratorTarget->GetProperty(
+      if (cmProp workingDir = this->GeneratorTarget->GetProperty(
             "VS_DEBUGGER_WORKING_DIRECTORY")) {
-        cmGeneratorExpression ge;
-        std::unique_ptr<cmCompiledGeneratorExpression> cge =
-          ge.Parse(workingDir);
-        std::string genWorkingDir =
-          cge->Evaluate(this->LocalGenerator, config);
-
+        std::string genWorkingDir = cmGeneratorExpression::Evaluate(
+          *workingDir, this->LocalGenerator, config);
         e1.WritePlatformConfigTag("LocalDebuggerWorkingDirectory", cond,
                                   genWorkingDir);
       }
 
-      if (const char* environment =
+      if (cmProp environment =
             this->GeneratorTarget->GetProperty("VS_DEBUGGER_ENVIRONMENT")) {
-        cmGeneratorExpression ge;
-        std::unique_ptr<cmCompiledGeneratorExpression> cge =
-          ge.Parse(environment);
-        std::string genEnvironment =
-          cge->Evaluate(this->LocalGenerator, config);
-
+        std::string genEnvironment = cmGeneratorExpression::Evaluate(
+          *environment, this->LocalGenerator, config);
         e1.WritePlatformConfigTag("LocalDebuggerEnvironment", cond,
                                   genEnvironment);
       }
 
-      if (const char* debuggerCommand =
+      if (cmProp debuggerCommand =
             this->GeneratorTarget->GetProperty("VS_DEBUGGER_COMMAND")) {
-
-        cmGeneratorExpression ge;
-        std::unique_ptr<cmCompiledGeneratorExpression> cge =
-          ge.Parse(debuggerCommand);
-        std::string genDebuggerCommand =
-          cge->Evaluate(this->LocalGenerator, config);
-
+        std::string genDebuggerCommand = cmGeneratorExpression::Evaluate(
+          *debuggerCommand, this->LocalGenerator, config);
         e1.WritePlatformConfigTag("LocalDebuggerCommand", cond,
                                   genDebuggerCommand);
       }
 
-      if (const char* commandArguments = this->GeneratorTarget->GetProperty(
+      if (cmProp commandArguments = this->GeneratorTarget->GetProperty(
             "VS_DEBUGGER_COMMAND_ARGUMENTS")) {
-        cmGeneratorExpression ge;
-        std::unique_ptr<cmCompiledGeneratorExpression> cge =
-          ge.Parse(commandArguments);
-        std::string genCommandArguments =
-          cge->Evaluate(this->LocalGenerator, config);
-
+        std::string genCommandArguments = cmGeneratorExpression::Evaluate(
+          *commandArguments, this->LocalGenerator, config);
         e1.WritePlatformConfigTag("LocalDebuggerCommandArguments", cond,
                                   genCommandArguments);
       }
@@ -2421,17 +2540,14 @@ void cmVisualStudio10TargetGenerator::WritePathAndIncrementalLinkOptions(
       e1.WritePlatformConfigTag(
         "IntDir", cond, "$(Platform)\\$(Configuration)\\$(ProjectName)\\");
     } else {
-      std::string intermediateDir =
-        this->LocalGenerator->GetTargetDirectory(this->GeneratorTarget);
-      intermediateDir += "/";
-      intermediateDir += config;
-      intermediateDir += "/";
+      std::string intermediateDir = cmStrCat(
+        this->LocalGenerator->GetTargetDirectory(this->GeneratorTarget), '/',
+        config, '/');
       std::string outDir;
       std::string targetNameFull;
       if (ttype == cmStateEnums::OBJECT_LIBRARY) {
         outDir = intermediateDir;
-        targetNameFull = this->GeneratorTarget->GetName();
-        targetNameFull += ".lib";
+        targetNameFull = cmStrCat(this->GeneratorTarget->GetName(), ".lib");
       } else {
         outDir = this->GeneratorTarget->GetDirectory(config) + "/";
         targetNameFull = this->GeneratorTarget->GetFullName(config);
@@ -2531,9 +2647,9 @@ void cmVisualStudio10TargetGenerator::OutputLinkIncremental(
 
   // Some link options belong here.  Use them now and remove them so that
   // WriteLinkOptions does not use them.
-  const char* flags[] = { "LinkDelaySign", "LinkKeyFile", 0 };
-  for (const char** f = flags; *f; ++f) {
-    const char* flag = *f;
+  static const std::vector<std::string> flags{ "LinkDelaySign",
+                                               "LinkKeyFile" };
+  for (const std::string& flag : flags) {
     if (const char* value = linkOptions.GetFlag(flag)) {
       e1.WritePlatformConfigTag(flag, cond, value);
       linkOptions.RemoveFlag(flag);
@@ -2599,8 +2715,7 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
   std::string langForClCompile;
   if (this->ProjectType == csproj) {
     langForClCompile = "CSharp";
-  } else if (std::find(cm::cbegin(clLangs), cm::cend(clLangs), linkLanguage) !=
-             cm::cend(clLangs)) {
+  } else if (cm::contains(clLangs, linkLanguage)) {
     langForClCompile = linkLanguage;
   } else {
     std::set<std::string> languages;
@@ -2619,17 +2734,17 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
     this->LocalGenerator->AddCompileOptions(flags, this->GeneratorTarget,
                                             langForClCompile, configName);
   }
-  // set the correct language
-  if (linkLanguage == "C") {
-    clOptions.AddFlag("CompileAs", "CompileAsC");
-  }
-  if (linkLanguage == "CXX") {
-    clOptions.AddFlag("CompileAs", "CompileAsCpp");
-  }
 
   // Put the IPO enabled configurations into a set.
   if (this->GeneratorTarget->IsIPOEnabled(linkLanguage, configName)) {
     this->IPOEnabledConfigurations.insert(configName);
+  }
+
+  // Precompile Headers
+  std::string pchHeader =
+    this->GeneratorTarget->GetPchHeader(configName, linkLanguage);
+  if (this->MSTools && vcxproj == this->ProjectType && pchHeader.empty()) {
+    clOptions.AddFlag("PrecompiledHeader", "NotUsing");
   }
 
   // Get preprocessor definitions for this directory.
@@ -2647,9 +2762,7 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
         // replace this setting with "true" below.
         clOptions.AddFlag("UseFullPaths", "false");
       }
-      clOptions.AddFlag("PrecompiledHeader", "NotUsing");
-      std::string asmLocation = configName + "/";
-      clOptions.AddFlag("AssemblerListingLocation", asmLocation);
+      clOptions.AddFlag("AssemblerListingLocation", "$(IntDir)");
     }
   }
 
@@ -2670,9 +2783,9 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
         this->Makefile->IssueMessage(MessageType::WARNING, message);
       }
     }
-    if (auto* clr =
+    if (cmProp clr =
           this->GeneratorTarget->GetProperty("COMMON_LANGUAGE_RUNTIME")) {
-      std::string clrString = clr;
+      std::string clrString = *clr;
       if (!clrString.empty()) {
         clrString = ":" + clrString;
       }
@@ -2693,6 +2806,9 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
     case csproj:
       this->GeneratorTarget->GetCompileDefinitions(targetDefines, configName,
                                                    "CSharp");
+      cm::erase_if(targetDefines, [](std::string const& def) {
+        return def.find('=') != std::string::npos;
+      });
       break;
   }
   clOptions.AddDefines(targetDefines);
@@ -2713,9 +2829,7 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
   }
 
   // Add a definition for the configuration name.
-  std::string configDefine = "CMAKE_INTDIR=\"";
-  configDefine += configName;
-  configDefine += "\"";
+  std::string configDefine = cmStrCat("CMAKE_INTDIR=\"", configName, '"');
   clOptions.AddDefine(configDefine);
   if (const std::string* exportMacro =
         this->GeneratorTarget->GetExportMacro()) {
@@ -2723,10 +2837,8 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
   }
 
   if (this->MSTools) {
-    // If we have the VS_WINRT_COMPONENT or CMAKE_VS_WINRT_BY_DEFAULT
-    // set then force Compile as WinRT.
-    if (this->GeneratorTarget->GetPropertyAsBool("VS_WINRT_COMPONENT") ||
-        this->Makefile->IsOn("CMAKE_VS_WINRT_BY_DEFAULT")) {
+    // If we have the VS_WINRT_COMPONENT set then force Compile as WinRT
+    if (this->GeneratorTarget->GetPropertyAsBool("VS_WINRT_COMPONENT")) {
       clOptions.AddFlag("CompileAsWinRT", "true");
       // For WinRT components, add the _WINRT_DLL define to produce a lib
       if (this->GeneratorTarget->GetType() == cmStateEnums::SHARED_LIBRARY ||
@@ -2734,13 +2846,14 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
         clOptions.AddDefine("_WINRT_DLL");
       }
     } else if (this->GlobalGenerator->TargetsWindowsStore() ||
-               this->GlobalGenerator->TargetsWindowsPhone()) {
+               this->GlobalGenerator->TargetsWindowsPhone() ||
+               this->Makefile->IsOn("CMAKE_VS_WINRT_BY_DEFAULT")) {
       if (!clOptions.IsWinRt()) {
         clOptions.AddFlag("CompileAsWinRT", "false");
       }
     }
     if (const char* winRT = clOptions.GetFlag("CompileAsWinRT")) {
-      if (cmSystemTools::IsOn(winRT)) {
+      if (cmIsOn(winRT)) {
         this->TargetCompileAsWinRT = true;
       }
     }
@@ -2766,9 +2879,15 @@ bool cmVisualStudio10TargetGenerator::ComputeClOptions(
     }
   }
 
-  if (clOptions.HasFlag("SpectreMitigation")) {
-    this->SpectreMitigationConfigurations.insert(configName);
+  if (const char* s = clOptions.GetFlag("SpectreMitigation")) {
+    this->SpectreMitigation[configName] = s;
     clOptions.RemoveFlag("SpectreMitigation");
+  }
+
+  // Remove any target-wide -TC or -TP flag added by the project.
+  // Such flags are unnecessary and break our model of language selection.
+  if (langForClCompile == "C" || langForClCompile == "CXX") {
+    clOptions.RemoveFlag("CompileAs");
   }
 
   this->ClOptions[configName] = std::move(pOptions);
@@ -2790,9 +2909,9 @@ void cmVisualStudio10TargetGenerator::WriteClOptions(
   oh.OutputPreprocessorDefinitions(this->LangForClCompile);
 
   if (this->NsightTegra) {
-    if (const char* processMax =
+    if (cmProp processMax =
           this->GeneratorTarget->GetProperty("ANDROID_PROCESS_MAX")) {
-      e2.Element("ProcessMax", processMax);
+      e2.Element("ProcessMax", *processMax);
     }
   }
 
@@ -3010,9 +3129,7 @@ bool cmVisualStudio10TargetGenerator::ComputeCudaOptions(
   cudaOptions.AddDefines(targetDefines);
 
   // Add a definition for the configuration name.
-  std::string configDefine = "CMAKE_INTDIR=\"";
-  configDefine += configName;
-  configDefine += "\"";
+  std::string configDefine = cmStrCat("CMAKE_INTDIR=\"", configName, '"');
   cudaOptions.AddDefine(configDefine);
   if (const std::string* exportMacro =
         this->GeneratorTarget->GetExportMacro()) {
@@ -3022,6 +3139,17 @@ bool cmVisualStudio10TargetGenerator::ComputeCudaOptions(
   // Get includes for this target
   cudaOptions.AddIncludes(this->GetIncludes(configName, "CUDA"));
   cudaOptions.AddFlag("UseHostInclude", "false");
+
+  // Add runtime library selection flag.
+  std::string const& cudaRuntime =
+    this->GeneratorTarget->GetRuntimeLinkLibrary("CUDA", configName);
+  if (cudaRuntime == "STATIC") {
+    cudaOptions.AddFlag("CudaRuntime", "Static");
+  } else if (cudaRuntime == "SHARED") {
+    cudaOptions.AddFlag("CudaRuntime", "Shared");
+  } else if (cudaRuntime == "NONE") {
+    cudaOptions.AddFlag("CudaRuntime", "None");
+  }
 
   this->CudaOptions[configName] = std::move(pOptions);
   return true;
@@ -3063,18 +3191,104 @@ bool cmVisualStudio10TargetGenerator::ComputeCudaLinkOptions(
     this->LocalGenerator, Options::CudaCompiler, gg->GetCudaFlagTable());
   Options& cudaLinkOptions = *pOptions;
 
+  cmGeneratorTarget::DeviceLinkSetter setter(*this->GeneratorTarget);
+
   // Determine if we need to do a device link
-  bool doDeviceLinking = requireDeviceLinking(
+  const bool doDeviceLinking = requireDeviceLinking(
     *this->GeneratorTarget, *this->LocalGenerator, configName);
 
   cudaLinkOptions.AddFlag("PerformDeviceLink",
                           doDeviceLinking ? "true" : "false");
 
-  // Suppress deprecation warnings for default GPU targets during device link.
-  if (cmSystemTools::VersionCompareGreaterEq(
-        this->GlobalGenerator->GetPlatformToolsetCudaString(), "8.0")) {
-    cudaLinkOptions.AppendFlagString("AdditionalOptions",
-                                     "-Wno-deprecated-gpu-targets");
+  // Add extra flags for device linking
+  cudaLinkOptions.AppendFlagString(
+    "AdditionalOptions",
+    this->Makefile->GetSafeDefinition("_CMAKE_CUDA_EXTRA_FLAGS"));
+  cudaLinkOptions.AppendFlagString(
+    "AdditionalOptions",
+    this->Makefile->GetSafeDefinition("_CMAKE_CUDA_EXTRA_DEVICE_LINK_FLAGS"));
+
+  std::vector<std::string> linkOpts;
+  std::string linkFlags;
+  this->GeneratorTarget->GetLinkOptions(linkOpts, configName, "CUDA");
+  // LINK_OPTIONS are escaped.
+  this->LocalGenerator->AppendCompileOptions(linkFlags, linkOpts);
+  cudaLinkOptions.AppendFlagString("AdditionalOptions", linkFlags);
+
+  // For static libraries that have device linking enabled compute
+  // the  libraries
+  if (this->GeneratorTarget->GetType() == cmStateEnums::STATIC_LIBRARY &&
+      doDeviceLinking) {
+    cmComputeLinkInformation* pcli =
+      this->GeneratorTarget->GetLinkInformation(configName);
+    if (!pcli) {
+      cmSystemTools::Error(
+        "CMake can not compute cmComputeLinkInformation for target: " +
+        this->Name);
+      return false;
+    }
+
+    // Would like to use:
+    // cmLinkLineDeviceComputer computer(this->LocalGenerator,
+    //                                   this->LocalGenerator->GetStateSnapshot().GetDirectory());
+    // std::string computed_libs = computer.ComputeLinkLibraries(cli,
+    // std::string{}); but it outputs in "<libA> <libB>" format instead of
+    // "<libA>;<libB>"
+    // Note:
+    // Any modification of this algorithm should be reflected also in
+    // cmLinkLineDeviceComputer
+    cmComputeLinkInformation& cli = *pcli;
+    std::vector<std::string> libVec;
+    const std::string currentBinDir =
+      this->LocalGenerator->GetCurrentBinaryDirectory();
+    const auto& libs = cli.GetItems();
+    for (cmComputeLinkInformation::Item const& l : libs) {
+
+      if (l.Target) {
+        auto managedType = l.Target->GetManagedType(configName);
+        // Do not allow C# targets to be added to the LIB listing. LIB files
+        // are used for linking C++ dependencies. C# libraries do not have lib
+        // files. Instead, they compile down to C# reference libraries (DLL
+        // files). The
+        // `<ProjectReference>` elements added to the vcxproj are enough for
+        // the IDE to deduce the DLL file required by other C# projects that
+        // need its reference library.
+        if (managedType == cmGeneratorTarget::ManagedType::Managed) {
+          continue;
+        }
+        const auto type = l.Target->GetType();
+
+        bool skip = false;
+        switch (type) {
+          case cmStateEnums::SHARED_LIBRARY:
+          case cmStateEnums::MODULE_LIBRARY:
+          case cmStateEnums::INTERFACE_LIBRARY:
+            skip = true;
+            break;
+          case cmStateEnums::STATIC_LIBRARY:
+            skip = l.Target->GetPropertyAsBool("CUDA_RESOLVE_DEVICE_SYMBOLS");
+            break;
+          default:
+            break;
+        }
+        if (skip) {
+          continue;
+        }
+      }
+
+      if (l.IsPath) {
+        std::string path = this->LocalGenerator->MaybeConvertToRelativePath(
+          currentBinDir, l.Value.Value);
+        ConvertToWindowsSlash(path);
+        if (!cmVS10IsTargetsFile(l.Value.Value)) {
+          libVec.push_back(path);
+        }
+      } else {
+        libVec.push_back(l.Value.Value);
+      }
+    }
+
+    cudaLinkOptions.AddFlag("AdditionalDependencies", libVec);
   }
 
   this->CudaLinkOptions[configName] = std::move(pOptions);
@@ -3217,9 +3431,8 @@ void cmVisualStudio10TargetGenerator::WriteLibOptions(
     this->GeneratorTarget->GetLinkClosure(config)->LinkerLanguage;
 
   std::string libflags;
-  this->LocalGenerator->GetStaticLibraryFlags(
-    libflags, cmSystemTools::UpperCase(config), linkLanguage,
-    this->GeneratorTarget);
+  this->LocalGenerator->GetStaticLibraryFlags(libflags, config, linkLanguage,
+                                              this->GeneratorTarget);
   if (!libflags.empty()) {
     Elem e2(e1, "Lib");
     cmGlobalVisualStudio10Generator* gg = this->GlobalGenerator;
@@ -3254,7 +3467,7 @@ void cmVisualStudio10TargetGenerator::WriteManifestOptions(
   std::vector<cmSourceFile const*> manifest_srcs;
   this->GeneratorTarget->GetManifests(manifest_srcs, config);
 
-  const char* dpiAware = this->GeneratorTarget->GetProperty("VS_DPI_AWARE");
+  cmProp dpiAware = this->GeneratorTarget->GetProperty("VS_DPI_AWARE");
 
   if (!manifest_srcs.empty() || dpiAware) {
     Elem e2(e1, "Manifest");
@@ -3268,15 +3481,14 @@ void cmVisualStudio10TargetGenerator::WriteManifestOptions(
       e2.Element("AdditionalManifestFiles", oss.str());
     }
     if (dpiAware) {
-      if (!strcmp(dpiAware, "PerMonitor")) {
+      if (*dpiAware == "PerMonitor") {
         e2.Element("EnableDpiAwareness", "PerMonitorHighDPIAware");
-      } else if (cmSystemTools::IsOn(dpiAware)) {
+      } else if (cmIsOn(*dpiAware)) {
         e2.Element("EnableDpiAwareness", "true");
-      } else if (cmSystemTools::IsOff(dpiAware)) {
+      } else if (cmIsOff(*dpiAware)) {
         e2.Element("EnableDpiAwareness", "false");
       } else {
-        cmSystemTools::Error("Bad parameter for VS_DPI_AWARE: " +
-                             std::string(dpiAware));
+        cmSystemTools::Error("Bad parameter for VS_DPI_AWARE: " + *dpiAware);
       }
     }
   }
@@ -3289,12 +3501,12 @@ void cmVisualStudio10TargetGenerator::WriteAntBuildOptions(
   // its location as the root source directory.
   std::string rootDir = this->LocalGenerator->GetCurrentSourceDirectory();
   {
-    std::vector<cmSourceFile const*> extraSources;
-    this->GeneratorTarget->GetExtraSources(extraSources, "");
-    for (cmSourceFile const* si : extraSources) {
-      if ("androidmanifest.xml" ==
-          cmSystemTools::LowerCase(si->GetLocation().GetName())) {
-        rootDir = si->GetLocation().GetDirectory();
+    for (cmGeneratorTarget::AllConfigSource const& source :
+         this->GeneratorTarget->GetAllConfigSources()) {
+      if (source.Kind == cmGeneratorTarget::SourceKindExtra &&
+          "androidmanifest.xml" ==
+            cmSystemTools::LowerCase(source.Source->GetLocation().GetName())) {
+        rootDir = source.Source->GetLocation().GetDirectory();
         break;
       }
     }
@@ -3316,60 +3528,51 @@ void cmVisualStudio10TargetGenerator::WriteAntBuildOptions(
     e2.Element("EnableProGuard", "true");
   }
 
-  if (const char* proGuardConfigLocation =
+  if (cmProp proGuardConfigLocation =
         this->GeneratorTarget->GetProperty("ANDROID_PROGUARD_CONFIG_PATH")) {
-    e2.Element("ProGuardConfigLocation", proGuardConfigLocation);
+    e2.Element("ProGuardConfigLocation", *proGuardConfigLocation);
   }
 
-  if (const char* securePropertiesLocation =
+  if (cmProp securePropertiesLocation =
         this->GeneratorTarget->GetProperty("ANDROID_SECURE_PROPS_PATH")) {
-    e2.Element("SecurePropertiesLocation", securePropertiesLocation);
+    e2.Element("SecurePropertiesLocation", *securePropertiesLocation);
   }
 
-  if (const char* nativeLibDirectoriesExpression =
+  if (cmProp nativeLibDirectoriesExpression =
         this->GeneratorTarget->GetProperty("ANDROID_NATIVE_LIB_DIRECTORIES")) {
-    cmGeneratorExpression ge;
-    std::unique_ptr<cmCompiledGeneratorExpression> cge =
-      ge.Parse(nativeLibDirectoriesExpression);
-    std::string nativeLibDirs =
-      cge->Evaluate(this->LocalGenerator, configName);
+    std::string nativeLibDirs = cmGeneratorExpression::Evaluate(
+      *nativeLibDirectoriesExpression, this->LocalGenerator, configName);
     e2.Element("NativeLibDirectories", nativeLibDirs);
   }
 
-  if (const char* nativeLibDependenciesExpression =
+  if (cmProp nativeLibDependenciesExpression =
         this->GeneratorTarget->GetProperty(
           "ANDROID_NATIVE_LIB_DEPENDENCIES")) {
-    cmGeneratorExpression ge;
-    std::unique_ptr<cmCompiledGeneratorExpression> cge =
-      ge.Parse(nativeLibDependenciesExpression);
-    std::string nativeLibDeps =
-      cge->Evaluate(this->LocalGenerator, configName);
+    std::string nativeLibDeps = cmGeneratorExpression::Evaluate(
+      *nativeLibDependenciesExpression, this->LocalGenerator, configName);
     e2.Element("NativeLibDependencies", nativeLibDeps);
   }
 
-  if (const char* javaSourceDir =
+  if (cmProp javaSourceDir =
         this->GeneratorTarget->GetProperty("ANDROID_JAVA_SOURCE_DIR")) {
-    e2.Element("JavaSourceDir", javaSourceDir);
+    e2.Element("JavaSourceDir", *javaSourceDir);
   }
 
-  if (const char* jarDirectoriesExpression =
+  if (cmProp jarDirectoriesExpression =
         this->GeneratorTarget->GetProperty("ANDROID_JAR_DIRECTORIES")) {
-    cmGeneratorExpression ge;
-    std::unique_ptr<cmCompiledGeneratorExpression> cge =
-      ge.Parse(jarDirectoriesExpression);
-    std::string jarDirectories =
-      cge->Evaluate(this->LocalGenerator, configName);
+    std::string jarDirectories = cmGeneratorExpression::Evaluate(
+      *jarDirectoriesExpression, this->LocalGenerator, configName);
     e2.Element("JarDirectories", jarDirectories);
   }
 
-  if (const char* jarDeps =
+  if (cmProp jarDeps =
         this->GeneratorTarget->GetProperty("ANDROID_JAR_DEPENDENCIES")) {
-    e2.Element("JarDependencies", jarDeps);
+    e2.Element("JarDependencies", *jarDeps);
   }
 
-  if (const char* assetsDirectories =
+  if (cmProp assetsDirectories =
         this->GeneratorTarget->GetProperty("ANDROID_ASSETS_DIRECTORIES")) {
-    e2.Element("AssetsDirectories", assetsDirectories);
+    e2.Element("AssetsDirectories", *assetsDirectories);
   }
 
   {
@@ -3378,10 +3581,10 @@ void cmVisualStudio10TargetGenerator::WriteAntBuildOptions(
     e2.Element("AndroidManifestLocation", manifest_xml);
   }
 
-  if (const char* antAdditionalOptions =
+  if (cmProp antAdditionalOptions =
         this->GeneratorTarget->GetProperty("ANDROID_ANT_ADDITIONAL_OPTIONS")) {
     e2.Element("AdditionalOptions",
-               std::string(antAdditionalOptions) + " %(AdditionalOptions)");
+               *antAdditionalOptions + " %(AdditionalOptions)");
   }
 }
 
@@ -3427,26 +3630,21 @@ bool cmVisualStudio10TargetGenerator::ComputeLinkOptions(
     linkType = "EXE";
   }
   std::string flags;
-  std::string linkFlagVarBase = "CMAKE_";
-  linkFlagVarBase += linkType;
-  linkFlagVarBase += "_LINKER_FLAGS";
+  std::string linkFlagVarBase = cmStrCat("CMAKE_", linkType, "_LINKER_FLAGS");
   flags += " ";
   flags += this->Makefile->GetRequiredDefinition(linkFlagVarBase);
   std::string linkFlagVar = linkFlagVarBase + "_" + CONFIG;
   flags += " ";
   flags += this->Makefile->GetRequiredDefinition(linkFlagVar);
-  const char* targetLinkFlags =
-    this->GeneratorTarget->GetProperty("LINK_FLAGS");
+  cmProp targetLinkFlags = this->GeneratorTarget->GetProperty("LINK_FLAGS");
   if (targetLinkFlags) {
     flags += " ";
-    flags += targetLinkFlags;
+    flags += *targetLinkFlags;
   }
-  std::string flagsProp = "LINK_FLAGS_";
-  flagsProp += CONFIG;
-  if (const char* flagsConfig =
-        this->GeneratorTarget->GetProperty(flagsProp)) {
+  std::string flagsProp = cmStrCat("LINK_FLAGS_", CONFIG);
+  if (cmProp flagsConfig = this->GeneratorTarget->GetProperty(flagsProp)) {
     flags += " ";
-    flags += flagsConfig;
+    flags += *flagsConfig;
   }
 
   std::vector<std::string> opts;
@@ -3467,25 +3665,8 @@ bool cmVisualStudio10TargetGenerator::ComputeLinkOptions(
   std::vector<std::string> libVec;
   std::vector<std::string> vsTargetVec;
   this->AddLibraries(cli, libVec, vsTargetVec, config);
-  if (std::find(linkClosure->Languages.begin(), linkClosure->Languages.end(),
-                "CUDA") != linkClosure->Languages.end() &&
-      this->CudaOptions[config] != nullptr) {
-    switch (this->CudaOptions[config]->GetCudaRuntime()) {
-      case cmVisualStudioGeneratorOptions::CudaRuntimeStatic:
-        libVec.push_back("cudadevrt.lib");
-        libVec.push_back("cudart_static.lib");
-        break;
-      case cmVisualStudioGeneratorOptions::CudaRuntimeShared:
-        libVec.push_back("cudadevrt.lib");
-        libVec.push_back("cudart.lib");
-        break;
-      case cmVisualStudioGeneratorOptions::CudaRuntimeNone:
-        break;
-    }
-  }
-  std::string standardLibsVar = "CMAKE_";
-  standardLibsVar += linkLanguage;
-  standardLibsVar += "_STANDARD_LIBRARIES";
+  std::string standardLibsVar =
+    cmStrCat("CMAKE_", linkLanguage, "_STANDARD_LIBRARIES");
   std::string const& libs = this->Makefile->GetSafeDefinition(standardLibsVar);
   cmSystemTools::ParseWindowsCommandLine(libs.c_str(), libVec);
   linkOptions.AddFlag("AdditionalDependencies", libVec);
@@ -3549,13 +3730,12 @@ bool cmVisualStudio10TargetGenerator::ComputeLinkOptions(
 
     linkOptions.AddFlag("GenerateDebugInformation", "false");
 
-    std::string pdb = this->GeneratorTarget->GetPDBDirectory(config);
-    pdb += "/";
-    pdb += targetNames.PDB;
-    std::string imLib = this->GeneratorTarget->GetDirectory(
-      config, cmStateEnums::ImportLibraryArtifact);
-    imLib += "/";
-    imLib += targetNames.ImportLibrary;
+    std::string pdb = cmStrCat(this->GeneratorTarget->GetPDBDirectory(config),
+                               '/', targetNames.PDB);
+    std::string imLib =
+      cmStrCat(this->GeneratorTarget->GetDirectory(
+                 config, cmStateEnums::ImportLibraryArtifact),
+               '/', targetNames.ImportLibrary);
 
     linkOptions.AddFlag("ImportLibrary", imLib);
     linkOptions.AddFlag("ProgramDataBaseFile", pdb);
@@ -3645,14 +3825,14 @@ bool cmVisualStudio10TargetGenerator::ComputeLibOptions(
   }
 
   cmComputeLinkInformation& cli = *pcli;
-  typedef cmComputeLinkInformation::ItemVector ItemVector;
+  using ItemVector = cmComputeLinkInformation::ItemVector;
   const ItemVector& libs = cli.GetItems();
   std::string currentBinDir =
     this->LocalGenerator->GetCurrentBinaryDirectory();
   for (cmComputeLinkInformation::Item const& l : libs) {
-    if (l.IsPath && cmVS10IsTargetsFile(l.Value)) {
+    if (l.IsPath && cmVS10IsTargetsFile(l.Value.Value)) {
       std::string path = this->LocalGenerator->MaybeConvertToRelativePath(
-        currentBinDir, l.Value);
+        currentBinDir, l.Value.Value);
       ConvertToWindowsSlash(path);
       this->AddTargetsFileAndConfigPair(path, config);
     }
@@ -3690,7 +3870,7 @@ void cmVisualStudio10TargetGenerator::AddLibraries(
   const cmComputeLinkInformation& cli, std::vector<std::string>& libVec,
   std::vector<std::string>& vsTargetVec, const std::string& config)
 {
-  typedef cmComputeLinkInformation::ItemVector ItemVector;
+  using ItemVector = cmComputeLinkInformation::ItemVector;
   ItemVector const& libs = cli.GetItems();
   std::string currentBinDir =
     this->LocalGenerator->GetCurrentBinaryDirectory();
@@ -3736,16 +3916,16 @@ void cmVisualStudio10TargetGenerator::AddLibraries(
 
     if (l.IsPath) {
       std::string path = this->LocalGenerator->MaybeConvertToRelativePath(
-        currentBinDir, l.Value);
+        currentBinDir, l.Value.Value);
       ConvertToWindowsSlash(path);
-      if (cmVS10IsTargetsFile(l.Value)) {
+      if (cmVS10IsTargetsFile(l.Value.Value)) {
         vsTargetVec.push_back(path);
       } else {
         libVec.push_back(path);
       }
     } else if (!l.Target ||
                l.Target->GetType() != cmStateEnums::INTERFACE_LIBRARY) {
-      libVec.push_back(l.Value);
+      libVec.push_back(l.Value.Value);
     }
   }
 }
@@ -3755,8 +3935,7 @@ void cmVisualStudio10TargetGenerator::AddTargetsFileAndConfigPair(
 {
   for (TargetsFileAndConfigs& i : this->TargetsFileAndConfigsVec) {
     if (cmSystemTools::ComparePath(targetsFile, i.File)) {
-      if (std::find(i.Configs.begin(), i.Configs.end(), config) ==
-          i.Configs.end()) {
+      if (!cm::contains(i.Configs, config)) {
         i.Configs.push_back(config);
       }
       return;
@@ -3874,8 +4053,8 @@ void cmVisualStudio10TargetGenerator::WriteEvents(
 }
 
 void cmVisualStudio10TargetGenerator::WriteEvent(
-  Elem& e1, const char* name, std::vector<cmCustomCommand> const& commands,
-  std::string const& configName)
+  Elem& e1, const std::string& name,
+  std::vector<cmCustomCommand> const& commands, std::string const& configName)
 {
   if (commands.empty()) {
     return;
@@ -3884,6 +4063,7 @@ void cmVisualStudio10TargetGenerator::WriteEvent(
   std::string script;
   const char* pre = "";
   std::string comment;
+  bool stdPipesUTF8 = false;
   for (cmCustomCommand const& cc : commands) {
     cmCustomCommandGenerator ccg(cc, configName, lg);
     if (!ccg.HasOnlyEmptyCommandLines()) {
@@ -3892,11 +4072,16 @@ void cmVisualStudio10TargetGenerator::WriteEvent(
       script += pre;
       pre = "\n";
       script += lg->ConstructScript(ccg);
+
+      stdPipesUTF8 = stdPipesUTF8 || cc.GetStdPipesUTF8();
     }
   }
   comment = cmVS10EscapeComment(comment);
   if (this->ProjectType != csproj) {
     Elem e2(e1, name);
+    if (stdPipesUTF8) {
+      this->WriteStdOutEncodingUtf8(e2);
+    }
     e2.Element("Message", comment);
     e2.Element("Command", script);
   } else {
@@ -3917,8 +4102,8 @@ void cmVisualStudio10TargetGenerator::WriteProjectReferences(Elem& e0)
 {
   cmGlobalGenerator::TargetDependSet const& unordered =
     this->GlobalGenerator->GetTargetDirectDepends(this->GeneratorTarget);
-  typedef cmGlobalVisualStudioGenerator::OrderedTargetDependSet
-    OrderedTargetDependSet;
+  using OrderedTargetDependSet =
+    cmGlobalVisualStudioGenerator::OrderedTargetDependSet;
   OrderedTargetDependSet depends(unordered, CMAKE_CHECK_BUILD_SYSTEM_TARGET);
   Elem e1(e0, "ItemGroup");
   e1.SetHasElements();
@@ -3934,14 +4119,12 @@ void cmVisualStudio10TargetGenerator::WriteProjectReferences(Elem& e0)
     cmLocalGenerator* lg = dt->GetLocalGenerator();
     std::string name = dt->GetName();
     std::string path;
-    const char* p = dt->GetProperty("EXTERNAL_MSPROJECT");
+    cmProp p = dt->GetProperty("EXTERNAL_MSPROJECT");
     if (p) {
-      path = p;
+      path = *p;
     } else {
-      path = lg->GetCurrentBinaryDirectory();
-      path += "/";
-      path += dt->GetName();
-      path += computeProjectFileExtension(dt);
+      path = cmStrCat(lg->GetCurrentBinaryDirectory(), '/', dt->GetName(),
+                      computeProjectFileExtension(dt));
     }
     ConvertToWindowsSlash(path);
     Elem e2(e1, "ProjectReference");
@@ -3949,33 +4132,13 @@ void cmVisualStudio10TargetGenerator::WriteProjectReferences(Elem& e0)
     e2.Element("Project", "{" + this->GlobalGenerator->GetGUID(name) + "}");
     e2.Element("Name", name);
     this->WriteDotNetReferenceCustomTags(e2, name);
-
-    // If the dependency target is not managed (compiled with /clr or
-    // C# target) and not a WinRT component we cannot reference it and
-    // have to set 'ReferenceOutputAssembly' to false.
-    auto referenceNotManaged =
-      dt->GetManagedType("") < cmGeneratorTarget::ManagedType::Mixed;
-    // Workaround to check for manually set /clr flags.
-    if (referenceNotManaged) {
-      if (const auto* flags = dt->GetProperty("COMPILE_OPTIONS")) {
-        std::string flagsStr = flags;
-        if (flagsStr.find("clr") != std::string::npos) {
-          // There is a warning already issued when building the flags.
-          referenceNotManaged = false;
-        }
-      }
-    }
-    // Workaround for static library C# targets
-    if (referenceNotManaged && dt->GetType() == cmStateEnums::STATIC_LIBRARY) {
-      referenceNotManaged = !dt->IsCSharpOnly();
+    if (dt->IsCSharpOnly() || cmHasLiteralSuffix(path, "csproj")) {
+      e2.Element("SkipGetTargetFrameworkProperties", "true");
     }
 
-    // Referencing WinRT components is okay.
-    if (referenceNotManaged) {
-      referenceNotManaged = !dt->GetPropertyAsBool("VS_WINRT_COMPONENT");
-    }
-
-    if (referenceNotManaged) {
+    // Don't reference targets that don't produce any output.
+    if (dt->GetManagedType(this->Configurations[0]) ==
+        cmGeneratorTarget::ManagedType::Undefined) {
       e2.Element("ReferenceOutputAssembly", "false");
       e2.Element("CopyToOutputDirectory", "Never");
     }
@@ -3987,17 +4150,17 @@ void cmVisualStudio10TargetGenerator::WritePlatformExtensions(Elem& e1)
   // This only applies to Windows 10 apps
   if (this->GlobalGenerator->TargetsWindowsStore() &&
       cmHasLiteralPrefix(this->GlobalGenerator->GetSystemVersion(), "10.0")) {
-    const char* desktopExtensionsVersion =
+    cmProp desktopExtensionsVersion =
       this->GeneratorTarget->GetProperty("VS_DESKTOP_EXTENSIONS_VERSION");
     if (desktopExtensionsVersion) {
       this->WriteSinglePlatformExtension(e1, "WindowsDesktop",
-                                         desktopExtensionsVersion);
+                                         *desktopExtensionsVersion);
     }
-    const char* mobileExtensionsVersion =
+    cmProp mobileExtensionsVersion =
       this->GeneratorTarget->GetProperty("VS_MOBILE_EXTENSIONS_VERSION");
     if (mobileExtensionsVersion) {
       this->WriteSinglePlatformExtension(e1, "WindowsMobile",
-                                         mobileExtensionsVersion);
+                                         *mobileExtensionsVersion);
     }
   }
 }
@@ -4022,9 +4185,9 @@ void cmVisualStudio10TargetGenerator::WriteSDKReferences(Elem& e0)
 {
   std::vector<std::string> sdkReferences;
   std::unique_ptr<Elem> spe1;
-  if (const char* vsSDKReferences =
+  if (cmProp vsSDKReferences =
         this->GeneratorTarget->GetProperty("VS_SDK_REFERENCES")) {
-    cmSystemTools::ExpandListArgument(vsSDKReferences, sdkReferences);
+    cmExpandList(*vsSDKReferences, sdkReferences);
     spe1 = cm::make_unique<Elem>(e0, "ItemGroup");
     for (std::string const& ri : sdkReferences) {
       Elem(*spe1, "SDKReference").Attribute("Include", ri);
@@ -4034,11 +4197,11 @@ void cmVisualStudio10TargetGenerator::WriteSDKReferences(Elem& e0)
   // This only applies to Windows 10 apps
   if (this->GlobalGenerator->TargetsWindowsStore() &&
       cmHasLiteralPrefix(this->GlobalGenerator->GetSystemVersion(), "10.0")) {
-    const char* desktopExtensionsVersion =
+    cmProp desktopExtensionsVersion =
       this->GeneratorTarget->GetProperty("VS_DESKTOP_EXTENSIONS_VERSION");
-    const char* mobileExtensionsVersion =
+    cmProp mobileExtensionsVersion =
       this->GeneratorTarget->GetProperty("VS_MOBILE_EXTENSIONS_VERSION");
-    const char* iotExtensionsVersion =
+    cmProp iotExtensionsVersion =
       this->GeneratorTarget->GetProperty("VS_IOT_EXTENSIONS_VERSION");
 
     if (desktopExtensionsVersion || mobileExtensionsVersion ||
@@ -4048,15 +4211,15 @@ void cmVisualStudio10TargetGenerator::WriteSDKReferences(Elem& e0)
       }
       if (desktopExtensionsVersion) {
         this->WriteSingleSDKReference(*spe1, "WindowsDesktop",
-                                      desktopExtensionsVersion);
+                                      *desktopExtensionsVersion);
       }
       if (mobileExtensionsVersion) {
         this->WriteSingleSDKReference(*spe1, "WindowsMobile",
-                                      mobileExtensionsVersion);
+                                      *mobileExtensionsVersion);
       }
       if (iotExtensionsVersion) {
         this->WriteSingleSDKReference(*spe1, "WindowsIoT",
-                                      iotExtensionsVersion);
+                                      *iotExtensionsVersion);
       }
     }
   }
@@ -4076,12 +4239,13 @@ void cmVisualStudio10TargetGenerator::WriteWinRTPackageCertificateKeyFile(
        this->GlobalGenerator->TargetsWindowsPhone()) &&
       (cmStateEnums::EXECUTABLE == this->GeneratorTarget->GetType())) {
     std::string pfxFile;
-    std::vector<cmSourceFile const*> certificates;
-    this->GeneratorTarget->GetCertificates(certificates, "");
-    for (cmSourceFile const* si : certificates) {
-      pfxFile = this->ConvertPath(si->GetFullPath(), false);
-      ConvertToWindowsSlash(pfxFile);
-      break;
+    for (cmGeneratorTarget::AllConfigSource const& source :
+         this->GeneratorTarget->GetAllConfigSources()) {
+      if (source.Kind == cmGeneratorTarget::SourceKindCertificate) {
+        pfxFile = this->ConvertPath(source.Source->GetFullPath(), false);
+        ConvertToWindowsSlash(pfxFile);
+        break;
+      }
     }
 
     if (this->IsMissingFiles &&
@@ -4127,28 +4291,61 @@ void cmVisualStudio10TargetGenerator::WriteWinRTPackageCertificateKeyFile(
   }
 }
 
+void cmVisualStudio10TargetGenerator::ClassifyAllConfigSources()
+{
+  for (cmGeneratorTarget::AllConfigSource const& source :
+       this->GeneratorTarget->GetAllConfigSources()) {
+    this->ClassifyAllConfigSource(source);
+  }
+}
+
+void cmVisualStudio10TargetGenerator::ClassifyAllConfigSource(
+  cmGeneratorTarget::AllConfigSource const& acs)
+{
+  switch (acs.Kind) {
+    case cmGeneratorTarget::SourceKindResx: {
+      // Build and save the name of the corresponding .h file
+      // This relationship will be used later when building the project files.
+      // Both names would have been auto generated from Visual Studio
+      // where the user supplied the file name and Visual Studio
+      // appended the suffix.
+      std::string resx = acs.Source->ResolveFullPath();
+      std::string hFileName = resx.substr(0, resx.find_last_of('.')) + ".h";
+      this->ExpectedResxHeaders.insert(hFileName);
+    } break;
+    case cmGeneratorTarget::SourceKindXaml: {
+      // Build and save the name of the corresponding .h and .cpp file
+      // This relationship will be used later when building the project files.
+      // Both names would have been auto generated from Visual Studio
+      // where the user supplied the file name and Visual Studio
+      // appended the suffix.
+      std::string xaml = acs.Source->ResolveFullPath();
+      std::string hFileName = xaml + ".h";
+      std::string cppFileName = xaml + ".cpp";
+      this->ExpectedXamlHeaders.insert(hFileName);
+      this->ExpectedXamlSources.insert(cppFileName);
+    } break;
+    default:
+      break;
+  }
+}
+
 bool cmVisualStudio10TargetGenerator::IsResxHeader(
   const std::string& headerFile)
 {
-  std::set<std::string> expectedResxHeaders;
-  this->GeneratorTarget->GetExpectedResxHeaders(expectedResxHeaders, "");
-  return expectedResxHeaders.count(headerFile) > 0;
+  return this->ExpectedResxHeaders.count(headerFile) > 0;
 }
 
 bool cmVisualStudio10TargetGenerator::IsXamlHeader(
   const std::string& headerFile)
 {
-  std::set<std::string> expectedXamlHeaders;
-  this->GeneratorTarget->GetExpectedXamlHeaders(expectedXamlHeaders, "");
-  return expectedXamlHeaders.count(headerFile) > 0;
+  return this->ExpectedXamlHeaders.count(headerFile) > 0;
 }
 
 bool cmVisualStudio10TargetGenerator::IsXamlSource(
   const std::string& sourceFile)
 {
-  std::set<std::string> expectedXamlSources;
-  this->GeneratorTarget->GetExpectedXamlSources(expectedXamlSources, "");
-  return expectedXamlSources.count(sourceFile) > 0;
+  return this->ExpectedXamlSources.count(sourceFile) > 0;
 }
 
 void cmVisualStudio10TargetGenerator::WriteApplicationTypeSettings(Elem& e1)
@@ -4207,10 +4404,10 @@ void cmVisualStudio10TargetGenerator::WriteApplicationTypeSettings(Elem& e1)
   if (!targetPlatformVersion.empty()) {
     e1.Element("WindowsTargetPlatformVersion", targetPlatformVersion);
   }
-  const char* targetPlatformMinVersion = this->GeneratorTarget->GetProperty(
+  cmProp targetPlatformMinVersion = this->GeneratorTarget->GetProperty(
     "VS_WINDOWS_TARGET_PLATFORM_MIN_VERSION");
   if (targetPlatformMinVersion) {
-    e1.Element("WindowsTargetPlatformMinVersion", targetPlatformMinVersion);
+    e1.Element("WindowsTargetPlatformMinVersion", *targetPlatformMinVersion);
   } else if (isWindowsStore && rev == "10.0") {
     // If the min version is not set, then use the TargetPlatformVersion
     if (!targetPlatformVersion.empty()) {
@@ -4229,39 +4426,38 @@ void cmVisualStudio10TargetGenerator::VerifyNecessaryFiles()
   // For Windows and Windows Phone executables, we will assume that if a
   // manifest is not present that we need to add all the necessary files
   if (this->GeneratorTarget->GetType() == cmStateEnums::EXECUTABLE) {
-    std::vector<cmSourceFile const*> manifestSources;
-    this->GeneratorTarget->GetAppManifest(manifestSources, "");
-    {
-      std::string const& v = this->GlobalGenerator->GetSystemVersion();
-      if (this->GlobalGenerator->TargetsWindowsPhone()) {
-        if (v == "8.0") {
-          // Look through the sources for WMAppManifest.xml
-          std::vector<cmSourceFile const*> extraSources;
-          this->GeneratorTarget->GetExtraSources(extraSources, "");
-          bool foundManifest = false;
-          for (cmSourceFile const* si : extraSources) {
-            // Need to do a lowercase comparison on the filename
-            if ("wmappmanifest.xml" ==
-                cmSystemTools::LowerCase(si->GetLocation().GetName())) {
-              foundManifest = true;
-              break;
-            }
-          }
-          if (!foundManifest) {
-            this->IsMissingFiles = true;
-          }
-        } else if (v == "8.1") {
-          if (manifestSources.empty()) {
-            this->IsMissingFiles = true;
+    std::vector<cmGeneratorTarget::AllConfigSource> manifestSources =
+      this->GeneratorTarget->GetAllConfigSources(
+        cmGeneratorTarget::SourceKindAppManifest);
+    std::string const& v = this->GlobalGenerator->GetSystemVersion();
+    if (this->GlobalGenerator->TargetsWindowsPhone()) {
+      if (v == "8.0") {
+        // Look through the sources for WMAppManifest.xml
+        bool foundManifest = false;
+        for (cmGeneratorTarget::AllConfigSource const& source :
+             this->GeneratorTarget->GetAllConfigSources()) {
+          if (source.Kind == cmGeneratorTarget::SourceKindExtra &&
+              "wmappmanifest.xml" ==
+                cmSystemTools::LowerCase(
+                  source.Source->GetLocation().GetName())) {
+            foundManifest = true;
+            break;
           }
         }
-      } else if (this->GlobalGenerator->TargetsWindowsStore()) {
+        if (!foundManifest) {
+          this->IsMissingFiles = true;
+        }
+      } else if (v == "8.1") {
         if (manifestSources.empty()) {
-          if (v == "8.0") {
-            this->IsMissingFiles = true;
-          } else if (v == "8.1" || cmHasLiteralPrefix(v, "10.0")) {
-            this->IsMissingFiles = true;
-          }
+          this->IsMissingFiles = true;
+        }
+      }
+    } else if (this->GlobalGenerator->TargetsWindowsStore()) {
+      if (manifestSources.empty()) {
+        if (v == "8.0") {
+          this->IsMissingFiles = true;
+        } else if (v == "8.1" || cmHasLiteralPrefix(v, "10.0")) {
+          this->IsMissingFiles = true;
         }
       }
     }
@@ -4700,11 +4896,11 @@ void cmVisualStudio10TargetGenerator::GetCSharpSourceProperties(
   if (this->ProjectType == csproj) {
     const cmPropertyMap& props = sf->GetProperties();
     for (const std::string& p : props.GetKeys()) {
-      static const std::string propNamePrefix = "VS_CSHARP_";
-      if (p.find(propNamePrefix) == 0) {
+      static const cm::string_view propNamePrefix = "VS_CSHARP_";
+      if (cmHasPrefix(p, propNamePrefix)) {
         std::string tagName = p.substr(propNamePrefix.length());
         if (!tagName.empty()) {
-          const std::string val = props.GetPropertyValue(p);
+          const std::string& val = *props.GetPropertyValue(p);
           if (!val.empty()) {
             tags[tagName] = val;
           } else {
@@ -4720,37 +4916,54 @@ void cmVisualStudio10TargetGenerator::WriteCSharpSourceProperties(
   Elem& e2, const std::map<std::string, std::string>& tags)
 {
   for (const auto& i : tags) {
-    e2.Element(i.first.c_str(), i.second);
+    e2.Element(i.first, i.second);
   }
 }
 
-void cmVisualStudio10TargetGenerator::GetCSharpSourceLink(
-  cmSourceFile const* sf, std::string& link)
+std::string cmVisualStudio10TargetGenerator::GetCSharpSourceLink(
+  cmSourceFile const* source)
 {
-  std::string const& sourceFilePath = sf->GetFullPath();
-  std::string const& binaryDir = LocalGenerator->GetCurrentBinaryDirectory();
-
-  if (!cmSystemTools::IsSubDirectory(sourceFilePath, binaryDir)) {
-    const std::string& stripFromPath =
-      this->Makefile->GetCurrentSourceDirectory();
-    if (sourceFilePath.find(stripFromPath) == 0) {
-      if (const char* l = sf->GetProperty("VS_CSHARP_Link")) {
-        link = l;
-      } else {
-        link = sourceFilePath.substr(stripFromPath.length() + 1);
-      }
-      ConvertToWindowsSlash(link);
-    }
+  // For out of source files, we first check if a matching source group
+  // for this file exists, otherwise we check if the path relative to current
+  // source- or binary-dir is used within the link and return that
+  std::string link;
+  std::string const& fullFileName = source->GetFullPath();
+  std::string const& srcDir = this->Makefile->GetCurrentSourceDirectory();
+  std::string const& binDir = this->Makefile->GetCurrentBinaryDirectory();
+  // unfortunately we have to copy the source groups, because
+  // FindSourceGroup uses a regex which is modifying the group
+  std::vector<cmSourceGroup> sourceGroups = this->Makefile->GetSourceGroups();
+  cmSourceGroup* sourceGroup =
+    this->Makefile->FindSourceGroup(fullFileName, sourceGroups);
+  if (sourceGroup && !sourceGroup->GetFullName().empty()) {
+    link = sourceGroup->GetFullName() + "/" +
+      cmsys::SystemTools::GetFilenameName(fullFileName);
+  } else if (cmHasPrefix(fullFileName, srcDir)) {
+    link = fullFileName.substr(srcDir.length() + 1);
+  } else if (cmHasPrefix(fullFileName, binDir)) {
+    link = fullFileName.substr(binDir.length() + 1);
+  } else if (cmProp l = source->GetProperty("VS_CSHARP_Link")) {
+    link = *l;
   }
+
+  ConvertToWindowsSlash(link);
+  return link;
 }
 
 std::string cmVisualStudio10TargetGenerator::GetCMakeFilePath(
   const char* relativeFilePath) const
 {
   // Always search in the standard modules location.
-  std::string path = cmSystemTools::GetCMakeRoot() + "/";
-  path += relativeFilePath;
+  std::string path =
+    cmStrCat(cmSystemTools::GetCMakeRoot(), '/', relativeFilePath);
   ConvertToWindowsSlash(path);
 
   return path;
+}
+
+void cmVisualStudio10TargetGenerator::WriteStdOutEncodingUtf8(Elem& e1)
+{
+  if (this->GlobalGenerator->IsStdOutEncodingSupported()) {
+    e1.Element("StdOutEncoding", "UTF-8");
+  }
 }

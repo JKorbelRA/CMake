@@ -160,6 +160,10 @@ if(MSVC)
             msvc/gtest-md/Release
             msvc/x64/Debug
             msvc/x64/Release
+            msvc/2010/gtest-md/Win32-Debug
+            msvc/2010/gtest-md/Win32-Release
+            msvc/2010/gtest-md/x64-Debug
+            msvc/2010/gtest-md/x64-Release
             )
     elseif(GTEST_MSVC_SEARCH STREQUAL "MT")
         list(APPEND _gtest_libpath_suffixes
@@ -167,6 +171,10 @@ if(MSVC)
             msvc/gtest/Release
             msvc/x64/Debug
             msvc/x64/Release
+            msvc/2010/gtest/Win32-Debug
+            msvc/2010/gtest/Win32-Release
+            msvc/2010/gtest/x64-Debug
+            msvc/2010/gtest/x64-Release
             )
     endif()
 endif()
@@ -231,5 +239,16 @@ if(GTEST_FOUND)
         __gtest_import_library(GTest::Main GTEST_MAIN_LIBRARY "")
         __gtest_import_library(GTest::Main GTEST_MAIN_LIBRARY "RELEASE")
         __gtest_import_library(GTest::Main GTEST_MAIN_LIBRARY "DEBUG")
+    endif()
+
+    # Add targets mapping the same library names as defined in
+    # GTest's CMake package config.
+    if(NOT TARGET GTest::gtest)
+        add_library(GTest::gtest INTERFACE IMPORTED)
+        target_link_libraries(GTest::gtest INTERFACE GTest::GTest)
+    endif()
+    if(NOT TARGET GTest::gtest_main)
+        add_library(GTest::gtest_main INTERFACE IMPORTED)
+        target_link_libraries(GTest::gtest_main INTERFACE GTest::Main)
     endif()
 endif()

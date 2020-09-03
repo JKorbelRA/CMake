@@ -5,10 +5,12 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmsys/RegularExpression.hxx"
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "cmsys/RegularExpression.hxx"
 
 class cmSourceFile;
 class cmSourceGroupInternals;
@@ -121,7 +123,7 @@ private:
    */
   std::vector<const cmSourceFile*> SourceFiles;
 
-  cmSourceGroupInternals* Internal;
+  std::unique_ptr<cmSourceGroupInternals> Internal;
 };
 
 #endif

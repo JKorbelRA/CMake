@@ -1,43 +1,49 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
-#include "cmAlgorithms.h"
+#include "cmConfigure.h" // IWYU pragma: keep
+
+#include <cassert>
+#include <cctype>
+#include <climits>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include <cmext/algorithm>
+
+#include <cm3p/uv.h>
+
 #include "cmDocumentationEntry.h" // IWYU pragma: keep
 #include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
+#include "cmProperty.h"
 #include "cmState.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmake.h"
 #include "cmcmd.h"
 
-#ifdef CMAKE_BUILD_WITH_CMAKE
+#ifndef CMAKE_BOOTSTRAP
 #  include "cmDocumentation.h"
 #  include "cmDynamicLoader.h"
 #endif
 
-#include "cm_uv.h"
-
 #include "cmsys/Encoding.hxx"
-#if defined(_WIN32) && defined(CMAKE_BUILD_WITH_CMAKE)
+#if defined(_WIN32) && !defined(CMAKE_BOOTSTRAP)
 #  include "cmsys/ConsoleBuf.hxx"
 #endif
 
-#include <cassert>
-#include <climits>
-#include <ctype.h>
-#include <iostream>
-#include <string.h>
-#include <string>
-#include <vector>
-
-#ifdef CMAKE_BUILD_WITH_CMAKE
-static const char* cmDocumentationName[][2] = {
+namespace {
+#ifndef CMAKE_BOOTSTRAP
+const char* cmDocumentationName[][2] = {
   { nullptr, "  cmake - Cross-Platform Makefile Generator." },
   { nullptr, nullptr }
 };
 
-static const char* cmDocumentationUsage[][2] = {
+const char* cmDocumentationUsage[][2] = {
   { nullptr,
     "  cmake [options] <path-to-source>\n"
     "  cmake [options] <path-to-existing-build>\n"
@@ -49,40 +55,12 @@ static const char* cmDocumentationUsage[][2] = {
   { nullptr, nullptr }
 };
 
-static const char* cmDocumentationUsageNote[][2] = {
+const char* cmDocumentationUsageNote[][2] = {
   { nullptr, "Run 'cmake --help' for more information." },
   { nullptr, nullptr }
 };
 
-#  define CMAKE_BUILD_OPTIONS                                                 \
-    "  <dir>          = Project binary directory to be built.\n"              \
-    "  --parallel [<jobs>], -j [<jobs>]\n"                                    \
-    "                 = Build in parallel using the given number of jobs. \n" \
-    "                   If <jobs> is omitted the native build tool's \n"      \
-    "                   default number is used.\n"                            \
-    "                   The CMAKE_BUILD_PARALLEL_LEVEL environment "          \
-    "variable\n"                                                              \
-    "                   specifies a default parallel level when this "        \
-    "option\n"                                                                \
-    "                   is not given.\n"                                      \
-    "  --target <tgt>..., -t <tgt>... \n"                                     \
-    "                 = Build <tgt> instead of default targets.\n"            \
-    "  --config <cfg> = For multi-configuration tools, choose <cfg>.\n"       \
-    "  --clean-first  = Build target 'clean' first, then build.\n"            \
-    "                   (To clean only, use --target 'clean'.)\n"             \
-    "  --verbose, -v  = Enable verbose output - if supported - including\n"   \
-    "                   the build commands to be executed. \n"                \
-    "  --             = Pass remaining options to the native tool.\n"
-
-#  define CMAKE_INSTALL_OPTIONS                                               \
-    "  <dir>              = Project binary directory to install.\n"           \
-    "  --config <cfg>     = For multi-configuration tools, choose <cfg>.\n"   \
-    "  --component <comp> = Component-based install. Only install <comp>.\n"  \
-    "  --prefix <prefix>  = The installation prefix CMAKE_INSTALL_PREFIX.\n"  \
-    "  --strip            = Performing install/strip.\n"                      \
-    "  -v --verbose       = Enable verbose output.\n"
-
-static const char* cmDocumentationOptions[][2] = {
+const char* cmDocumentationOptions[][2] = {
   CMAKE_STANDARD_OPTIONS_TABLE,
   { "-E", "CMake command mode." },
   { "-L[A][H]", "List non-advanced cached variables." },
@@ -96,42 +74,51 @@ static const char* cmDocumentationOptions[][2] = {
     "Generate graphviz of dependencies, see "
     "CMakeGraphVizOptions.cmake for more." },
   { "--system-information [file]", "Dump information about this system." },
-  { "--loglevel=<error|warn|notice|status|verbose|debug|trace>",
-    "Set the verbosity of messages from CMake files." },
+  { "--log-level=<ERROR|WARNING|NOTICE|STATUS|VERBOSE|DEBUG|TRACE>",
+    "Set the verbosity of messages from CMake files. "
+    "--loglevel is also accepted for backward compatibility reasons." },
+  { "--log-context", "Prepend log messages with context, if given" },
   { "--debug-trycompile",
     "Do not delete the try_compile build tree. Only "
     "useful on one try_compile at a time." },
   { "--debug-output", "Put cmake in a debug mode." },
+  { "--debug-find", "Put cmake find in a debug mode." },
   { "--trace", "Put cmake in trace mode." },
   { "--trace-expand", "Put cmake in trace mode with variable expansion." },
+  { "--trace-format=<human|json-v1>", "Set the output format of the trace." },
   { "--trace-source=<file>",
     "Trace only this CMake file/module. Multiple options allowed." },
+  { "--trace-redirect=<file>",
+    "Redirect trace output to a file instead of stderr." },
   { "--warn-uninitialized", "Warn about uninitialized values." },
   { "--warn-unused-vars", "Warn about unused variables." },
   { "--no-warn-unused-cli", "Don't warn about command line options." },
   { "--check-system-vars",
     "Find problems with variable usage in system "
     "files." },
+#  if !defined(CMAKE_BOOTSTRAP)
+  { "--profiling-format=<fmt>",
+    "Output data for profiling CMake scripts. Supported formats: "
+    "google-trace" },
+  { "--profiling-output=<file>",
+    "Select an output path for the profiling data enabled through "
+    "--profiling-format." },
+#  endif
   { nullptr, nullptr }
 };
 
 #endif
 
-static int do_command(int ac, char const* const* av)
+int do_command(int ac, char const* const* av)
 {
   std::vector<std::string> args;
   args.reserve(ac - 1);
   args.emplace_back(av[0]);
-  cmAppend(args, av + 2, av + ac);
+  cm::append(args, av + 2, av + ac);
   return cmcmd::ExecuteCMakeCommand(args);
 }
 
-int do_cmake(int ac, char const* const* av);
-static int do_build(int ac, char const* const* av);
-static int do_install(int ac, char const* const* av);
-static int do_open(int ac, char const* const* av);
-
-static cmMakefile* cmakemainGetMakefile(cmake* cm)
+cmMakefile* cmakemainGetMakefile(cmake* cm)
 {
   if (cm && cm->GetDebugOutput()) {
     cmGlobalGenerator* gg = cm->GetGlobalGenerator();
@@ -142,7 +129,7 @@ static cmMakefile* cmakemainGetMakefile(cmake* cm)
   return nullptr;
 }
 
-static std::string cmakemainGetStack(cmake* cm)
+std::string cmakemainGetStack(cmake* cm)
 {
   std::string msg;
   cmMakefile* mf = cmakemainGetMakefile(cm);
@@ -156,70 +143,25 @@ static std::string cmakemainGetStack(cmake* cm)
   return msg;
 }
 
-static void cmakemainMessageCallback(const std::string& m,
-                                     const char* /*unused*/, cmake* cm)
+void cmakemainMessageCallback(const std::string& m, const char* /*unused*/,
+                              cmake* cm)
 {
-  std::cerr << m << cmakemainGetStack(cm) << std::endl << std::flush;
+  std::cerr << m << cmakemainGetStack(cm) << std::endl;
 }
 
-static void cmakemainProgressCallback(const std::string& m, float prog,
-                                      cmake* cm)
+void cmakemainProgressCallback(const std::string& m, float prog, cmake* cm)
 {
   cmMakefile* mf = cmakemainGetMakefile(cm);
   std::string dir;
   if (mf && cmHasLiteralPrefix(m, "Configuring") && (prog < 0)) {
-    dir = " ";
-    dir += mf->GetCurrentSourceDirectory();
+    dir = cmStrCat(' ', mf->GetCurrentSourceDirectory());
   } else if (mf && cmHasLiteralPrefix(m, "Generating")) {
-    dir = " ";
-    dir += mf->GetCurrentBinaryDirectory();
+    dir = cmStrCat(' ', mf->GetCurrentBinaryDirectory());
   }
 
   if ((prog < 0) || (!dir.empty())) {
     std::cout << "-- " << m << dir << cmakemainGetStack(cm) << std::endl;
   }
-
-  std::cout.flush();
-}
-
-int main(int ac, char const* const* av)
-{
-  cmSystemTools::EnsureStdPipes();
-#if defined(_WIN32) && defined(CMAKE_BUILD_WITH_CMAKE)
-  // Replace streambuf so we can output Unicode to console
-  cmsys::ConsoleBuf::Manager consoleOut(std::cout);
-  consoleOut.SetUTF8Pipes();
-  cmsys::ConsoleBuf::Manager consoleErr(std::cerr, true);
-  consoleErr.SetUTF8Pipes();
-#endif
-  cmsys::Encoding::CommandLineArguments args =
-    cmsys::Encoding::CommandLineArguments::Main(ac, av);
-  ac = args.argc();
-  av = args.argv();
-
-  cmSystemTools::EnableMSVCDebugHook();
-  cmSystemTools::InitializeLibUV();
-  cmSystemTools::FindCMakeResources(av[0]);
-  if (ac > 1) {
-    if (strcmp(av[1], "--build") == 0) {
-      return do_build(ac, av);
-    }
-    if (strcmp(av[1], "--install") == 0) {
-      return do_install(ac, av);
-    }
-    if (strcmp(av[1], "--open") == 0) {
-      return do_open(ac, av);
-    }
-    if (strcmp(av[1], "-E") == 0) {
-      return do_command(ac, av);
-    }
-  }
-  int ret = do_cmake(ac, av);
-#ifdef CMAKE_BUILD_WITH_CMAKE
-  cmDynamicLoader::FlushCache();
-#endif
-  uv_loop_close(uv_default_loop());
-  return ret;
 }
 
 int do_cmake(int ac, char const* const* av)
@@ -230,7 +172,7 @@ int do_cmake(int ac, char const* const* av)
     return 1;
   }
 
-#ifdef CMAKE_BUILD_WITH_CMAKE
+#ifndef CMAKE_BOOTSTRAP
   cmDocumentation doc;
   doc.addCMakeStandardDocSections();
   if (doc.CheckOptions(ac, av)) {
@@ -355,16 +297,16 @@ int do_cmake(int ac, char const* const* av)
       cmStateEnums::CacheEntryType t = cm.GetState()->GetCacheEntryType(k);
       if (t != cmStateEnums::INTERNAL && t != cmStateEnums::STATIC &&
           t != cmStateEnums::UNINITIALIZED) {
-        const char* advancedProp =
+        cmProp advancedProp =
           cm.GetState()->GetCacheEntryProperty(k, "ADVANCED");
         if (list_all_cached || !advancedProp) {
           if (list_help) {
-            std::cout << "// "
-                      << cm.GetState()->GetCacheEntryProperty(k, "HELPSTRING")
-                      << std::endl;
+            cmProp help =
+              cm.GetState()->GetCacheEntryProperty(k, "HELPSTRING");
+            std::cout << "// " << (help ? *help : "") << std::endl;
           }
           std::cout << k << ":" << cmState::CacheEntryTypeToString(t) << "="
-                    << cm.GetState()->GetCacheEntryValue(k) << std::endl;
+                    << cm.GetState()->GetSafeCacheEntryValue(k) << std::endl;
           if (list_help) {
             std::cout << std::endl;
           }
@@ -381,7 +323,7 @@ int do_cmake(int ac, char const* const* av)
   return 0;
 }
 
-namespace {
+#ifndef CMAKE_BOOTSTRAP
 int extract_job_number(int& index, char const* current, char const* next,
                        int len_of_flag)
 {
@@ -396,7 +338,7 @@ int extract_job_number(int& index, char const* current, char const* next,
   unsigned long numJobs = 0;
   if (jobString.empty()) {
     jobs = cmake::DEFAULT_BUILD_PARALLEL_LEVEL;
-  } else if (cmSystemTools::StringToULong(jobString.c_str(), &numJobs)) {
+  } else if (cmStrToULong(jobString, &numJobs)) {
     if (numJobs == 0) {
       std::cerr
         << "The <jobs> value requires a positive integer argument.\n\n";
@@ -411,17 +353,17 @@ int extract_job_number(int& index, char const* current, char const* next,
   }
   return jobs;
 }
-}
+#endif
 
-static int do_build(int ac, char const* const* av)
+int do_build(int ac, char const* const* av)
 {
-#ifndef CMAKE_BUILD_WITH_CMAKE
+#ifdef CMAKE_BOOTSTRAP
   std::cerr << "This cmake does not support --build\n";
   return -1;
 #else
   int jobs = cmake::NO_BUILD_PARALLEL_LEVEL;
   std::vector<std::string> targets;
-  std::string config = "Debug";
+  std::string config;
   std::string dir;
   std::vector<std::string> nativeOptions;
   bool cleanFirst = false;
@@ -515,7 +457,7 @@ static int do_build(int ac, char const* const* av)
         jobs = cmake::DEFAULT_BUILD_PARALLEL_LEVEL;
       } else {
         unsigned long numJobs = 0;
-        if (cmSystemTools::StringToULong(parallel.c_str(), &numJobs)) {
+        if (cmStrToULong(parallel, &numJobs)) {
           if (numJobs == 0) {
             std::cerr << "The CMAKE_BUILD_PARALLEL_LEVEL environment variable "
                          "requires a positive integer argument.\n\n";
@@ -541,7 +483,24 @@ static int do_build(int ac, char const* const* av)
     std::cerr <<
       "Usage: cmake --build <dir> [options] [-- [native-options]]\n"
       "Options:\n"
-      CMAKE_BUILD_OPTIONS
+      "  <dir>          = Project binary directory to be built.\n"
+      "  --parallel [<jobs>], -j [<jobs>]\n"
+      "                 = Build in parallel using the given number of jobs. \n"
+      "                   If <jobs> is omitted the native build tool's \n"
+      "                   default number is used.\n"
+      "                   The CMAKE_BUILD_PARALLEL_LEVEL environment "
+      "variable\n"
+      "                   specifies a default parallel level when this "
+      "option\n"
+      "                   is not given.\n"
+      "  --target <tgt>..., -t <tgt>... \n"
+      "                 = Build <tgt> instead of default targets.\n"
+      "  --config <cfg> = For multi-configuration tools, choose <cfg>.\n"
+      "  --clean-first  = Build target 'clean' first, then build.\n"
+      "                   (To clean only, use --target 'clean'.)\n"
+      "  --verbose, -v  = Enable verbose output - if supported - including\n"
+      "                   the build commands to be executed. \n"
+      "  --             = Pass remaining options to the native tool.\n"
       ;
     /* clang-format on */
     return 1;
@@ -560,9 +519,9 @@ static int do_build(int ac, char const* const* av)
 #endif
 }
 
-static int do_install(int ac, char const* const* av)
+int do_install(int ac, char const* const* av)
 {
-#ifndef CMAKE_BUILD_WITH_CMAKE
+#ifdef CMAKE_BOOTSTRAP
   std::cerr << "This cmake does not support --install\n";
   return -1;
 #else
@@ -627,8 +586,18 @@ static int do_install(int ac, char const* const* av)
   }
 
   if (dir.empty()) {
-    std::cerr << "Usage: cmake --install <dir> "
-                 "[options]\nOptions:\n" CMAKE_INSTALL_OPTIONS;
+    /* clang-format off */
+    std::cerr <<
+      "Usage: cmake --install <dir> [options]\n"
+      "Options:\n"
+      "  <dir>              = Project binary directory to install.\n"
+      "  --config <cfg>     = For multi-configuration tools, choose <cfg>.\n"
+      "  --component <comp> = Component-based install. Only install <comp>.\n"
+      "  --prefix <prefix>  = The installation prefix CMAKE_INSTALL_PREFIX.\n"
+      "  --strip            = Performing install/strip.\n"
+      "  -v --verbose       = Enable verbose output.\n"
+      ;
+    /* clang-format on */
     return 1;
   }
 
@@ -671,9 +640,9 @@ static int do_install(int ac, char const* const* av)
 #endif
 }
 
-static int do_open(int ac, char const* const* av)
+int do_open(int ac, char const* const* av)
 {
-#ifndef CMAKE_BUILD_WITH_CMAKE
+#ifdef CMAKE_BOOTSTRAP
   std::cerr << "This cmake does not support --open\n";
   return -1;
 #else
@@ -712,4 +681,46 @@ static int do_open(int ac, char const* const* av)
   });
   return cm.Open(dir, false) ? 0 : 1;
 #endif
+}
+} // namespace
+
+int main(int ac, char const* const* av)
+{
+  cmSystemTools::EnsureStdPipes();
+#if defined(_WIN32) && !defined(CMAKE_BOOTSTRAP)
+  // Replace streambuf so we can output Unicode to console
+  cmsys::ConsoleBuf::Manager consoleOut(std::cout);
+  consoleOut.SetUTF8Pipes();
+  cmsys::ConsoleBuf::Manager consoleErr(std::cerr, true);
+  consoleErr.SetUTF8Pipes();
+#endif
+  cmsys::Encoding::CommandLineArguments args =
+    cmsys::Encoding::CommandLineArguments::Main(ac, av);
+  ac = args.argc();
+  av = args.argv();
+
+  cmSystemTools::InitializeLibUV();
+  cmSystemTools::FindCMakeResources(av[0]);
+  if (ac > 1) {
+    if (strcmp(av[1], "--build") == 0) {
+      return do_build(ac, av);
+    }
+    if (strcmp(av[1], "--install") == 0) {
+      return do_install(ac, av);
+    }
+    if (strcmp(av[1], "--open") == 0) {
+      return do_open(ac, av);
+    }
+    if (strcmp(av[1], "-E") == 0) {
+      return do_command(ac, av);
+    }
+  }
+  int ret = do_cmake(ac, av);
+#ifndef CMAKE_BOOTSTRAP
+  cmDynamicLoader::FlushCache();
+#endif
+  if (uv_loop_t* loop = uv_default_loop()) {
+    uv_loop_close(loop);
+  }
+  return ret;
 }

@@ -5,16 +5,16 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmGeneratorExpression.h"
-#include "cmStateTypes.h"
-#include "cmVersion.h"
-#include "cmVersionConfig.h"
-
 #include <iosfwd>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "cmGeneratorExpression.h"
+#include "cmStateTypes.h"
+#include "cmVersion.h"
+#include "cmVersionConfig.h"
 
 class cmGeneratorTarget;
 
@@ -46,7 +46,7 @@ public:
 
   /** Set the full path to the export file to generate.  */
   void SetExportFile(const char* mainFile);
-  const char* GetMainExportFileName() const;
+  const std::string& GetMainExportFileName() const;
 
   /** Set the namespace in which to place exported target names.  */
   void SetNamespace(const std::string& ns) { this->Namespace = ns; }
@@ -62,7 +62,7 @@ public:
   bool GenerateImportFile();
 
 protected:
-  typedef std::map<std::string, std::string> ImportPropertyMap;
+  using ImportPropertyMap = std::map<std::string, std::string>;
 
   // Generate per-configuration target information to the given output
   // stream.
@@ -102,13 +102,19 @@ protected:
                                  ImportPropertyMap& properties,
                                  std::vector<std::string>& missingTargets);
 
+  enum class ImportLinkPropertyTargetNames
+  {
+    Yes,
+    No,
+  };
   template <typename T>
   void SetImportLinkProperty(std::string const& suffix,
                              cmGeneratorTarget* target,
                              const std::string& propName,
                              std::vector<T> const& entries,
                              ImportPropertyMap& properties,
-                             std::vector<std::string>& missingTargets);
+                             std::vector<std::string>& missingTargets,
+                             ImportLinkPropertyTargetNames targetNames);
 
   /** Each subclass knows how to generate its kind of export file.  */
   virtual bool GenerateMainFile(std::ostream& os) = 0;
