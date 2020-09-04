@@ -520,6 +520,7 @@ void CMakeSetupDialog::doGenerate()
 
 void CMakeSetupDialog::doOpenProject()
 {
+  //QDesktopServices::openUrl(QUrl::fromLocalFile(this->getProjectFilename()?
   QMetaObject::invokeMethod(this->CMakeThread->cmakeInstance(), "open",
                             Qt::QueuedConnection);
 }

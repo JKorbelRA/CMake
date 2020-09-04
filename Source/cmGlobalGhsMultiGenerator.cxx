@@ -27,6 +27,13 @@
 #include "cmVersion.h"
 #include "cmake.h"
 
+// JKB: Open support
+#include <objbase.h>
+#include <shellapi.h>
+#include <windows.h>
+#include <future>
+// END JKB
+
 const char* cmGlobalGhsMultiGenerator::FILE_EXTENSION = ".gpj";
 #ifdef __linux__
 const char* cmGlobalGhsMultiGenerator::DEFAULT_BUILD_PROGRAM = "gbuild";
@@ -92,9 +99,14 @@ bool cmGlobalGhsMultiGenerator::SetGeneratorToolset(std::string const& ts,
     /* store the full toolset for later use
      * -- already done if -T<toolset> was specified
      */
-    mf->AddCacheDefinition("CMAKE_GENERATOR_TOOLSET", tsp,
+
+    // JKB: Do not store as cache for regeneration.
+    #if 0
+    mf->AddCacheDefinition("CMAKE_GENERATOR_TOOLSET", tsp.c_str(),
                            "Location of generator toolset.",
                            cmStateEnums::INTERNAL);
+    #endif
+    // END JKB
   }
 
   /* set the build tool to use */
@@ -134,9 +146,14 @@ bool cmGlobalGhsMultiGenerator::SetGeneratorPlatform(std::string const& p,
     /* store the platform name for later use
      * -- already done if -A<arch> was specified
      */
-    mf->AddCacheDefinition("CMAKE_GENERATOR_PLATFORM", arch,
+
+    // JKB: Do not store as cache for regeneration.
+    #if 0
+    mf->AddCacheDefinition("CMAKE_GENERATOR_PLATFORM", arch.c_str(),
                            "Name of generator platform.",
                            cmStateEnums::INTERNAL);
+    #endif
+    // END JKB
   } else {
     arch = p;
   }
@@ -643,7 +660,12 @@ void cmGlobalGhsMultiGenerator::WriteHighLevelDirectives(
       this->GetCMakeInstance()->GetCacheDefinition("CMAKE_GENERATOR_PLATFORM");
     const char* p =
       this->GetCMakeInstance()->GetCacheDefinition("GHS_TARGET_PLATFORM");
+    // JKB: Do not store as cache for regeneration.
+#if 0
     tgt = cmStrCat((a ? a : ""), '_', (p ? p : ""), ".tgt");
+#endif
+    tgt = cmStrCat((a ? a : "arm"), '_', (p ? p : ""), ".tgt");
+    // END JKB
   }
 
   /* clang-format off */
@@ -743,3 +765,39 @@ bool cmGlobalGhsMultiGenerator::VisitTarget(
   /* already complete */
   return false;
 }
+
+// JKB: Open project with GHS Multi
+static bool OpenWorkspace(std::string workspace)
+{
+    HRESULT comInitialized =
+        CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (FAILED(comInitialized)) {
+        return false;
+    }
+
+    HINSTANCE hi =
+        ShellExecuteA(NULL, "open", workspace.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+    CoUninitialize();
+
+    return reinterpret_cast<intptr_t>(hi) > 32;
+}
+
+
+bool cmGlobalGhsMultiGenerator::Open(const std::string& bindir,
+    const std::string& projectName,
+    bool dryRun)
+{
+    std::string projFile = bindir + "/" + projectName + ".top" + FILE_EXTENSION;
+	// TODO: COMMENT
+	// cmSystemTools::Message(std::string("Trying to OPEN: ") + projFile);
+	// END TODO
+
+    if (dryRun) {
+        return cmSystemTools::FileExists(projFile, true);
+    }
+
+    return std::async(std::launch::async, OpenWorkspace, projFile).get();
+}
+
+// END JKB

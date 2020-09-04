@@ -83,6 +83,11 @@ public:
 
   const char* GetInstallTargetName() const override { return "install"; }
 
+  // JKB: Open Project
+  bool Open(const std::string& bindir, const std::string& projectName,
+            bool dryRun) override;
+  // END JKB
+
 protected:
   void Generate() override;
   std::vector<GeneratedMakeCommand> GenerateBuildCommand(

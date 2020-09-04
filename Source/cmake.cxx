@@ -68,6 +68,12 @@
 #  define CMAKE_USE_ECLIPSE
 #endif
 
+// JKB
+#if defined(_WIN32) && !defined(CMAKE_BOOTSTRAP)
+#  define CMAKE_USE_IAR
+#endif
+// End: JKB
+
 #if defined(__MINGW32__) && defined(CMAKE_BOOTSTRAP)
 #  define CMAKE_BOOT_MINGW
 #endif
@@ -112,6 +118,12 @@
 #ifdef CMAKE_USE_ECLIPSE
 #  include "cmExtraEclipseCDT4Generator.h"
 #endif
+
+// JKB
+#ifdef CMAKE_USE_IAR
+#include "cmGlobalIarGenerator.h"
+#endif
+// End: JKB
 
 #if defined(__linux__) || defined(_WIN32)
 #  include "cmGlobalGhsMultiGenerator.h"
@@ -2036,6 +2048,11 @@ void cmake::AddDefaultGenerators()
 #ifdef CMAKE_USE_XCODE
   this->Generators.push_back(cmGlobalXCodeGenerator::NewFactory());
 #endif
+// JKB
+#ifdef CMAKE_USE_IAR
+  this->Generators.push_back(cmGlobalIarGenerator::NewFactory());
+#endif
+// End: JKB
 }
 
 bool cmake::ParseCacheEntry(const std::string& entry, std::string& var,
