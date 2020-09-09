@@ -18,7 +18,8 @@ class cmLocalIarGenerator : public cmLocalGenerator
 public:
   cmLocalIarGenerator(cmGlobalGenerator* gg, cmMakefile* mf);
 
-  virtual ~cmLocalIarGenerator();
+  ~cmLocalIarGenerator() override;
+
 
   /**
    * Generate the makefile for this directory.

@@ -568,7 +568,7 @@ std::unique_ptr<cmLocalGenerator> cmGlobalIarGenerator::CreateLocalGenerator(
   cmMakefile* mf)
 {
   return std::unique_ptr<cmLocalGenerator>(
-    cm::make_unique<cmLocalGenerator>(this, mf));
+    cm::make_unique<cmLocalIarGenerator>(this, mf));
 }
 
 
@@ -655,13 +655,19 @@ cmGlobalIarGenerator::GenerateBuildCommand(
   }
 
   makeCommand.Add("-build");
-  std::string buildType = cmGlobalIarGenerator::GLOBALCFG.buildType;
-  if (this->GLOBALCFG.buildType.empty()) {
+  /*auto majorVer = GLOBALCFG.wbVersion.substr(
+    0, GLOBALCFG.wbVersion.find('.'));
+  auto majorVerInt = atoi(majorVer.c_str());
+  if (majorVerInt < 8)
+  {*/
+  std::string buildType = GLOBALCFG.buildType;
+  if (GLOBALCFG.buildType.empty()) {
     buildType = "Release";
   }
-
   makeCommand.Add(buildType);
+  /*}*/
 
+  
   // TODO COMMENT
   // cmSystemTools::Message(makeCommand.Printable());
   // END TODO
@@ -1379,9 +1385,18 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
       {
       if (it->first == l.get()->GetName())
         {
-        const char* pPropertyStr = l.get()->GetProperty(importedLocationStr)->c_str();
-        const char* pNoBtPropertyStr =
-          l.get()->GetProperty(std::string("IMPORTED_LOCATION"))->c_str();
+        cmProp propStrPtr = l.get()->GetProperty(importedLocationStr);
+        const char* pPropertyStr = NULL;
+		if (propStrPtr != NULL)
+		{
+          pPropertyStr = propStrPtr->c_str();
+		}
+        propStrPtr = l.get()->GetProperty(std::string("IMPORTED_LOCATION"));
+		const char* pNoBtPropertyStr = NULL;
+		if (propStrPtr != NULL)
+		{
+          pNoBtPropertyStr = propStrPtr->c_str();
+		}
 
           if (pPropertyStr != NULL)
           {

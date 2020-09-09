@@ -6,6 +6,7 @@
 #include "cmGeneratorTarget.h"
 #include "cmGlobalIarGenerator.h"
 #include "cmMakefile.h"
+#include "cmStringAlgorithms.h"
 
 cmLocalIarGenerator::cmLocalIarGenerator(cmGlobalGenerator* gg,
                                          cmMakefile* mf)
@@ -13,9 +14,7 @@ cmLocalIarGenerator::cmLocalIarGenerator(cmGlobalGenerator* gg,
 {
 }
 
-cmLocalIarGenerator::~cmLocalIarGenerator()
-{
-}
+cmLocalIarGenerator::~cmLocalIarGenerator() = default;
 
 void cmLocalIarGenerator::Generate()
 {
