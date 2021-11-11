@@ -3,8 +3,9 @@
 #include "cm_codecvt.hxx"
 
 #if defined(_WIN32)
-#  include <assert.h>
-#  include <string.h>
+#  include <cassert>
+#  include <cstring>
+
 #  include <windows.h>
 #  undef max
 #  include "cmsys/Encoding.hxx"
@@ -30,19 +31,20 @@ codecvt::codecvt(Encoding e)
     // We don't know which ANSI encoding to use for other platforms than
     // Windows so we don't do any conversion there
     case codecvt::UTF8:
+    case codecvt::UTF8_WITH_BOM:
     // Assume internal encoding is UTF-8
     case codecvt::None:
     // No encoding
     default:
-      m_noconv = true;
+      this->m_noconv = true;
   }
 }
 
 codecvt::~codecvt() = default;
 
-bool codecvt::do_always_noconv() const throw()
+bool codecvt::do_always_noconv() const noexcept
 {
-  return m_noconv;
+  return this->m_noconv;
 }
 
 std::codecvt_base::result codecvt::do_out(mbstate_t& state, const char* from,
@@ -52,7 +54,7 @@ std::codecvt_base::result codecvt::do_out(mbstate_t& state, const char* from,
 {
   from_next = from;
   to_next = to;
-  if (m_noconv) {
+  if (this->m_noconv) {
     return std::codecvt_base::noconv;
   }
 #if defined(_WIN32)
@@ -129,7 +131,7 @@ std::codecvt_base::result codecvt::do_unshift(mbstate_t& state, char* to,
                                               char*& to_next) const
 {
   to_next = to;
-  if (m_noconv) {
+  if (this->m_noconv) {
     return std::codecvt_base::noconv;
   }
 #if defined(_WIN32)
@@ -232,12 +234,12 @@ void codecvt::BufferPartial(mbstate_t& state, int size,
 }
 #endif
 
-int codecvt::do_max_length() const throw()
+int codecvt::do_max_length() const noexcept
 {
   return 4;
 }
 
-int codecvt::do_encoding() const throw()
+int codecvt::do_encoding() const noexcept
 {
   return 0;
 }

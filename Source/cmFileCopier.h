@@ -1,30 +1,31 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmFileCopier_h
-#define cmFileCopier_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-
-#include "cmFileTimeCache.h"
-#include "cm_sys_stat.h"
-#include "cmsys/RegularExpression.hxx"
 
 #include <string>
 #include <vector>
 
-class cmFileCommand;
+#include "cmsys/RegularExpression.hxx"
+
+#include "cm_sys_stat.h"
+
+#include "cmFileTimeCache.h"
+
+class cmExecutionStatus;
 class cmMakefile;
 
 // File installation helper class.
 struct cmFileCopier
 {
-  cmFileCopier(cmFileCommand* command, const char* name = "COPY");
+  cmFileCopier(cmExecutionStatus& status, const char* name = "COPY");
   virtual ~cmFileCopier();
 
   bool Run(std::vector<std::string> const& args);
 
 protected:
-  cmFileCommand* FileCommand;
+  cmExecutionStatus& Status;
   cmMakefile* Makefile;
   const char* Name;
   bool Always;
@@ -66,8 +67,9 @@ protected:
 
   bool InstallSymlinkChain(std::string& fromFile, std::string& toFile);
   bool InstallSymlink(const std::string& fromFile, const std::string& toFile);
-  bool InstallFile(const std::string& fromFile, const std::string& toFile,
-                   MatchProperties match_properties);
+  virtual bool InstallFile(const std::string& fromFile,
+                           const std::string& toFile,
+                           MatchProperties match_properties);
   bool InstallDirectory(const std::string& source,
                         const std::string& destination,
                         MatchProperties match_properties);
@@ -118,5 +120,3 @@ protected:
 
   bool GetDefaultDirectoryPermissions(mode_t** mode);
 };
-
-#endif

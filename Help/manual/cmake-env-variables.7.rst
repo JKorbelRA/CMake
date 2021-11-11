@@ -14,6 +14,13 @@ For general information on environment variables, see the
 :ref:`Environment Variables <CMake Language Environment Variables>`
 section in the cmake-language manual.
 
+Environment Variables that Change Behavior
+==========================================
+
+.. toctree::
+   :maxdepth: 1
+
+   /envvar/CMAKE_PREFIX_PATH
 
 Environment Variables that Control the Build
 ============================================
@@ -21,15 +28,23 @@ Environment Variables that Control the Build
 .. toctree::
    :maxdepth: 1
 
+   /envvar/CMAKE_APPLE_SILICON_PROCESSOR
    /envvar/CMAKE_BUILD_PARALLEL_LEVEL
+   /envvar/CMAKE_BUILD_TYPE
+   /envvar/CMAKE_CONFIGURATION_TYPES
    /envvar/CMAKE_CONFIG_TYPE
+   /envvar/CMAKE_EXPORT_COMPILE_COMMANDS
    /envvar/CMAKE_GENERATOR
    /envvar/CMAKE_GENERATOR_INSTANCE
    /envvar/CMAKE_GENERATOR_PLATFORM
    /envvar/CMAKE_GENERATOR_TOOLSET
+   /envvar/CMAKE_INSTALL_MODE
+   /envvar/CMAKE_LANG_COMPILER_LAUNCHER
+   /envvar/CMAKE_LANG_LINKER_LAUNCHER
    /envvar/CMAKE_MSVCIDE_RUN_PATH
    /envvar/CMAKE_NO_VERBOSE
    /envvar/CMAKE_OSX_ARCHITECTURES
+   /envvar/CMAKE_TOOLCHAIN_FILE
    /envvar/DESTDIR
    /envvar/LDFLAGS
    /envvar/MACOSX_DEPLOYMENT_TARGET
@@ -47,6 +62,7 @@ Environment Variables for Languages
    /envvar/CC
    /envvar/CFLAGS
    /envvar/CSFLAGS
+   /envvar/CUDAARCHS
    /envvar/CUDACXX
    /envvar/CUDAFLAGS
    /envvar/CUDAHOSTCXX
@@ -54,6 +70,12 @@ Environment Variables for Languages
    /envvar/CXXFLAGS
    /envvar/FC
    /envvar/FFLAGS
+   /envvar/HIPCXX
+   /envvar/HIPFLAGS
+   /envvar/ISPC
+   /envvar/ISPCFLAGS
+   /envvar/OBJC
+   /envvar/OBJCXX
    /envvar/RC
    /envvar/RCFLAGS
    /envvar/SWIFTC
@@ -71,3 +93,11 @@ Environment Variables for CTest
    /envvar/CTEST_PROGRESS_OUTPUT
    /envvar/CTEST_USE_LAUNCHERS_DEFAULT
    /envvar/DASHBOARD_TEST_FROM_CTEST
+
+Environment Variables for the CMake curses interface
+====================================================
+
+.. toctree::
+   :maxdepth: 1
+
+   /envvar/CCMAKE_COLORS

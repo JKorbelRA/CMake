@@ -1,7 +1,6 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmFortranParser_h
-#define cmFortranParser_h
+#pragma once
 
 #if !defined(cmFortranLexer_cxx) && !defined(cmFortranParser_cxx)
 #  include "cmConfigure.h" // IWYU pragma: keep
@@ -12,10 +11,10 @@
 #  include <vector>
 #endif
 
-#include <stddef.h> /* size_t */
+#include <cstddef> /* size_t */
 
 /* Forward declare parser object type.  */
-typedef struct cmFortranParser_s cmFortranParser;
+using cmFortranParser = struct cmFortranParser_s;
 
 /* Functions to enter/exit #include'd files in order.  */
 bool cmFortranParser_FilePush(cmFortranParser* parser, const char* fname);
@@ -41,6 +40,8 @@ int cmFortranParser_GetOldStartcond(cmFortranParser* parser);
 /* Callbacks for parser.  */
 void cmFortranParser_Error(cmFortranParser* parser, const char* message);
 void cmFortranParser_RuleUse(cmFortranParser* parser, const char* module_name);
+void cmFortranParser_RuleUseIntrinsic(cmFortranParser* parser,
+                                      const char* module_name);
 void cmFortranParser_RuleLineDirective(cmFortranParser* parser,
                                        const char* filename);
 void cmFortranParser_RuleInclude(cmFortranParser* parser, const char* name);
@@ -99,6 +100,9 @@ public:
   // Set of provided and required modules.
   std::set<std::string> Provides;
   std::set<std::string> Requires;
+
+  // Set of intrinsic modules.
+  std::set<std::string> Intrinsics;
 
   // Set of files included in the translation unit.
   std::set<std::string> Includes;
@@ -180,6 +184,4 @@ struct cmFortranParser_s
   // Information about the parsed source.
   cmFortranSourceInfo& Info;
 };
-#endif
-
 #endif

@@ -10,7 +10,7 @@
 #endif
 
 /* Configure support for this platform.  */
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32)
 #  define KWSYS_TERMINAL_SUPPORT_CONSOLE
 #endif
 #if !defined(_WIN32)
@@ -146,6 +146,7 @@ static const char* kwsysTerminalVT100Names[] = { "Eterm",
                                                  "screen-bce",
                                                  "screen-w",
                                                  "screen.linux",
+                                                 "st-256color",
                                                  "tmux",
                                                  "tmux-256color",
                                                  "vt100",
@@ -168,6 +169,22 @@ static int kwsysTerminalStreamIsVT100(FILE* stream, int default_vt100,
     const char* clicolor_force = getenv("CLICOLOR_FORCE");
     if (clicolor_force && *clicolor_force &&
         strcmp(clicolor_force, "0") != 0) {
+      return 1;
+    }
+  }
+
+  /* Disable color according to http://bixense.com/clicolors/ convention. */
+  {
+    const char* clicolor = getenv("CLICOLOR");
+    if (clicolor && strcmp(clicolor, "0") == 0) {
+      return 0;
+    }
+  }
+
+  /* GNU make 4.1+ may tell us that its output is destined for a TTY. */
+  {
+    const char* termout = getenv("MAKE_TERMOUT");
+    if (termout && *termout != '\0') {
       return 1;
     }
   }

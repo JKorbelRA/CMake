@@ -1,15 +1,16 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmLinkItem_h
-#define cmLinkItem_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include <algorithm>
 #include <map>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#include <cmext/algorithm>
 
 #include "cmListFileCache.h"
 #include "cmSystemTools.h"
@@ -24,10 +25,11 @@ class cmLinkItem
 
 public:
   cmLinkItem();
-  cmLinkItem(std::string s, cmListFileBacktrace bt);
-  cmLinkItem(cmGeneratorTarget const* t, cmListFileBacktrace bt);
+  cmLinkItem(std::string s, bool c, cmListFileBacktrace bt);
+  cmLinkItem(cmGeneratorTarget const* t, bool c, cmListFileBacktrace bt);
   std::string const& AsStr() const;
   cmGeneratorTarget const* Target = nullptr;
+  bool Cross = false;
   cmListFileBacktrace Backtrace;
   friend bool operator<(cmLinkItem const& l, cmLinkItem const& r);
   friend bool operator==(cmLinkItem const& l, cmLinkItem const& r);
@@ -49,21 +51,38 @@ struct cmLinkImplementationLibraries
   // Libraries linked directly in this configuration.
   std::vector<cmLinkImplItem> Libraries;
 
+  // Object files linked directly in this configuration.
+  std::vector<cmLinkItem> Objects;
+
   // Libraries linked directly in other configurations.
   // Needed only for OLD behavior of CMP0003.
   std::vector<cmLinkItem> WrongConfigLibraries;
+
+  // Whether the list depends on a genex referencing the configuration.
+  bool HadContextSensitiveCondition = false;
 };
 
 struct cmLinkInterfaceLibraries
 {
   // Libraries listed in the interface.
   std::vector<cmLinkItem> Libraries;
+
+  // Object files listed in the interface.
+  std::vector<cmLinkItem> Objects;
+
+  // Whether the list depends on a genex referencing the head target.
+  bool HadHeadSensitiveCondition = false;
+
+  // Whether the list depends on a genex referencing the configuration.
+  bool HadContextSensitiveCondition = false;
 };
 
 struct cmLinkInterface : public cmLinkInterfaceLibraries
 {
   // Languages whose runtime libraries must be linked.
   std::vector<std::string> Languages;
+  std::unordered_map<std::string, std::vector<cmLinkItem>>
+    LanguageRuntimeLibraries;
 
   // Shared library dependencies needed for linking on some platforms.
   std::vector<cmLinkItem> SharedDeps;
@@ -77,6 +96,9 @@ struct cmLinkInterface : public cmLinkInterfaceLibraries
   std::vector<cmLinkItem> WrongConfigLibraries;
 
   bool ImplementationIsInterface = false;
+
+  // Whether the list depends on a link language genex.
+  bool HadLinkLanguageSensitiveCondition = false;
 };
 
 struct cmOptionalLinkInterface : public cmLinkInterface
@@ -84,8 +106,7 @@ struct cmOptionalLinkInterface : public cmLinkInterface
   bool LibrariesDone = false;
   bool AllDone = false;
   bool Exists = false;
-  bool HadHeadSensitiveCondition = false;
-  const char* ExplicitLibraries = nullptr;
+  bool Explicit = false;
 };
 
 struct cmHeadToLinkInterfaceMap
@@ -97,6 +118,11 @@ struct cmLinkImplementation : public cmLinkImplementationLibraries
 {
   // Languages whose runtime libraries must be linked.
   std::vector<std::string> Languages;
+  std::unordered_map<std::string, std::vector<cmLinkImplItem>>
+    LanguageRuntimeLibraries;
+
+  // Whether the list depends on a link language genex.
+  bool HadLinkLanguageSensitiveCondition = false;
 };
 
 // Cache link implementation computation from each configuration.
@@ -118,12 +144,9 @@ inline cmTargetLinkLibraryType CMP0003_ComputeLinkType(
 
   // Check if any entry in the list matches this configuration.
   std::string configUpper = cmSystemTools::UpperCase(config);
-  if (std::find(debugConfigs.begin(), debugConfigs.end(), configUpper) !=
-      debugConfigs.end()) {
+  if (cm::contains(debugConfigs, configUpper)) {
     return DEBUG_LibraryType;
   }
   // The current configuration is not a debug configuration.
   return OPTIMIZED_LibraryType;
 }
-
-#endif

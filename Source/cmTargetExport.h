@@ -1,13 +1,14 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmTargetExport_h
-#define cmTargetExport_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <string>
 
+class cmFileSet;
 class cmGeneratorTarget;
+class cmInstallFileSetGenerator;
 class cmInstallFilesGenerator;
 class cmInstallTargetGenerator;
 
@@ -30,8 +31,8 @@ public:
   cmInstallTargetGenerator* FrameworkGenerator;
   cmInstallTargetGenerator* BundleGenerator;
   cmInstallFilesGenerator* HeaderGenerator;
-  std::string InterfaceIncludeDirectories;
+  std::map<cmFileSet*, cmInstallFileSetGenerator*> FileSetGenerators;
   ///@}
-};
 
-#endif
+  bool NamelinkOnly = false;
+};

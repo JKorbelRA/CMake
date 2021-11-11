@@ -5,12 +5,74 @@ find_package
 
    .. contents::
 
-Find an external project, and load its settings.
+Find a package (usually provided by something external to the project),
+and load its package-specific details.
+
+Search Modes
+^^^^^^^^^^^^
+
+The command has two very distinct ways of conducting the search:
+
+**Module mode**
+  In this mode, CMake searches for a file called ``Find<PackageName>.cmake``,
+  looking first in the locations listed in the :variable:`CMAKE_MODULE_PATH`,
+  then among the :ref:`Find Modules` provided by the CMake installation.
+  If the file is found, it is read and processed by CMake.  It is responsible
+  for finding the package, checking the version, and producing any needed
+  messages.  Some Find modules provide limited or no support for versioning;
+  check the Find module's documentation.
+
+  The ``Find<PackageName>.cmake`` file is not typically provided by the
+  package itself.  Rather, it is normally provided by something external to
+  the package, such as the operating system, CMake itself, or even the project
+  from which the ``find_package()`` command was called.  Being externally
+  provided, :ref:`Find Modules` tend to be heuristic in nature and are
+  susceptible to becoming out-of-date.  They typically search for certain
+  libraries, files and other package artifacts.
+
+  Module mode is only supported by the
+  :ref:`basic command signature <Basic Signature>`.
+
+**Config mode**
+  In this mode, CMake searches for a file called
+  ``<lowercasePackageName>-config.cmake`` or ``<PackageName>Config.cmake``.
+  It will also look for ``<lowercasePackageName>-config-version.cmake`` or
+  ``<PackageName>ConfigVersion.cmake`` if version details were specified
+  (see :ref:`version selection` for an explanation of how these separate
+  version files are used).
+
+  In config mode, the command can be given a list of names to search for
+  as package names.  The locations where CMake searches for the config and
+  version files is considerably more complicated than for Module mode
+  (see :ref:`search procedure`).
+
+  The config and version files are typically installed as part of the
+  package, so they tend to be more reliable than Find modules.  They usually
+  contain direct knowledge of the package contents, so no searching or
+  heuristics are needed within the config or version files themselves.
+
+  Config mode is supported by both the :ref:`basic <Basic Signature>` and
+  :ref:`full <Full Signature>` command signatures.
+
+The command arguments determine which of the above modes is used.  When the
+`basic signature`_ is used, the command searches in Module mode first.
+If the package is not found, the search falls back to Config mode.
+A user may set the :variable:`CMAKE_FIND_PACKAGE_PREFER_CONFIG` variable
+to true to reverse the priority and direct CMake to search using Config mode
+first before falling back to Module mode.  The basic signature can also be
+forced to use only Module mode with a ``MODULE`` keyword.  If the
+`full signature`_ is used, the command only searches in Config mode.
+
+Where possible, user code should generally look for packages using the
+`basic signature`_, since that allows the package to be found with either mode.
+Project maintainers wishing to provide a config package should understand
+the bigger picture, as explained in :ref:`Full Signature` and all subsequent
+sections on this page.
 
 .. _`basic signature`:
 
-Basic Signature and Module Mode
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Basic Signature
+^^^^^^^^^^^^^^^
 
 .. code-block:: cmake
 
@@ -19,68 +81,79 @@ Basic Signature and Module Mode
                [OPTIONAL_COMPONENTS components...]
                [NO_POLICY_SCOPE])
 
-Finds and loads settings from an external project.  ``<PackageName>_FOUND``
-will be set to indicate whether the package was found.  When the
-package is found package-specific information is provided through
-variables and :ref:`Imported Targets` documented by the package itself.  The
+The basic signature is supported by both Module and Config modes.
+The ``MODULE`` keyword implies that only Module mode can be used to find
+the package, with no fallback to Config mode.
+
+Regardless of the mode used, a ``<PackageName>_FOUND`` variable will be
+set to indicate whether the package was found.  When the package is found,
+package-specific information may be provided through other variables and
+:ref:`Imported Targets` documented by the package itself.  The
 ``QUIET`` option disables informational messages, including those indicating
 that the package cannot be found if it is not ``REQUIRED``.  The ``REQUIRED``
 option stops processing with an error message if the package cannot be found.
 
 A package-specific list of required components may be listed after the
-``COMPONENTS`` option (or after the ``REQUIRED`` option if present).
+``COMPONENTS`` keyword.  If any of these components are not able to be
+satisfied, the package overall is considered to be not found.  If the
+``REQUIRED`` option is also present, this is treated as a fatal error,
+otherwise execution still continues.  As a form of shorthand, if the
+``REQUIRED`` option is present, the ``COMPONENTS`` keyword can be omitted
+and the required components can be listed directly after ``REQUIRED``.
+
 Additional optional components may be listed after
-``OPTIONAL_COMPONENTS``.  Available components and their influence on
-whether a package is considered to be found are defined by the target
-package.
+``OPTIONAL_COMPONENTS``.  If these cannot be satisfied, the package overall
+can still be considered found, as long as all required components are
+satisfied.
+
+The set of available components and their meaning are defined by the
+target package.  Formally, it is up to the target package how to
+interpret the component information given to it, but it should follow
+the expectations stated above.  For calls where no components are specified,
+there is no single expected behavior and target packages should clearly
+define what occurs in such cases.  Common arrangements include assuming it
+should find all components, no components or some well-defined subset of the
+available components.
+
+.. _FIND_PACKAGE_VERSION_FORMAT:
 
 The ``[version]`` argument requests a version with which the package found
-should be compatible (format is ``major[.minor[.patch[.tweak]]]``).  The
-``EXACT`` option requests that the version be matched exactly.  If no
-``[version]`` and/or component list is given to a recursive invocation
+should be compatible. There are two possible forms in which it may be
+specified:
+
+  * A single version with the format ``major[.minor[.patch[.tweak]]]``, where
+    each component is a numeric value.
+  * A version range with the format ``versionMin...[<]versionMax`` where
+    ``versionMin`` and ``versionMax`` have the same format and constraints
+    on components being integers as the single version.  By default, both end
+    points are included.  By specifying ``<``, the upper end point will be
+    excluded. Version ranges are only supported with CMake 3.19 or later.
+
+The ``EXACT`` option requests that the version be matched exactly. This option
+is incompatible with the specification of a version range.
+
+If no ``[version]`` and/or component list is given to a recursive invocation
 inside a find-module, the corresponding arguments are forwarded
 automatically from the outer call (including the ``EXACT`` flag for
 ``[version]``).  Version support is currently provided only on a
 package-by-package basis (see the `Version Selection`_ section below).
+When a version range is specified but the package is only designed to expect
+a single version, the package will ignore the upper end point of the range and
+only take the single version at the lower end of the range into account.
 
 See the :command:`cmake_policy` command documentation for discussion
 of the ``NO_POLICY_SCOPE`` option.
 
-The command has two modes by which it searches for packages: "Module"
-mode and "Config" mode.  The above signature selects Module mode.
-If no module is found the command falls back to Config mode, described
-below. This fall back is disabled if the ``MODULE`` option is given.
+.. _`full signature`:
 
-In Module mode, CMake searches for a file called ``Find<PackageName>.cmake``.
-The file is first searched in the :variable:`CMAKE_MODULE_PATH`,
-then among the :ref:`Find Modules` provided by the CMake installation.
-If the file is found, it is read and processed by CMake.  It is responsible
-for finding the package, checking the version, and producing any needed
-messages.  Some find-modules provide limited or no support for versioning;
-check the module documentation.
-
-If the ``MODULE`` option is not specfied in the above signature,
-CMake first searches for the package using Module mode. Then, if the
-package is not found, it searches again using Config mode. A user
-may set the variable :variable:`CMAKE_FIND_PACKAGE_PREFER_CONFIG` to
-``TRUE`` to direct CMake first search using Config mode before falling
-back to Module mode.
-
-Full Signature and Config Mode
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-User code should generally look for packages using the above `basic
-signature`_.  The remainder of this command documentation specifies the
-full command signature and details of the search process.  Project
-maintainers wishing to provide a package to be found by this command
-are encouraged to read on.
-
-The complete Config mode command signature is
+Full Signature
+^^^^^^^^^^^^^^
 
 .. code-block:: cmake
 
   find_package(<PackageName> [version] [EXACT] [QUIET]
                [REQUIRED] [[COMPONENTS] [components...]]
+               [OPTIONAL_COMPONENTS components...]
                [CONFIG|NO_MODULE]
                [NO_POLICY_SCOPE]
                [NAMES name1 [name2 ...]]
@@ -112,18 +185,19 @@ hold the directory containing the file.  By default the command
 searches for a package with the name ``<PackageName>``.  If the ``NAMES`` option
 is given the names following it are used instead of ``<PackageName>``.
 The command searches for a file called ``<PackageName>Config.cmake`` or
-``<lower-case-package-name>-config.cmake`` for each name specified.
+``<lowercasePackageName>-config.cmake`` for each name specified.
 A replacement set of possible configuration file names may be given
-using the ``CONFIGS`` option.  The search procedure is specified below.
-Once found, the configuration file is read and processed by CMake.
+using the ``CONFIGS`` option.  The :ref:`search procedure` is specified below.
+Once found, any :ref:`version constraint <version selection>` is checked,
+and if satisfied, the configuration file is read and processed by CMake.
 Since the file is provided by the package it already knows the
 location of package contents.  The full path to the configuration file
 is stored in the cmake variable ``<PackageName>_CONFIG``.
 
 All configuration files which have been considered by CMake while
-searching for an installation of the package with an appropriate
-version are stored in the cmake variable ``<PackageName>_CONSIDERED_CONFIGS``,
-the associated versions in ``<PackageName>_CONSIDERED_VERSIONS``.
+searching for the package with an appropriate version are stored in the
+``<PackageName>_CONSIDERED_CONFIGS`` variable, and the associated versions
+in the ``<PackageName>_CONSIDERED_VERSIONS`` variable.
 
 If the package configuration file cannot be found CMake will generate
 an error describing the problem unless the ``QUIET`` argument is
@@ -133,96 +207,18 @@ fatal error is generated and the configure step stops executing.  If
 configuration file CMake will ignore it and search from scratch.
 
 Package maintainers providing CMake package configuration files are
-encouraged to name and install them such that the `Search Procedure`_
+encouraged to name and install them such that the :ref:`search procedure`
 outlined below will find them without requiring use of additional options.
 
-Version Selection
-^^^^^^^^^^^^^^^^^
+.. _`search procedure`:
 
-When the ``[version]`` argument is given Config mode will only find a
-version of the package that claims compatibility with the requested
-version (format is ``major[.minor[.patch[.tweak]]]``).  If the ``EXACT``
-option is given only a version of the package claiming an exact match
-of the requested version may be found.  CMake does not establish any
-convention for the meaning of version numbers.  Package version
-numbers are checked by "version" files provided by the packages
-themselves.  For a candidate package configuration file
-``<config-file>.cmake`` the corresponding version file is located next
-to it and named either ``<config-file>-version.cmake`` or
-``<config-file>Version.cmake``.  If no such version file is available
-then the configuration file is assumed to not be compatible with any
-requested version.  A basic version file containing generic version
-matching code can be created using the
-:module:`CMakePackageConfigHelpers` module.  When a version file
-is found it is loaded to check the requested version number.  The
-version file is loaded in a nested scope in which the following
-variables have been defined:
+Config Mode Search Procedure
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``PACKAGE_FIND_NAME``
-  the ``<PackageName>``
-``PACKAGE_FIND_VERSION``
-  full requested version string
-``PACKAGE_FIND_VERSION_MAJOR``
-  major version if requested, else 0
-``PACKAGE_FIND_VERSION_MINOR``
-  minor version if requested, else 0
-``PACKAGE_FIND_VERSION_PATCH``
-  patch version if requested, else 0
-``PACKAGE_FIND_VERSION_TWEAK``
-  tweak version if requested, else 0
-``PACKAGE_FIND_VERSION_COUNT``
-  number of version components, 0 to 4
-
-The version file checks whether it satisfies the requested version and
-sets these variables:
-
-``PACKAGE_VERSION``
-  full provided version string
-``PACKAGE_VERSION_EXACT``
-  true if version is exact match
-``PACKAGE_VERSION_COMPATIBLE``
-  true if version is compatible
-``PACKAGE_VERSION_UNSUITABLE``
-  true if unsuitable as any version
-
-These variables are checked by the ``find_package`` command to determine
-whether the configuration file provides an acceptable version.  They
-are not available after the ``find_package`` call returns.  If the version
-is acceptable the following variables are set:
-
-``<PackageName>_VERSION``
-  full provided version string
-``<PackageName>_VERSION_MAJOR``
-  major version if provided, else 0
-``<PackageName>_VERSION_MINOR``
-  minor version if provided, else 0
-``<PackageName>_VERSION_PATCH``
-  patch version if provided, else 0
-``<PackageName>_VERSION_TWEAK``
-  tweak version if provided, else 0
-``<PackageName>_VERSION_COUNT``
-  number of version components, 0 to 4
-
-and the corresponding package configuration file is loaded.
-When multiple package configuration files are available whose version files
-claim compatibility with the version requested it is unspecified which
-one is chosen: unless the variable :variable:`CMAKE_FIND_PACKAGE_SORT_ORDER`
-is set no attempt is made to choose a highest or closest version number.
-
-To control the order in which ``find_package`` checks for compatibility use
-the two variables :variable:`CMAKE_FIND_PACKAGE_SORT_ORDER` and
-:variable:`CMAKE_FIND_PACKAGE_SORT_DIRECTION`.
-For instance in order to select the highest version one can set
-
-.. code-block:: cmake
-
-  SET(CMAKE_FIND_PACKAGE_SORT_ORDER NATURAL)
-  SET(CMAKE_FIND_PACKAGE_SORT_DIRECTION DEC)
-
-before calling ``find_package``.
-
-Search Procedure
-^^^^^^^^^^^^^^^^
+.. note::
+  When Config mode is used, this search procedure is applied regardless of
+  whether the :ref:`full <full signature>` or :ref:`basic <basic signature>`
+  signature was given.
 
 CMake constructs a set of possible installation prefixes for the
 package.  Under each prefix several directories are searched for a
@@ -287,34 +283,38 @@ The set of installation prefixes is constructed using the following
 steps.  If ``NO_DEFAULT_PATH`` is specified all ``NO_*`` options are
 enabled.
 
-1. Search paths specified in the :variable:`<PackageName>_ROOT` CMake
-   variable and the :envvar:`<PackageName>_ROOT` environment variable,
-   where ``<PackageName>`` is the package to be found.
-   The package root variables are maintained as a stack so if
-   called from within a find module, root paths from the parent's find
-   module will also be searched after paths for the current package.
-   This can be skipped if ``NO_PACKAGE_ROOT_PATH`` is passed.
-   See policy :policy:`CMP0074`.
+1. .. versionadded:: 3.12
+    Search paths specified in the :variable:`<PackageName>_ROOT` CMake
+    variable and the :envvar:`<PackageName>_ROOT` environment variable,
+    where ``<PackageName>`` is the package to be found.
+    The package root variables are maintained as a stack so if
+    called from within a find module, root paths from the parent's find
+    module will also be searched after paths for the current package.
+    This can be skipped if ``NO_PACKAGE_ROOT_PATH`` is passed or by setting
+    the :variable:`CMAKE_FIND_USE_PACKAGE_ROOT_PATH` to ``FALSE``.
+    See policy :policy:`CMP0074`.
 
 2. Search paths specified in cmake-specific cache variables.  These
    are intended to be used on the command line with a ``-DVAR=value``.
    The values are interpreted as :ref:`semicolon-separated lists <CMake Language Lists>`.
-   This can be skipped if ``NO_CMAKE_PATH`` is passed::
+   This can be skipped if ``NO_CMAKE_PATH`` is passed or by setting the
+   :variable:`CMAKE_FIND_USE_CMAKE_PATH` to ``FALSE``:
 
-     CMAKE_PREFIX_PATH
-     CMAKE_FRAMEWORK_PATH
-     CMAKE_APPBUNDLE_PATH
+   * :variable:`CMAKE_PREFIX_PATH`
+   * :variable:`CMAKE_FRAMEWORK_PATH`
+   * :variable:`CMAKE_APPBUNDLE_PATH`
 
 3. Search paths specified in cmake-specific environment variables.
    These are intended to be set in the user's shell configuration,
    and therefore use the host's native path separator
    (``;`` on Windows and ``:`` on UNIX).
-   This can be skipped if ``NO_CMAKE_ENVIRONMENT_PATH`` is passed::
+   This can be skipped if ``NO_CMAKE_ENVIRONMENT_PATH`` is passed or by setting
+   the :variable:`CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH` to ``FALSE``:
 
-     <PackageName>_DIR
-     CMAKE_PREFIX_PATH
-     CMAKE_FRAMEWORK_PATH
-     CMAKE_APPBUNDLE_PATH
+   * ``<PackageName>_DIR``
+   * :envvar:`CMAKE_PREFIX_PATH`
+   * ``CMAKE_FRAMEWORK_PATH``
+   * ``CMAKE_APPBUNDLE_PATH``
 
 4. Search paths specified by the ``HINTS`` option.  These should be paths
    computed by system introspection, such as a hint provided by the
@@ -322,36 +322,50 @@ enabled.
    be specified with the ``PATHS`` option.
 
 5. Search the standard system environment variables.  This can be
-   skipped if ``NO_SYSTEM_ENVIRONMENT_PATH`` is passed.  Path entries
+   skipped if ``NO_SYSTEM_ENVIRONMENT_PATH`` is passed  or by setting the
+   :variable:`CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH` to ``FALSE``. Path entries
    ending in ``/bin`` or ``/sbin`` are automatically converted to their
-   parent directories::
+   parent directories:
 
-     PATH
+   * ``PATH``
 
 6. Search paths stored in the CMake :ref:`User Package Registry`.
    This can be skipped if ``NO_CMAKE_PACKAGE_REGISTRY`` is passed or by
-   setting the :variable:`CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY`
-   to ``TRUE``.
+   setting the variable :variable:`CMAKE_FIND_USE_PACKAGE_REGISTRY`
+   to ``FALSE`` or the deprecated variable
+   :variable:`CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY` to ``TRUE``.
+
    See the :manual:`cmake-packages(7)` manual for details on the user
    package registry.
 
 7. Search cmake variables defined in the Platform files for the
    current system.  This can be skipped if ``NO_CMAKE_SYSTEM_PATH`` is
-   passed::
+   passed or by setting the :variable:`CMAKE_FIND_USE_CMAKE_SYSTEM_PATH`
+   to ``FALSE``:
 
-     CMAKE_SYSTEM_PREFIX_PATH
-     CMAKE_SYSTEM_FRAMEWORK_PATH
-     CMAKE_SYSTEM_APPBUNDLE_PATH
+   * :variable:`CMAKE_SYSTEM_PREFIX_PATH`
+   * :variable:`CMAKE_SYSTEM_FRAMEWORK_PATH`
+   * :variable:`CMAKE_SYSTEM_APPBUNDLE_PATH`
+
+   The platform paths that these variables contain are locations that
+   typically include installed software. An example being ``/usr/local`` for
+   UNIX based platforms.
 
 8. Search paths stored in the CMake :ref:`System Package Registry`.
    This can be skipped if ``NO_CMAKE_SYSTEM_PACKAGE_REGISTRY`` is passed
-   or by setting the
+   or by setting the :variable:`CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY`
+   variable to ``FALSE`` or the deprecated variable
    :variable:`CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY` to ``TRUE``.
+
    See the :manual:`cmake-packages(7)` manual for details on the system
    package registry.
 
 9. Search paths specified by the ``PATHS`` option.  These are typically
    hard-coded guesses.
+
+.. versionadded:: 3.16
+   Added the ``CMAKE_FIND_USE_<CATEGORY>`` variables to globally disable
+   various search locations.
 
 .. |FIND_XXX| replace:: find_package
 .. |FIND_ARGS_XXX| replace:: <PackageName>
@@ -366,8 +380,154 @@ which the file is found.  The :variable:`CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS`
 variable may be set to ``TRUE`` before calling ``find_package`` in order
 to resolve symbolic links and store the real path to the file.
 
-Every non-REQUIRED ``find_package`` call can be disabled by setting the
-:variable:`CMAKE_DISABLE_FIND_PACKAGE_<PackageName>` variable to ``TRUE``.
+Every non-REQUIRED ``find_package`` call can be disabled or made REQUIRED:
+
+* Setting the :variable:`CMAKE_DISABLE_FIND_PACKAGE_<PackageName>` variable
+  to ``TRUE`` disables the package.
+
+* Setting the :variable:`CMAKE_REQUIRE_FIND_PACKAGE_<PackageName>` variable
+  to ``TRUE`` makes the package REQUIRED.
+
+Setting both variables to ``TRUE`` simultaneously is an error.
+
+.. _`version selection`:
+
+Config Mode Version Selection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. note::
+  When Config mode is used, this version selection process is applied
+  regardless of whether the :ref:`full <full signature>` or
+  :ref:`basic <basic signature>` signature was given.
+
+When the ``[version]`` argument is given, Config mode will only find a
+version of the package that claims compatibility with the requested
+version (see :ref:`format specification <FIND_PACKAGE_VERSION_FORMAT>`). If the
+``EXACT`` option is given, only a version of the package claiming an exact match
+of the requested version may be found.  CMake does not establish any
+convention for the meaning of version numbers.  Package version
+numbers are checked by "version" files provided by the packages
+themselves.  For a candidate package configuration file
+``<config-file>.cmake`` the corresponding version file is located next
+to it and named either ``<config-file>-version.cmake`` or
+``<config-file>Version.cmake``.  If no such version file is available
+then the configuration file is assumed to not be compatible with any
+requested version.  A basic version file containing generic version
+matching code can be created using the
+:module:`CMakePackageConfigHelpers` module.  When a version file
+is found it is loaded to check the requested version number.  The
+version file is loaded in a nested scope in which the following
+variables have been defined:
+
+``PACKAGE_FIND_NAME``
+  The ``<PackageName>``
+``PACKAGE_FIND_VERSION``
+  Full requested version string
+``PACKAGE_FIND_VERSION_MAJOR``
+  Major version if requested, else 0
+``PACKAGE_FIND_VERSION_MINOR``
+  Minor version if requested, else 0
+``PACKAGE_FIND_VERSION_PATCH``
+  Patch version if requested, else 0
+``PACKAGE_FIND_VERSION_TWEAK``
+  Tweak version if requested, else 0
+``PACKAGE_FIND_VERSION_COUNT``
+  Number of version components, 0 to 4
+
+When a version range is specified, the above version variables will hold
+values based on the lower end of the version range.  This is to preserve
+compatibility with packages that have not been implemented to expect version
+ranges.  In addition, the version range will be described by the following
+variables:
+
+``PACKAGE_FIND_VERSION_RANGE``
+  Full requested version range string
+``PACKAGE_FIND_VERSION_RANGE_MIN``
+  This specifies whether the lower end point of the version range should be
+  included or excluded.  Currently, the only supported value for this variable
+  is ``INCLUDE``.
+``PACKAGE_FIND_VERSION_RANGE_MAX``
+  This specifies whether the upper end point of the version range should be
+  included or excluded.  The supported values for this variable are
+  ``INCLUDE`` and ``EXCLUDE``.
+
+``PACKAGE_FIND_VERSION_MIN``
+  Full requested version string of the lower end point of the range
+``PACKAGE_FIND_VERSION_MIN_MAJOR``
+  Major version of the lower end point if requested, else 0
+``PACKAGE_FIND_VERSION_MIN_MINOR``
+  Minor version of the lower end point if requested, else 0
+``PACKAGE_FIND_VERSION_MIN_PATCH``
+  Patch version of the lower end point if requested, else 0
+``PACKAGE_FIND_VERSION_MIN_TWEAK``
+  Tweak version of the lower end point if requested, else 0
+``PACKAGE_FIND_VERSION_MIN_COUNT``
+  Number of version components of the lower end point, 0 to 4
+
+``PACKAGE_FIND_VERSION_MAX``
+  Full requested version string of the upper end point of the range
+``PACKAGE_FIND_VERSION_MAX_MAJOR``
+  Major version of the upper end point if requested, else 0
+``PACKAGE_FIND_VERSION_MAX_MINOR``
+  Minor version of the upper end point if requested, else 0
+``PACKAGE_FIND_VERSION_MAX_PATCH``
+  Patch version of the upper end point if requested, else 0
+``PACKAGE_FIND_VERSION_MAX_TWEAK``
+  Tweak version of the upper end point if requested, else 0
+``PACKAGE_FIND_VERSION_MAX_COUNT``
+  Number of version components of the upper end point, 0 to 4
+
+Regardless of whether a single version or a version range is specified, the
+variable ``PACKAGE_FIND_VERSION_COMPLETE`` will be defined and will hold
+the full requested version string as specified.
+
+The version file checks whether it satisfies the requested version and
+sets these variables:
+
+``PACKAGE_VERSION``
+  Full provided version string
+``PACKAGE_VERSION_EXACT``
+  True if version is exact match
+``PACKAGE_VERSION_COMPATIBLE``
+  True if version is compatible
+``PACKAGE_VERSION_UNSUITABLE``
+  True if unsuitable as any version
+
+These variables are checked by the ``find_package`` command to determine
+whether the configuration file provides an acceptable version.  They
+are not available after the ``find_package`` call returns.  If the version
+is acceptable the following variables are set:
+
+``<PackageName>_VERSION``
+  Full provided version string
+``<PackageName>_VERSION_MAJOR``
+  Major version if provided, else 0
+``<PackageName>_VERSION_MINOR``
+  Minor version if provided, else 0
+``<PackageName>_VERSION_PATCH``
+  Patch version if provided, else 0
+``<PackageName>_VERSION_TWEAK``
+  Tweak version if provided, else 0
+``<PackageName>_VERSION_COUNT``
+  Number of version components, 0 to 4
+
+and the corresponding package configuration file is loaded.
+When multiple package configuration files are available whose version files
+claim compatibility with the version requested it is unspecified which
+one is chosen: unless the variable :variable:`CMAKE_FIND_PACKAGE_SORT_ORDER`
+is set no attempt is made to choose a highest or closest version number.
+
+To control the order in which ``find_package`` checks for compatibility use
+the two variables :variable:`CMAKE_FIND_PACKAGE_SORT_ORDER` and
+:variable:`CMAKE_FIND_PACKAGE_SORT_DIRECTION`.
+For instance in order to select the highest version one can set
+
+.. code-block:: cmake
+
+  SET(CMAKE_FIND_PACKAGE_SORT_ORDER NATURAL)
+  SET(CMAKE_FIND_PACKAGE_SORT_DIRECTION DEC)
+
+before calling ``find_package``.
 
 Package File Interface Variables
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -377,30 +537,76 @@ defines variables to provide information about the call arguments (and
 restores their original state before returning):
 
 ``CMAKE_FIND_PACKAGE_NAME``
-  the ``<PackageName>`` which is searched for
+  The ``<PackageName>`` which is searched for
 ``<PackageName>_FIND_REQUIRED``
-  true if ``REQUIRED`` option was given
+  True if ``REQUIRED`` option was given
 ``<PackageName>_FIND_QUIETLY``
-  true if ``QUIET`` option was given
+  True if ``QUIET`` option was given
 ``<PackageName>_FIND_VERSION``
-  full requested version string
+  Full requested version string
 ``<PackageName>_FIND_VERSION_MAJOR``
-  major version if requested, else 0
+  Major version if requested, else 0
 ``<PackageName>_FIND_VERSION_MINOR``
-  minor version if requested, else 0
+  Minor version if requested, else 0
 ``<PackageName>_FIND_VERSION_PATCH``
-  patch version if requested, else 0
+  Patch version if requested, else 0
 ``<PackageName>_FIND_VERSION_TWEAK``
-  tweak version if requested, else 0
+  Tweak version if requested, else 0
 ``<PackageName>_FIND_VERSION_COUNT``
-  number of version components, 0 to 4
+  Number of version components, 0 to 4
 ``<PackageName>_FIND_VERSION_EXACT``
-  true if ``EXACT`` option was given
+  True if ``EXACT`` option was given
 ``<PackageName>_FIND_COMPONENTS``
-  list of requested components
+  List of specified components (required and optional)
 ``<PackageName>_FIND_REQUIRED_<c>``
-  true if component ``<c>`` is required,
+  True if component ``<c>`` is required,
   false if component ``<c>`` is optional
+
+When a version range is specified, the above version variables will hold
+values based on the lower end of the version range.  This is to preserve
+compatibility with packages that have not been implemented to expect version
+ranges.  In addition, the version range will be described by the following
+variables:
+
+``<PackageName>_FIND_VERSION_RANGE``
+  Full requested version range string
+``<PackageName>_FIND_VERSION_RANGE_MIN``
+  This specifies whether the lower end point of the version range is
+  included or excluded.  Currently, ``INCLUDE`` is the only supported value.
+``<PackageName>_FIND_VERSION_RANGE_MAX``
+  This specifies whether the upper end point of the version range is
+  included or excluded.  The possible values for this variable are
+  ``INCLUDE`` or ``EXCLUDE``.
+
+``<PackageName>_FIND_VERSION_MIN``
+  Full requested version string of the lower end point of the range
+``<PackageName>_FIND_VERSION_MIN_MAJOR``
+  Major version of the lower end point if requested, else 0
+``<PackageName>_FIND_VERSION_MIN_MINOR``
+  Minor version of the lower end point if requested, else 0
+``<PackageName>_FIND_VERSION_MIN_PATCH``
+  Patch version of the lower end point if requested, else 0
+``<PackageName>_FIND_VERSION_MIN_TWEAK``
+  Tweak version of the lower end point if requested, else 0
+``<PackageName>_FIND_VERSION_MIN_COUNT``
+  Number of version components of the lower end point, 0 to 4
+
+``<PackageName>_FIND_VERSION_MAX``
+  Full requested version string of the upper end point of the range
+``<PackageName>_FIND_VERSION_MAX_MAJOR``
+  Major version of the upper end point if requested, else 0
+``<PackageName>_FIND_VERSION_MAX_MINOR``
+  Minor version of the upper end point if requested, else 0
+``<PackageName>_FIND_VERSION_MAX_PATCH``
+  Patch version of the upper end point if requested, else 0
+``<PackageName>_FIND_VERSION_MAX_TWEAK``
+  Tweak version of the upper end point if requested, else 0
+``<PackageName>_FIND_VERSION_MAX_COUNT``
+  Number of version components of the upper end point, 0 to 4
+
+Regardless of whether a single version or a version range is specified, the
+variable ``<PackageName>_FIND_VERSION_COMPLETE`` will be defined and will hold
+the full requested version string as specified.
 
 In Module mode the loaded find module is responsible to honor the
 request detailed by these variables; see the find module for details.

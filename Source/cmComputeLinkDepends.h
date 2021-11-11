@@ -1,19 +1,20 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmComputeLinkDepends_h
-#define cmComputeLinkDepends_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmGraphAdjacencyList.h"
-#include "cmLinkItem.h"
-#include "cmTargetLinkLibraryType.h"
-
 #include <map>
+#include <memory>
 #include <queue>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "cmGraphAdjacencyList.h"
+#include "cmLinkItem.h"
+#include "cmListFileCache.h"
+#include "cmTargetLinkLibraryType.h"
 
 class cmComputeComponentGraph;
 class cmGeneratorTarget;
@@ -37,13 +38,14 @@ public:
   // Basic information about each link item.
   struct LinkEntry
   {
-    std::string Item;
+    BT<std::string> Item;
     cmGeneratorTarget const* Target = nullptr;
     bool IsSharedDep = false;
     bool IsFlag = false;
+    bool IsObject = false;
   };
 
-  typedef std::vector<LinkEntry> EntryVector;
+  using EntryVector = std::vector<LinkEntry>;
   EntryVector const& Compute();
 
   void SetOldLinkDirMode(bool b);
@@ -64,10 +66,12 @@ private:
   std::map<cmLinkItem, int>::iterator AllocateLinkEntry(
     cmLinkItem const& item);
   int AddLinkEntry(cmLinkItem const& item);
+  void AddLinkObject(cmLinkItem const& item);
   void AddVarLinkEntries(int depender_index, const char* value);
   void AddDirectLinkEntries();
   template <typename T>
   void AddLinkEntries(int depender_index, std::vector<T> const& libs);
+  void AddLinkObjects(std::vector<cmLinkItem> const& objs);
   cmLinkItem ResolveLinkItem(int depender_index, const std::string& name);
 
   // One entry for each unique item.
@@ -105,14 +109,15 @@ private:
   };
   struct DependSetList : public std::vector<DependSet>
   {
+    bool Initialized = false;
   };
-  std::vector<DependSetList*> InferredDependSets;
+  std::vector<DependSetList> InferredDependSets;
   void InferDependencies();
 
   // Ordering constraint graph adjacency list.
-  typedef cmGraphNodeList NodeList;
-  typedef cmGraphEdgeList EdgeList;
-  typedef cmGraphAdjacencyList Graph;
+  using NodeList = cmGraphNodeList;
+  using EdgeList = cmGraphEdgeList;
+  using Graph = cmGraphAdjacencyList;
   Graph EntryConstraintGraph;
   void CleanConstraintGraph();
   void DisplayConstraintGraph();
@@ -151,11 +156,12 @@ private:
   std::set<cmGeneratorTarget const*> OldWrongConfigItems;
   void CheckWrongConfigItem(cmLinkItem const& item);
 
+  // Record of explicitly linked object files.
+  std::vector<int> ObjectEntries;
+
   int ComponentOrderId;
   cmTargetLinkLibraryType LinkType;
   bool HasConfig;
   bool DebugMode;
   bool OldLinkDirMode;
 };
-
-#endif

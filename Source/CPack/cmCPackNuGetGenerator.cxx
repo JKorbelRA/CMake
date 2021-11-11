@@ -2,11 +2,6 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCPackNuGetGenerator.h"
 
-#include "cmAlgorithms.h"
-#include "cmCPackComponentGroup.h"
-#include "cmCPackLog.h"
-#include "cmSystemTools.h"
-
 #include <algorithm>
 #include <iterator>
 #include <map>
@@ -15,34 +10,41 @@
 #include <utility>
 #include <vector>
 
+#include "cmCPackComponentGroup.h"
+#include "cmCPackLog.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmValue.h"
+
 bool cmCPackNuGetGenerator::SupportsComponentInstallation() const
 {
-  return IsOn("CPACK_NUGET_COMPONENT_INSTALL");
+  return this->IsOn("CPACK_NUGET_COMPONENT_INSTALL");
 }
 
 int cmCPackNuGetGenerator::PackageFiles()
 {
-  cmCPackLogger(cmCPackLog::LOG_DEBUG, "Toplevel: " << toplevel << std::endl);
+  cmCPackLogger(cmCPackLog::LOG_DEBUG,
+                "Toplevel: " << this->toplevel << std::endl);
 
   /* Reset package file name list it will be populated after the
    * `CPackNuGet.cmake` run */
-  packageFileNames.clear();
+  this->packageFileNames.clear();
 
   /* Are we in the component packaging case */
-  if (WantsComponentInstallation()) {
-    if (componentPackageMethod == ONE_PACKAGE) {
+  if (this->WantsComponentInstallation()) {
+    if (this->componentPackageMethod == ONE_PACKAGE) {
       // CASE 1 : COMPONENT ALL-IN-ONE package
       // Meaning that all per-component pre-installed files
       // goes into the single package.
       this->SetOption("CPACK_NUGET_ALL_IN_ONE", "TRUE");
-      SetupGroupComponentVariables(true);
+      this->SetupGroupComponentVariables(true);
     } else {
       // CASE 2 : COMPONENT CLASSICAL package(s) (i.e. not all-in-one)
       // There will be 1 package for each component group
       // however one may require to ignore component group and
       // in this case you'll get 1 package for each component.
-      SetupGroupComponentVariables(componentPackageMethod ==
-                                   ONE_PACKAGE_PER_COMPONENT);
+      this->SetupGroupComponentVariables(this->componentPackageMethod ==
+                                         ONE_PACKAGE_PER_COMPONENT);
     }
   } else {
     // CASE 3 : NON COMPONENT package.
@@ -51,7 +53,7 @@ int cmCPackNuGetGenerator::PackageFiles()
 
   auto retval = this->ReadListFile("Internal/CPack/CPackNuGet.cmake");
   if (retval) {
-    AddGeneratedPackageNames();
+    this->AddGeneratedPackageNames();
   } else {
     cmCPackLogger(cmCPackLog::LOG_ERROR,
                   "Error while execution CPackNuGet.cmake" << std::endl);
@@ -80,10 +82,10 @@ void cmCPackNuGetGenerator::SetupGroupComponentVariables(bool ignoreGroup)
                      std::back_inserter(components),
                      [](cmCPackComponent const* comp) { return comp->Name; });
       this->SetOption("CPACK_NUGET_" + compGUp + "_GROUP_COMPONENTS",
-                      cmJoin(components, ";").c_str());
+                      cmJoin(components, ";"));
     }
     if (!groups.empty()) {
-      this->SetOption("CPACK_NUGET_GROUPS", cmJoin(groups, ";").c_str());
+      this->SetOption("CPACK_NUGET_GROUPS", cmJoin(groups, ";"));
     }
 
     // Handle Orphan components (components not belonging to any groups)
@@ -101,8 +103,7 @@ void cmCPackNuGetGenerator::SetupGroupComponentVariables(bool ignoreGroup)
       }
     }
     if (!components.empty()) {
-      this->SetOption("CPACK_NUGET_COMPONENTS",
-                      cmJoin(components, ";").c_str());
+      this->SetOption("CPACK_NUGET_COMPONENTS", cmJoin(components, ";"));
     }
 
   } else {
@@ -113,13 +114,13 @@ void cmCPackNuGetGenerator::SetupGroupComponentVariables(bool ignoreGroup)
                    [](std::pair<std::string, cmCPackComponent> const& comp) {
                      return comp.first;
                    });
-    this->SetOption("CPACK_NUGET_COMPONENTS", cmJoin(components, ";").c_str());
+    this->SetOption("CPACK_NUGET_COMPONENTS", cmJoin(components, ";"));
   }
 }
 
 void cmCPackNuGetGenerator::AddGeneratedPackageNames()
 {
-  const char* const files_list = this->GetOption("GEN_CPACK_OUTPUT_FILES");
+  cmValue const files_list = this->GetOption("GEN_CPACK_OUTPUT_FILES");
   if (!files_list) {
     cmCPackLogger(
       cmCPackLog::LOG_ERROR,
@@ -128,14 +129,14 @@ void cmCPackNuGetGenerator::AddGeneratedPackageNames()
     return;
   }
   // add the generated packages to package file names list
-  std::string fileNames{ files_list };
+  const std::string& fileNames = *files_list;
   const char sep = ';';
   std::string::size_type pos1 = 0;
   std::string::size_type pos2 = fileNames.find(sep, pos1 + 1);
   while (pos2 != std::string::npos) {
-    packageFileNames.push_back(fileNames.substr(pos1, pos2 - pos1));
+    this->packageFileNames.push_back(fileNames.substr(pos1, pos2 - pos1));
     pos1 = pos2 + 1;
     pos2 = fileNames.find(sep, pos1 + 1);
   }
-  packageFileNames.push_back(fileNames.substr(pos1, pos2 - pos1));
+  this->packageFileNames.push_back(fileNames.substr(pos1, pos2 - pos1));
 }

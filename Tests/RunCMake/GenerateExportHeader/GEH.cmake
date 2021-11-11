@@ -51,11 +51,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
   set(CMAKE_CXX_STANDARD 11)
 endif()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
-    CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
-  set(CMAKE_CXX_STANDARD 14)
-endif()
-
 add_subdirectory(lib_shared_and_static)
 
 if(CMAKE_SYSTEM_NAME MATCHES "AIX" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
@@ -108,7 +103,7 @@ add_executable(GenerateExportHeader exportheader_test.cpp)
 
 target_link_libraries(GenerateExportHeader ${link_libraries})
 if (WIN32 OR CYGWIN)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+  if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM") AND
     CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
     set(_platform Win32-Clang)
   elseif(MSVC AND COMPILER_HAS_DEPRECATED)

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-project(TestPython3 C)
+project(TestPython3 LANGUAGES C)
 
 include(CTest)
 
@@ -11,18 +11,27 @@ endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 if (NOT Python3_FOUND)
-  message (FATAL_ERROR "Fail to found Python 3")
+  message (FATAL_ERROR "Failed to find Python 3")
+endif()
+if (NOT Python3_Development_FOUND)
+  message (FATAL_ERROR "Failed to find Python 3 'Development' component")
+endif()
+if (NOT Python3_Development.Module_FOUND)
+  message (FATAL_ERROR "Failed to find Python 3 'Development.Module' component")
+endif()
+if (NOT Python3_Development.Embed_FOUND)
+  message (FATAL_ERROR "Failed to find Python 3 'Development.Embed' component")
 endif()
 
 if(NOT TARGET Python3::Interpreter)
-  message(SEND_ERROR "Python2::Interpreter not found")
+  message(SEND_ERROR "Python3::Interpreter not found")
 endif()
 
 if(NOT TARGET Python3::Python)
-  message(SEND_ERROR "Python2::Python not found")
+  message(SEND_ERROR "Python3::Python not found")
 endif()
 if(NOT TARGET Python3::Module)
-  message(SEND_ERROR "Python2::Module not found")
+  message(SEND_ERROR "Python3::Module not found")
 endif()
 
 Python3_add_library (spam3 MODULE ../spam.c)

@@ -1,23 +1,20 @@
-cmake_minimum_required(VERSION 3.3)
-project(Tutorial)
+cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CXX_STANDARD 14)
+# set the project name and version
+project(Tutorial VERSION 1.0)
+
+# specify the C++ standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # should we use our own math functions
 option(USE_MYMATH "Use tutorial provided math implementation" ON)
 
-# set the version number
-set(Tutorial_VERSION_MAJOR 1)
-set(Tutorial_VERSION_MINOR 0)
-
 # configure a header file to pass some of the CMake settings
 # to the source code
-configure_file(
-  "${PROJECT_SOURCE_DIR}/TutorialConfig.h.in"
-  "${PROJECT_BINARY_DIR}/TutorialConfig.h"
-  )
+configure_file(TutorialConfig.h.in TutorialConfig.h)
 
-# add the MathFunctions library?
+# add the MathFunctions library
 if(USE_MYMATH)
   add_subdirectory(MathFunctions)
   list(APPEND EXTRA_LIBS MathFunctions)
@@ -57,7 +54,7 @@ function(do_test target arg result)
   set_tests_properties(Comp${arg}
     PROPERTIES PASS_REGULAR_EXPRESSION ${result}
     )
-endfunction(do_test)
+endfunction()
 
 # do a bunch of result based tests
 do_test(Tutorial 4 "4 is 2")
@@ -65,5 +62,5 @@ do_test(Tutorial 9 "9 is 3")
 do_test(Tutorial 5 "5 is 2.236")
 do_test(Tutorial 7 "7 is 2.645")
 do_test(Tutorial 25 "25 is 5")
-do_test(Tutorial -25 "-25 is [-nan|nan|0]")
+do_test(Tutorial -25 "-25 is (-nan|nan|0)")
 do_test(Tutorial 0.0001 "0.0001 is 0.01")

@@ -1,7 +1,6 @@
 enable_language
 ---------------
-
-Enable a language (CXX/C/Fortran/etc)
+Enable a language (CXX/C/OBJC/OBJCXX/Fortran/etc)
 
 .. code-block:: cmake
 
@@ -10,7 +9,20 @@ Enable a language (CXX/C/Fortran/etc)
 Enables support for the named language in CMake.  This is
 the same as the :command:`project` command but does not create any of the extra
 variables that are created by the project command.  Example languages
-are ``CXX``, ``C``, ``CUDA``, ``Fortran``, and ``ASM``.
+are ``CXX``, ``C``, ``CUDA``, ``OBJC``, ``OBJCXX``, ``Fortran``,
+``HIP``, ``ISPC``, and ``ASM``.
+
+.. versionadded:: 3.8
+  Added ``CUDA`` support.
+
+.. versionadded:: 3.16
+  Added ``OBJC`` and ``OBJCXX`` support.
+
+.. versionadded:: 3.18
+  Added ``ISPC`` support.
+
+.. versionadded:: 3.21
+  Added ``HIP`` support.
 
 If enabling ``ASM``, enable it last so that CMake can check whether
 compilers for other languages like ``C`` work for assembly too.

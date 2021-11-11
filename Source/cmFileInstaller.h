@@ -1,26 +1,26 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmFileInstaller_h
-#define cmFileInstaller_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-
-#include "cmFileCopier.h"
-
-#include "cmInstallType.h"
 
 #include <string>
 #include <vector>
 
-class cmFileCommand;
+#include "cmFileCopier.h"
+#include "cmInstallMode.h"
+#include "cmInstallType.h"
+
+class cmExecutionStatus;
 
 struct cmFileInstaller : public cmFileCopier
 {
-  cmFileInstaller(cmFileCommand* command);
+  cmFileInstaller(cmExecutionStatus& status);
   ~cmFileInstaller() override;
 
 protected:
   cmInstallType InstallType;
+  cmInstallMode InstallMode;
   bool Optional;
   bool MessageAlways;
   bool MessageLazy;
@@ -37,7 +37,8 @@ protected:
   bool ReportMissing(const std::string& fromFile) override;
   bool Install(const std::string& fromFile,
                const std::string& toFile) override;
-
+  bool InstallFile(const std::string& fromFile, const std::string& toFile,
+                   MatchProperties match_properties) override;
   bool Parse(std::vector<std::string> const& args) override;
   enum
   {
@@ -51,5 +52,3 @@ protected:
   bool GetTargetTypeFromString(const std::string& stype);
   bool HandleInstallDestination();
 };
-
-#endif

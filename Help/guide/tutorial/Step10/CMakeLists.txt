@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.3)
-project(Tutorial)
+cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CXX_STANDARD 14)
+# set the project name and version
+project(Tutorial VERSION 1.0)
 
-# Set the version number
-set(Tutorial_VERSION_MAJOR 1)
-set(Tutorial_VERSION_MINOR 0)
+# specify the C++ standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # control where the static and shared libraries are built so that on windows
 # we don't need to tinker with the path to run the executable
@@ -16,17 +16,14 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 # configure a header file to pass the version number only
-configure_file(
-  "${PROJECT_SOURCE_DIR}/TutorialConfig.h.in"
-  "${PROJECT_BINARY_DIR}/TutorialConfig.h"
-  )
+configure_file(TutorialConfig.h.in TutorialConfig.h)
 
 # add the MathFunctions library
 add_subdirectory(MathFunctions)
 
 # add the executable
 add_executable(Tutorial tutorial.cxx)
-target_link_libraries(Tutorial MathFunctions)
+target_link_libraries(Tutorial PUBLIC MathFunctions)
 
 # add the binary tree to the search path for include files
 # so that we will find TutorialConfig.h
@@ -41,7 +38,7 @@ install(FILES "${PROJECT_BINARY_DIR}/TutorialConfig.h"
   )
 
 # enable testing
-enable_testing()
+include(CTest)
 
 # does the application run
 add_test(NAME Runs COMMAND Tutorial 25)
@@ -58,7 +55,7 @@ function(do_test target arg result)
   set_tests_properties(Comp${arg}
     PROPERTIES PASS_REGULAR_EXPRESSION ${result}
     )
-endfunction(do_test)
+endfunction()
 
 # do a bunch of result based tests
 do_test(Tutorial 4 "4 is 2")
@@ -66,7 +63,7 @@ do_test(Tutorial 9 "9 is 3")
 do_test(Tutorial 5 "5 is 2.236")
 do_test(Tutorial 7 "7 is 2.645")
 do_test(Tutorial 25 "25 is 5")
-do_test(Tutorial -25 "-25 is [-nan|nan|0]")
+do_test(Tutorial -25 "-25 is (-nan|nan|0)")
 do_test(Tutorial 0.0001 "0.0001 is 0.01")
 
 include(InstallRequiredSystemLibraries)

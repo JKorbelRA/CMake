@@ -17,9 +17,11 @@ this module looks for Perl
 #]=======================================================================]
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindCygwin.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/FindMsys.cmake)
 
 set(PERL_POSSIBLE_BIN_PATHS
   ${CYGWIN_INSTALL_PATH}/bin
+  ${MSYS_INSTALL_PATH}/usr/bin
   )
 
 if(WIN32)
@@ -73,8 +75,15 @@ endif()
 set(PERL ${PERL_EXECUTABLE})
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+if (CMAKE_FIND_PACKAGE_NAME STREQUAL "PerlLibs")
+  # FindPerlLibs include()'s this module. It's an old pattern, but rather than
+  # trying to suppress this from outside the module (which is then sensitive to
+  # the contents, detect the case in this module and suppress it explicitly.
+  set(FPHSA_NAME_MISMATCHED 1)
+endif ()
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Perl
                                   REQUIRED_VARS PERL_EXECUTABLE
                                   VERSION_VAR PERL_VERSION_STRING)
+unset(FPHSA_NAME_MISMATCHED)
 
 mark_as_advanced(PERL_EXECUTABLE)

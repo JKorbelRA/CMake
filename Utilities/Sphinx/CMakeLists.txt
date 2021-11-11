@@ -3,11 +3,11 @@
 
 if(NOT CMake_SOURCE_DIR)
   set(CMakeHelp_STANDALONE 1)
-  cmake_minimum_required(VERSION 3.1...3.14 FATAL_ERROR)
+  cmake_minimum_required(VERSION 3.1...3.21 FATAL_ERROR)
   get_filename_component(tmp "${CMAKE_CURRENT_SOURCE_DIR}" PATH)
   get_filename_component(CMake_SOURCE_DIR "${tmp}" PATH)
   include(${CMake_SOURCE_DIR}/Modules/CTestUseLaunchers.cmake)
-  include(${CMake_SOURCE_DIR}/Source/CMakeVersionCompute.cmake)
+  include(${CMake_SOURCE_DIR}/Source/CMakeVersion.cmake)
   include(${CMake_SOURCE_DIR}/Source/CMakeInstallDestinations.cmake)
   unset(CMAKE_DATA_DIR)
   unset(CMAKE_DATA_DIR CACHE)
@@ -22,6 +22,7 @@ option(SPHINX_MAN "Build man pages with Sphinx" OFF)
 option(SPHINX_HTML "Build html help with Sphinx" OFF)
 option(SPHINX_SINGLEHTML "Build html single page help with Sphinx" OFF)
 option(SPHINX_QTHELP "Build Qt help with Sphinx" OFF)
+option(SPHINX_LATEXPDF "Build PDF help with Sphinx using LaTeX" OFF)
 option(SPHINX_TEXT "Build text help with Sphinx (not installed)" OFF)
 find_program(SPHINX_EXECUTABLE
   NAMES sphinx-build
@@ -33,7 +34,7 @@ separate_arguments(sphinx_flags UNIX_COMMAND "${SPHINX_FLAGS}")
 mark_as_advanced(SPHINX_TEXT)
 mark_as_advanced(SPHINX_FLAGS)
 
-if(NOT SPHINX_INFO AND NOT SPHINX_MAN AND NOT SPHINX_HTML AND NOT SPHINX_SINGLEHTML AND NOT SPHINX_QTHELP AND NOT SPHINX_TEXT)
+if(NOT SPHINX_INFO AND NOT SPHINX_MAN AND NOT SPHINX_HTML AND NOT SPHINX_SINGLEHTML AND NOT SPHINX_QTHELP AND NOT SPHINX_TEXT AND NOT SPHINX_LATEXPDF)
   return()
 elseif(NOT SPHINX_EXECUTABLE)
   message(FATAL_ERROR "SPHINX_EXECUTABLE (sphinx-build) is not found!")
@@ -57,6 +58,13 @@ configure_file(conf.py.in conf.py @ONLY)
 set(doc_formats "")
 if(SPHINX_HTML)
   list(APPEND doc_formats html)
+
+  # we provide the path to the produced html output in the console
+  # for tools that support URI protocol schemes
+  set(html_extra_commands
+    COMMAND ${CMAKE_COMMAND} -E echo "sphinx-build html: HTML documentation generated in file://${CMAKE_CURRENT_BINARY_DIR}/html/index.html"
+  )
+
 endif()
 if(SPHINX_MAN)
   list(APPEND doc_formats man)
@@ -89,7 +97,7 @@ if(SPHINX_QTHELP)
   find_package(PythonInterp REQUIRED)
 
   find_program(QCOLLECTIONGENERATOR_EXECUTABLE
-    NAMES qcollectiongenerator
+    NAMES qcollectiongenerator-qt5 qcollectiongenerator
     DOC "qcollectiongenerator tool"
     )
   if (NOT QCOLLECTIONGENERATOR_EXECUTABLE)
@@ -105,7 +113,6 @@ if(SPHINX_QTHELP)
     # Workaround sphinx configurability:
     # https://bitbucket.org/birkenfeld/sphinx/issue/1448/make-qthelp-more-configurable
     COMMAND ${CMAKE_COMMAND} "-DQTHELP_DIR=${CMAKE_CURRENT_BINARY_DIR}/qthelp/"
-      "-DCMake_VERSION=${CMake_VERSION_MAJOR}${CMake_VERSION_MINOR}${CMake_VERSION_PATCH}"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/fixup_qthelp_names.cmake"
 
     # Create proper identifiers. Workaround for
@@ -118,28 +125,51 @@ if(SPHINX_QTHELP)
       ${CMAKE_CURRENT_BINARY_DIR}/qthelp/CMake.qhcp
   )
 endif()
-
+if(SPHINX_LATEXPDF)
+  list(APPEND doc_formats latexpdf)
+endif()
 
 set(doc_format_outputs "")
 set(doc_format_last "")
 foreach(format ${doc_formats})
   set(doc_format_output "doc_format_${format}")
   set(doc_format_log "build-${format}.log")
-  add_custom_command(
-    OUTPUT ${doc_format_output}
-    COMMAND ${SPHINX_EXECUTABLE}
-            -c ${CMAKE_CURRENT_BINARY_DIR}
-            -d ${CMAKE_CURRENT_BINARY_DIR}/doctrees
-            -b ${format}
-            ${sphinx_flags}
-            ${CMake_SOURCE_DIR}/Help
-            ${CMAKE_CURRENT_BINARY_DIR}/${format}
-            > ${doc_format_log} # log stdout, pass stderr
-    ${${format}_extra_commands}
-    DEPENDS ${doc_format_last}
-    COMMENT "sphinx-build ${format}: see Utilities/Sphinx/${doc_format_log}"
-    VERBATIM
-    )
+  if(format STREQUAL "latexpdf")
+    # This format does not use builder (-b) but make_mode (-M) which expects
+    # arguments in peculiar order
+    add_custom_command(
+      OUTPUT ${doc_format_output}
+      COMMAND ${SPHINX_EXECUTABLE}
+              -M ${format}
+              ${CMake_SOURCE_DIR}/Help
+              ${CMAKE_CURRENT_BINARY_DIR}/${format}
+              -c ${CMAKE_CURRENT_BINARY_DIR}
+              -d ${CMAKE_CURRENT_BINARY_DIR}/doctrees
+              ${sphinx_flags}
+              > ${doc_format_log} # log stdout, pass stderr
+      ${${format}_extra_commands}
+      DEPENDS ${doc_format_last}
+      COMMENT "sphinx-build ${format}: see Utilities/Sphinx/${doc_format_log}"
+      VERBATIM
+      )
+  else()
+    # other formats use standard builder (-b) mode
+    add_custom_command(
+      OUTPUT ${doc_format_output}
+      COMMAND ${SPHINX_EXECUTABLE}
+              -c ${CMAKE_CURRENT_BINARY_DIR}
+              -d ${CMAKE_CURRENT_BINARY_DIR}/doctrees
+              -b ${format}
+              ${sphinx_flags}
+              ${CMake_SOURCE_DIR}/Help
+              ${CMAKE_CURRENT_BINARY_DIR}/${format}
+              > ${doc_format_log} # log stdout, pass stderr
+      ${${format}_extra_commands}
+      DEPENDS ${doc_format_last}
+      COMMENT "sphinx-build ${format}: see Utilities/Sphinx/${doc_format_log}"
+      VERBATIM
+      )
+  endif()
   set_property(SOURCE ${doc_format_output} PROPERTY SYMBOLIC 1)
   list(APPEND doc_format_outputs ${doc_format_output})
   set(doc_format_last ${doc_format_output})
@@ -216,7 +246,14 @@ endif()
 
 if(SPHINX_QTHELP)
   CMake_OPTIONAL_COMPONENT(sphinx-qthelp)
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qthelp/CMake-${CMake_VERSION_MAJOR}${CMake_VERSION_MINOR}${CMake_VERSION_PATCH}.qch
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qthelp/CMake.qch
+          DESTINATION ${CMAKE_DOC_DIR} ${COMPONENT}
+          )
+endif()
+
+if(SPHINX_LATEXPDF)
+  CMake_OPTIONAL_COMPONENT(sphinx-latexpdf)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/latexpdf/latex/CMake.pdf
           DESTINATION ${CMAKE_DOC_DIR} ${COMPONENT}
           )
 endif()

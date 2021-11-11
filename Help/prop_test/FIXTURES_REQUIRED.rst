@@ -1,6 +1,8 @@
 FIXTURES_REQUIRED
 -----------------
 
+.. versionadded:: 3.7
+
 Specifies a list of fixtures the test requires. Fixture names are case
 sensitive and they are not required to have any similarity to test names.
 
@@ -33,9 +35,9 @@ The concept of a fixture is different to that of a resource specified by
 set of tests which share setup and cleanup requirements, whereas a resource
 lock has the effect of ensuring a particular set of tests do not run in
 parallel. Some situations may need both, such as setting up a database,
-serialising test access to that database and deleting the database again at the
+serializing test access to that database and deleting the database again at the
 end. For such cases, tests would populate both ``FIXTURES_REQUIRED`` and
-:prop_test:`RESOURCE_LOCK` to combine the two behaviours. Names used for
+:prop_test:`RESOURCE_LOCK` to combine the two behaviors. Names used for
 :prop_test:`RESOURCE_LOCK` have no relationship with names of fixtures, so note
 that a resource lock does not imply a fixture and vice versa.
 

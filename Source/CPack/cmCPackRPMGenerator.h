@@ -1,13 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmCPackRPMGenerator_h
-#define cmCPackRPMGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmCPackGenerator.h"
-
 #include <string>
+
+#include "cmCPackGenerator.h"
 
 /** \class cmCPackRPMGenerator
  * \brief A generator for RPM packages
@@ -33,9 +32,9 @@ public:
 #ifdef __APPLE__
     // on MacOS enable CPackRPM iff rpmbuild is found
     std::vector<std::string> locations;
-    locations.push_back("/sw/bin");        // Fink
-    locations.push_back("/opt/local/bin"); // MacPorts
-    return cmSystemTools::FindProgram("rpmbuild") != "" ? true : false;
+    locations.emplace_back("/sw/bin");        // Fink
+    locations.emplace_back("/opt/local/bin"); // MacPorts
+    return !cmSystemTools::FindProgram("rpmbuild").empty();
 #else
     // legacy behavior on other systems
     return true;
@@ -68,5 +67,3 @@ protected:
 
   void AddGeneratedPackageNames();
 };
-
-#endif

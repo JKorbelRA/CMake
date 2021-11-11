@@ -17,13 +17,11 @@ This file must be translated to C and modified to build everywhere.
 
 Run bison like this:
 
-  bison --yacc --name-prefix=cmFortran_yy
+  bison --name-prefix=cmFortran_yy
         --defines=cmFortranParserTokens.h
          -ocmFortranParser.cxx
           cmFortranParser.y
 
-Modify cmFortranParser.cxx:
-  - "#if 0" out yyerrorlab block in range ["goto yyerrlab1", "yyerrlab1:"]
 */
 
 #include "cmConfigure.h" // IWYU pragma: keep
@@ -35,7 +33,6 @@ Modify cmFortranParser.cxx:
 /*-------------------------------------------------------------------------*/
 #define cmFortranParser_cxx
 #include "cmFortranParser.h" /* Interface to parser object.  */
-#include "cmFortranParserTokens.h" /* Need YYSTYPE for YY_DECL.  */
 
 /* Forward declare the lexer entry point.  */
 YY_DECL;
@@ -58,6 +55,7 @@ static void cmFortran_yyerror(yyscan_t yyscanner, const char* message)
 #endif
 #if defined(__GNUC__) && __GNUC__ >= 8
 # pragma GCC diagnostic ignored "-Wconversion"
+# pragma GCC diagnostic ignored "-Wfree-nonheap-object"
 #endif
 %}
 
@@ -93,6 +91,8 @@ static void cmFortran_yyerror(yyscan_t yyscanner, const char* message)
 %token MODULE
 %token SUBMODULE
 %token USE
+
+%destructor { free($$); } WORD STRING CPP_INCLUDE_ANGLE
 
 /*-------------------------------------------------------------------------*/
 /* grammar */
@@ -150,6 +150,10 @@ stmt:
     if (cmsysString_strcasecmp($3, "non_intrinsic") == 0) {
       cmFortranParser* parser = cmFortran_yyget_extra(yyscanner);
       cmFortranParser_RuleUse(parser, $5);
+    }
+    if (cmsysString_strcasecmp($3, "intrinsic") == 0) {
+      cmFortranParser* parser = cmFortran_yyget_extra(yyscanner);
+      cmFortranParser_RuleUseIntrinsic(parser, $5);
     }
     free($3);
     free($5);
@@ -244,6 +248,7 @@ misc_code:
 | RPAREN
 | COMMA
 | UNTERMINATED_STRING
+| CPP_LINE_DIRECTIVE
 ;
 
 %%

@@ -7,6 +7,7 @@ Perform the :ref:`CTest Build Step` as a :ref:`Dashboard Client`.
 
   ctest_build([BUILD <build-dir>] [APPEND]
               [CONFIGURATION <config>]
+              [PARALLEL_LEVEL <parallel>]
               [FLAGS <flags>]
               [PROJECT_NAME <project-name>]
               [TARGET <target-name>]
@@ -42,6 +43,13 @@ The options are:
   Otherwise the ``-C <cfg>`` option given to the :manual:`ctest(1)`
   command will be used, if any.
 
+``PARALLEL_LEVEL <parallel>``
+  .. versionadded:: 3.21
+
+  Specify the parallel level of the underlying build system.  If not
+  specified, the :envvar:`CMAKE_BUILD_PARALLEL_LEVEL` environment
+  variable will be checked.
+
 ``FLAGS <flags>``
   Pass additional arguments to the underlying build command.
   If not specified the ``CTEST_BUILD_FLAGS`` variable will be checked.
@@ -50,7 +58,10 @@ The options are:
   for an example.
 
 ``PROJECT_NAME <project-name>``
-  Ignored.  This was once used but is no longer needed.
+  Ignored since CMake 3.0.
+
+  .. versionchanged:: 3.14
+    This value is no longer required.
 
 ``TARGET <target-name>``
   Specify the name of a target to build.  If not specified the
@@ -68,10 +79,14 @@ The options are:
   Store the return value of the native build tool in the given variable.
 
 ``CAPTURE_CMAKE_ERROR <result-var>``
+  .. versionadded:: 3.7
+
   Store in the ``<result-var>`` variable -1 if there are any errors running
   the command and prevent ctest from returning non-zero if an error occurs.
 
 ``QUIET``
+  .. versionadded:: 3.3
+
   Suppress any CTest-specific non-error output that would have been
   printed to the console otherwise.  The summary of warnings / errors,
   as well as the output from the native build tool is unaffected by

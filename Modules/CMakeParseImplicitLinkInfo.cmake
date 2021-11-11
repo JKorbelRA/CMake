@@ -5,15 +5,26 @@ cmake_policy(PUSH)
 cmake_policy(SET CMP0053 NEW)
 cmake_policy(SET CMP0054 NEW)
 
-# Function parse implicit linker options.
+# Function to parse implicit linker options.
+#
 # This is used internally by CMake and should not be included by user
 # code.
-
+#
+# Note: this function is leaked/exposed by FindOpenMP and therefore needs
+# to have a stable API so projects that copied `FindOpenMP` for backwards
+# compatibility don't break.
+#
 function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj_regex)
   set(implicit_libs_tmp "")
+  set(implicit_objs_tmp "")
   set(implicit_dirs_tmp)
   set(implicit_fwks_tmp)
   set(log "")
+
+  set(keywordArgs)
+  set(oneValueArgs COMPUTE_IMPLICIT_OBJECTS)
+  set(multiValueArgs )
+  cmake_parse_arguments(EXTRA_PARSE "${keywordArgs}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   # Parse implicit linker arguments.
   set(linker "CMAKE_LINKER-NOTFOUND")
@@ -47,8 +58,25 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
       endif()
       separate_arguments(args NATIVE_COMMAND "${line}")
       list(GET args 0 cmd)
+      if("${cmd}" MATCHES "->")
+        # LCC has '-> ' in-front of the linker
+        list(GET args 1 cmd)
+      endif()
+    else()
+      #check to see if the link line is comma-separated instead of space separated
+      string(REGEX REPLACE "," " " line "${line}")
+      if("${line}" MATCHES "${linker_regex}" AND
+        NOT "${line}" MATCHES "${linker_exclude_regex}")
+        separate_arguments(args NATIVE_COMMAND "${line}")
+        list(GET args 0 cmd)
+        if("${cmd}" MATCHES "exec:")
+          # ibm xl sometimes has 'exec: ' in-front of the linker
+          list(GET args 1 cmd)
+        endif()
+      endif()
     endif()
     set(is_msvc 0)
+    set(search_static 0)
     if("${cmd}" MATCHES "${linker_regex}")
       string(APPEND log "  link line: [${line}]\n")
       string(REGEX REPLACE ";-([LYz]);" ";-\\1" args "${args}")
@@ -80,6 +108,10 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
         elseif("${arg}" MATCHES "^-l([^:].*)$")
           # Unix library.
           set(lib "${CMAKE_MATCH_1}")
+          if(search_static AND lib MATCHES "^(gfortran|stdc\\+\\+)$")
+            # Search for the static library later, once all link dirs are known.
+            set(lib "SEARCH_STATIC:${lib}")
+          endif()
           list(APPEND implicit_libs_tmp ${lib})
           string(APPEND log "    arg [${arg}] ==> lib [${lib}]\n")
         elseif("${arg}" MATCHES "^(.:)?[/\\].*\\.a$")
@@ -91,17 +123,27 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
           set(lib "${CMAKE_MATCH_2}")
           list(APPEND implicit_libs_tmp ${lib})
           string(APPEND log "    arg [${arg}] ==> lib [${lib}]\n")
-        elseif("${arg}" MATCHES "^(.:)?[/\\].*\\.o$"
-            AND obj_regex AND "${arg}" MATCHES "${obj_regex}")
-          # Object file full path.
-          list(APPEND implicit_libs_tmp ${arg})
-          string(APPEND log "    arg [${arg}] ==> obj [${arg}]\n")
+        elseif("${arg}" MATCHES "^(.:)?[/\\].*\\.o$")
+          if(EXTRA_PARSE_COMPUTE_IMPLICIT_OBJECTS)
+            list(APPEND implicit_objs_tmp ${arg})
+            string(APPEND log "    arg [${arg}] ==> obj [${arg}]\n")
+          endif()
+          if(obj_regex AND "${arg}" MATCHES "${obj_regex}")
+            # Object file full path.
+            list(APPEND implicit_libs_tmp ${arg})
+          endif()
         elseif("${arg}" MATCHES "^-Y(P,)?[^0-9]")
           # Sun search path ([^0-9] avoids conflict with Mac -Y<num>).
           string(REGEX REPLACE "^-Y(P,)?" "" dirs "${arg}")
           string(REPLACE ":" ";" dirs "${dirs}")
           list(APPEND implicit_dirs_tmp ${dirs})
           string(APPEND log "    arg [${arg}] ==> dirs [${dirs}]\n")
+        elseif("${arg}" STREQUAL "-Bstatic")
+          set(search_static 1)
+          string(APPEND log "    arg [${arg}] ==> search static\n" )
+        elseif("${arg}" STREQUAL "-Bdynamic")
+          set(search_static 0)
+          string(APPEND log "    arg [${arg}] ==> search dynamic\n" )
         elseif("${arg}" MATCHES "^-l:")
           # HP named library.
           list(APPEND implicit_libs_tmp ${arg})
@@ -145,8 +187,29 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
   # We remove items that are not language-specific.
   set(implicit_libs "")
   foreach(lib IN LISTS implicit_libs_tmp)
+    if("x${lib}" MATCHES "^xSEARCH_STATIC:(.*)")
+      set(search_static 1)
+      set(lib "${CMAKE_MATCH_1}")
+    else()
+      set(search_static 0)
+    endif()
     if("x${lib}" MATCHES "^x(crt.*\\.o|gcc_eh.*|.*libgcc_eh.*|System.*|.*libclang_rt.*|msvcrt.*|libvcruntime.*|libucrt.*|libcmt.*)$")
       string(APPEND log "  remove lib [${lib}]\n")
+    elseif(search_static)
+      # This library appears after a -Bstatic flag.  Due to ordering
+      # and filtering for mixed-language link lines, we do not preserve
+      # the -Bstatic flag itself.  Instead, use an absolute path.
+      # Search using a temporary variable with a distinct name
+      # so that our test suite does not depend on disk content.
+      find_library("CMAKE_${lang}_IMPLICIT_LINK_LIBRARY_${lib}" NO_CACHE NAMES "lib${lib}.a" NO_DEFAULT_PATH PATHS ${implicit_dirs_tmp})
+      set(_lib_static "${CMAKE_${lang}_IMPLICIT_LINK_LIBRARY_${lib}}")
+      if(_lib_static)
+        string(APPEND log "  search lib [SEARCH_STATIC:${lib}] ==> [${_lib_static}]\n")
+        list(APPEND implicit_libs "${_lib_static}")
+      else()
+        string(APPEND log "  search lib [SEARCH_STATIC:${lib}] ==> [${lib}]\n")
+        list(APPEND implicit_libs "${lib}")
+      endif()
     elseif(IS_ABSOLUTE "${lib}")
       get_filename_component(abs "${lib}" ABSOLUTE)
       if(NOT "x${lib}" STREQUAL "x${abs}")
@@ -157,6 +220,21 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
       list(APPEND implicit_libs "${lib}")
     endif()
   endforeach()
+
+  if(EXTRA_PARSE_COMPUTE_IMPLICIT_OBJECTS)
+    set(implicit_objs "")
+    foreach(obj IN LISTS implicit_objs_tmp)
+      if(IS_ABSOLUTE "${obj}")
+        get_filename_component(abs "${obj}" ABSOLUTE)
+        if(NOT "x${obj}" STREQUAL "x${abs}")
+          string(APPEND log "  collapse obj [${obj}] ==> [${abs}]\n")
+        endif()
+        list(APPEND implicit_objs "${abs}")
+      else()
+        list(APPEND implicit_objs "${obj}")
+      endif()
+    endforeach()
+  endif()
 
   # Cleanup list of library and framework directories.
   set(desc_dirs "library")
@@ -179,6 +257,7 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
 
   # Log results.
   string(APPEND log "  implicit libs: [${implicit_libs}]\n")
+  string(APPEND log "  implicit objs: [${implicit_objs}]\n")
   string(APPEND log "  implicit dirs: [${implicit_dirs}]\n")
   string(APPEND log "  implicit fwks: [${implicit_fwks}]\n")
 
@@ -187,6 +266,10 @@ function(CMAKE_PARSE_IMPLICIT_LINK_INFO text lib_var dir_var fwk_var log_var obj
   set(${dir_var} "${implicit_dirs}" PARENT_SCOPE)
   set(${fwk_var} "${implicit_fwks}" PARENT_SCOPE)
   set(${log_var} "${log}" PARENT_SCOPE)
+
+  if(EXTRA_PARSE_COMPUTE_IMPLICIT_OBJECTS)
+    set(${EXTRA_PARSE_COMPUTE_IMPLICIT_OBJECTS} "${implicit_objs}" PARENT_SCOPE)
+  endif()
 endfunction()
 
 cmake_policy(POP)

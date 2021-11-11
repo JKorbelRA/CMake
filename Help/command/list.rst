@@ -88,6 +88,8 @@ Returns the list of elements specified by indices from the list.
 
   list(JOIN <list> <glue> <output variable>)
 
+.. versionadded:: 3.12
+
 Returns a string joining all list's elements using the glue string.
 To join multiple strings, which are not part of a list, use ``JOIN`` operator
 from :command:`string` command.
@@ -97,6 +99,8 @@ from :command:`string` command.
 .. code-block:: cmake
 
   list(SUBLIST <list> <begin> <length> <output variable>)
+
+.. versionadded:: 3.12
 
 Returns a sublist of the given list.
 If ``<length>`` is 0, an empty list will be returned.
@@ -132,11 +136,13 @@ Appends elements to the list.
 
   list(FILTER <list> <INCLUDE|EXCLUDE> REGEX <regular_expression>)
 
+.. versionadded:: 3.6
+
 Includes or removes items from the list that match the mode's pattern.
 In ``REGEX`` mode, items will be matched against the given regular expression.
 
-For more information on regular expressions see also the
-:command:`string` command.
+For more information on regular expressions look under
+:ref:`string(REGEX) <Regex Specification>`.
 
 .. _INSERT:
 
@@ -152,9 +158,12 @@ Inserts elements to the list to the specified location.
 
   list(POP_BACK <list> [<out-var>...])
 
+.. versionadded:: 3.15
+
 If no variable name is given, removes exactly one element. Otherwise,
-assign the last element's value to the given variable and removes it,
-up to the last variable name given.
+with `N` variable names provided, assign the last `N` elements' values
+to the given variables and then remove the last `N` values from
+``<list>``.
 
 .. _POP_FRONT:
 
@@ -162,15 +171,20 @@ up to the last variable name given.
 
   list(POP_FRONT <list> [<out-var>...])
 
+.. versionadded:: 3.15
+
 If no variable name is given, removes exactly one element. Otherwise,
-assign the first element's value to the given variable and removes it,
-up to the last variable name given.
+with `N` variable names provided, assign the first `N` elements' values
+to the given variables and then remove the first `N` values from
+``<list>``.
 
 .. _PREPEND:
 
 .. code-block:: cmake
 
   list(PREPEND <list> [<element> ...])
+
+.. versionadded:: 3.15
 
 Insert elements to the 0th position in the list.
 
@@ -180,7 +194,7 @@ Insert elements to the 0th position in the list.
 
   list(REMOVE_ITEM <list> <value> [<value> ...])
 
-Removes the given items from the list.
+Removes all instances of the given items from the list.
 
 .. _REMOVE_AT:
 
@@ -206,85 +220,84 @@ but if duplicates are encountered, only the first instance is preserved.
   list(TRANSFORM <list> <ACTION> [<SELECTOR>]
                         [OUTPUT_VARIABLE <output variable>])
 
+.. versionadded:: 3.12
+
 Transforms the list by applying an action to all or, by specifying a
-``<SELECTOR>``, to the selected elements of the list, storing result in-place
-or in the specified output variable.
+``<SELECTOR>``, to the selected elements of the list, storing the result
+in-place or in the specified output variable.
 
 .. note::
 
-   ``TRANSFORM`` sub-command does not change the number of elements of the
+   The ``TRANSFORM`` sub-command does not change the number of elements in the
    list. If a ``<SELECTOR>`` is specified, only some elements will be changed,
-   the other ones will remain same as before the transformation.
+   the other ones will remain the same as before the transformation.
 
-``<ACTION>`` specify the action to apply to the elements of list.
-The actions have exactly the same semantics as sub-commands of
-:command:`string` command.
-
-The ``<ACTION>`` may be one of:
+``<ACTION>`` specifies the action to apply to the elements of the list.
+The actions have exactly the same semantics as sub-commands of the
+:command:`string` command.  ``<ACTION>`` must be one of the following:
 
 ``APPEND``, ``PREPEND``: Append, prepend specified value to each element of
 the list.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> <APPEND|PREPEND> <value> ...)
+    list(TRANSFORM <list> <APPEND|PREPEND> <value> ...)
 
 ``TOUPPER``, ``TOLOWER``: Convert each element of the list to upper, lower
 characters.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> <TOLOWER|TOUPPER> ...)
+    list(TRANSFORM <list> <TOLOWER|TOUPPER> ...)
 
 ``STRIP``: Remove leading and trailing spaces from each element of the
 list.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> STRIP ...)
+    list(TRANSFORM <list> STRIP ...)
 
 ``GENEX_STRIP``: Strip any
 :manual:`generator expressions <cmake-generator-expressions(7)>` from each
 element of the list.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> GENEX_STRIP ...)
+    list(TRANSFORM <list> GENEX_STRIP ...)
 
 ``REPLACE``: Match the regular expression as many times as possible and
 substitute the replacement expression for the match for each element
 of the list
 (Same semantic as ``REGEX REPLACE`` from :command:`string` command).
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> REPLACE <regular_expression>
-                                <replace_expression> ...)
+    list(TRANSFORM <list> REPLACE <regular_expression>
+                                  <replace_expression> ...)
 
-``<SELECTOR>`` select which elements of the list will be transformed. Only one
-type of selector can be specified at a time.
-
-The ``<SELECTOR>`` may be one of:
+``<SELECTOR>`` determines which elements of the list will be transformed.
+Only one type of selector can be specified at a time.  When given,
+``<SELECTOR>`` must be one of the following:
 
 ``AT``: Specify a list of indexes.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> <ACTION> AT <index> [<index> ...] ...)
+    list(TRANSFORM <list> <ACTION> AT <index> [<index> ...] ...)
 
 ``FOR``: Specify a range with, optionally, an increment used to iterate over
 the range.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> <ACTION> FOR <start> <stop> [<step>] ...)
+    list(TRANSFORM <list> <ACTION> FOR <start> <stop> [<step>] ...)
 
 ``REGEX``: Specify a regular expression. Only elements matching the regular
 expression will be transformed.
 
-.. code-block:: cmake
+  .. code-block:: cmake
 
-  list(TRANSFORM <list> <ACTION> REGEX <regular_expression> ...)
+    list(TRANSFORM <list> <ACTION> REGEX <regular_expression> ...)
 
 
 Ordering
@@ -305,12 +318,26 @@ Reverses the contents of the list in-place.
   list(SORT <list> [COMPARE <compare>] [CASE <case>] [ORDER <order>])
 
 Sorts the list in-place alphabetically.
+
+.. versionadded:: 3.13
+  Added the ``COMPARE``, ``CASE``, and ``ORDER`` options.
+
+.. versionadded:: 3.18
+  Added the ``COMPARE NATURAL`` option.
+
 Use the ``COMPARE`` keyword to select the comparison method for sorting.
 The ``<compare>`` option should be one of:
 
 * ``STRING``: Sorts a list of strings alphabetically.  This is the
   default behavior if the ``COMPARE`` option is not given.
 * ``FILE_BASENAME``: Sorts a list of pathnames of files by their basenames.
+* ``NATURAL``: Sorts a list of strings using natural order
+  (see ``strverscmp(3)`` manual), i.e. such that contiguous digits
+  are compared as whole numbers.
+  For example: the following list `10.0 1.1 2.1 8.0 2.0 3.1`
+  will be sorted as `1.1 2.0 2.1 3.1 8.0 10.0` if the ``NATURAL``
+  comparison is selected where it will be sorted as
+  `1.1 10.0 2.0 2.1 3.1 8.0` with the ``STRING`` comparison.
 
 Use the ``CASE`` keyword to select a case sensitive or case insensitive
 sort mode.  The ``<case>`` option should be one of:

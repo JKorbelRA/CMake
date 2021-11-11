@@ -69,7 +69,9 @@ int uv_interface_addresses(uv_interface_address_t** addresses, int* count) {
   struct ifaddrs* addrs;
   struct ifaddrs* ent;
   uv_interface_address_t* address;
+#if !(defined(__CYGWIN__) || defined(__MSYS__))
   int i;
+#endif
 
   *count = 0;
   *addresses = NULL;
@@ -111,7 +113,9 @@ int uv_interface_addresses(uv_interface_address_t** addresses, int* count) {
       address->address.address4 = *((struct sockaddr_in*) ent->ifa_addr);
     }
 
-    if (ent->ifa_netmask->sa_family == AF_INET6) {
+    if (ent->ifa_netmask == NULL) {
+      memset(&address->netmask, 0, sizeof(address->netmask));
+    } else if (ent->ifa_netmask->sa_family == AF_INET6) {
       address->netmask.netmask6 = *((struct sockaddr_in6*) ent->ifa_netmask);
     } else {
       address->netmask.netmask4 = *((struct sockaddr_in*) ent->ifa_netmask);

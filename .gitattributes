@@ -1,5 +1,7 @@
-.gitattributes   export-ignore
+.git*            export-ignore
 .hooks*          export-ignore
+.codespellrc     export-ignore
+.editorconfig    export-ignore
 
 # Custom attribute to mark sources as using our C code style.
 [attr]our-c-style  whitespace=tab-in-indent  format.clang-format-6.0
@@ -11,6 +13,7 @@
 bootstrap        eol=lf
 configure        eol=lf
 *.[1-9]          eol=lf
+*.bash           eol=lf
 *.sh             eol=lf
 *.sh.in          eol=lf
 

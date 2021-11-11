@@ -1,20 +1,22 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmProcess_h
-#define cmProcess_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-#include "cmDuration.h"
-
-#include "cmProcessOutput.h"
-#include "cmUVHandlePtr.h"
-#include "cm_uv.h"
 
 #include <chrono>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <cm3p/uv.h>
+
+#include "cmDuration.h"
+#include "cmProcessOutput.h"
+#include "cmUVHandlePtr.h"
 
 class cmCTestRunTest;
 
@@ -26,7 +28,7 @@ class cmCTestRunTest;
 class cmProcess
 {
 public:
-  explicit cmProcess(cmCTestRunTest& runner);
+  explicit cmProcess(std::unique_ptr<cmCTestRunTest> runner);
   ~cmProcess();
   void SetCommand(std::string const& command);
   void SetCommandArguments(std::vector<std::string> const& arg);
@@ -50,9 +52,9 @@ public:
   };
 
   State GetProcessStatus();
-  int GetId() { return this->Id; }
+  int GetId() const { return this->Id; }
   void SetId(int id) { this->Id = id; }
-  int64_t GetExitValue() { return this->ExitValue; }
+  int64_t GetExitValue() const { return this->ExitValue; }
   cmDuration GetTotalTime() { return this->TotalTime; }
 
   enum class Exception
@@ -65,8 +67,13 @@ public:
     Other
   };
 
-  Exception GetExitException();
-  std::string GetExitExceptionString();
+  Exception GetExitException() const;
+  std::string GetExitExceptionString() const;
+
+  std::unique_ptr<cmCTestRunTest> GetRunner()
+  {
+    return std::move(this->Runner);
+  }
 
 private:
   cmDuration Timeout;
@@ -80,7 +87,7 @@ private:
   cm::uv_timer_ptr Timer;
   std::vector<char> Buf;
 
-  cmCTestRunTest& Runner;
+  std::unique_ptr<cmCTestRunTest> Runner;
   cmProcessOutput Conv;
   int Signal = 0;
   cmProcess::State ProcessState = cmProcess::State::Starting;
@@ -99,19 +106,16 @@ private:
   void OnAllocate(size_t suggested_size, uv_buf_t* buf);
 
   void StartTimer();
+  void Finish();
 
   class Buffer : public std::vector<char>
   {
     // Half-open index range of partial line already scanned.
-    size_type First;
-    size_type Last;
+    size_type First = 0;
+    size_type Last = 0;
 
   public:
-    Buffer()
-      : First(0)
-      , Last(0)
-    {
-    }
+    Buffer() = default;
     bool GetLine(std::string& line);
     bool GetLast(std::string& line);
   };
@@ -123,5 +127,3 @@ private:
   int Id;
   int64_t ExitValue;
 };
-
-#endif

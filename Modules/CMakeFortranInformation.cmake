@@ -157,11 +157,25 @@ if(NOT CMAKE_INCLUDE_FLAG_Fortran)
   set(CMAKE_INCLUDE_FLAG_Fortran ${CMAKE_INCLUDE_FLAG_C})
 endif()
 
+if(CMAKE_EXECUTABLE_FORMAT STREQUAL "ELF")
+  if(NOT DEFINED CMAKE_Fortran_LINK_WHAT_YOU_USE_FLAG)
+    set(CMAKE_Fortran_LINK_WHAT_YOU_USE_FLAG "LINKER:--no-as-needed")
+  endif()
+  if(NOT DEFINED CMAKE_LINK_WHAT_YOU_USE_CHECK)
+    set(CMAKE_LINK_WHAT_YOU_USE_CHECK ldd -u -r)
+  endif()
+endif()
+
 set(CMAKE_VERBOSE_MAKEFILE FALSE CACHE BOOL "If this value is on, makefiles will be generated without the .SILENT directive, and all commands will be echoed to the console during the make.  This is useful for debugging only. With Visual Studio IDE projects all commands are done without /nologo.")
 
 set(CMAKE_Fortran_FLAGS_INIT "$ENV{FFLAGS} ${CMAKE_Fortran_FLAGS_INIT}")
 
 cmake_initialize_per_config_variable(CMAKE_Fortran_FLAGS "Flags used by the Fortran compiler")
+
+if(NOT CMAKE_Fortran_COMPILER_LAUNCHER AND DEFINED ENV{CMAKE_Fortran_COMPILER_LAUNCHER})
+  set(CMAKE_Fortran_COMPILER_LAUNCHER "$ENV{CMAKE_Fortran_COMPILER_LAUNCHER}"
+    CACHE STRING "Compiler launcher for Fortran.")
+endif()
 
 include(CMakeCommonLanguageInclude)
 
@@ -188,7 +202,7 @@ if(NOT DEFINED CMAKE_Fortran_ARCHIVE_CREATE)
   set(CMAKE_Fortran_ARCHIVE_CREATE "<CMAKE_AR> qc <TARGET> <LINK_FLAGS> <OBJECTS>")
 endif()
 if(NOT DEFINED CMAKE_Fortran_ARCHIVE_APPEND)
-  set(CMAKE_Fortran_ARCHIVE_APPEND "<CMAKE_AR> q  <TARGET> <LINK_FLAGS> <OBJECTS>")
+  set(CMAKE_Fortran_ARCHIVE_APPEND "<CMAKE_AR> q <TARGET> <LINK_FLAGS> <OBJECTS>")
 endif()
 if(NOT DEFINED CMAKE_Fortran_ARCHIVE_FINISH)
   set(CMAKE_Fortran_ARCHIVE_FINISH "<CMAKE_RANLIB> <TARGET>")
@@ -204,7 +218,7 @@ endif()
 # link a fortran program
 if(NOT CMAKE_Fortran_LINK_EXECUTABLE)
   set(CMAKE_Fortran_LINK_EXECUTABLE
-    "<CMAKE_Fortran_COMPILER> <CMAKE_Fortran_LINK_FLAGS> <LINK_FLAGS> <FLAGS> <OBJECTS>  -o <TARGET> <LINK_LIBRARIES>")
+    "<CMAKE_Fortran_COMPILER> <CMAKE_Fortran_LINK_FLAGS> <LINK_FLAGS> <FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
 endif()
 
 if(CMAKE_Fortran_STANDARD_LIBRARIES_INIT)

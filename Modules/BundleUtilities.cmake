@@ -59,9 +59,10 @@ fix each one up according to its own list of prerequisites.
 Then clear all the keys and call ``verify_app`` on the final bundle to
 ensure that it is truly standalone.
 
-As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
-which are then ignored
-(e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``).
+.. versionadded:: 3.6
+  As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
+  which are then ignored
+  (e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``).
 
 .. code-block:: cmake
 
@@ -78,9 +79,10 @@ Verifies that an application ``<app>`` appears valid based on running
 analysis tools on it.  Calls :command:`message(FATAL_ERROR)` if the application
 is not verified.
 
-As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
-which are then ignored
-(e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``)
+.. versionadded:: 3.6
+  As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
+  which are then ignored
+  (e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``)
 
 .. code-block:: cmake
 
@@ -155,9 +157,10 @@ them.  Set values associated with each key such that we can loop over
 all of them and copy prerequisite libs into the bundle and then do
 appropriate ``install_name_tool`` fixups.
 
-As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
-which are then ignored
-(e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``)
+.. versionadded:: 3.6
+  As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
+  which are then ignored
+  (e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``)
 
 .. code-block:: cmake
 
@@ -215,9 +218,10 @@ Verifies that the sum of all prerequisites of all files inside the
 bundle are contained within the bundle or are ``system`` libraries,
 presumed to exist everywhere.
 
-As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
-which are then ignored
-(e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``)
+.. versionadded:: 3.6
+  As an optional parameter (``IGNORE_ITEM``) a list of file names can be passed,
+  which are then ignored
+  (e.g. ``IGNORE_ITEM "vcredist_x86.exe;vcredist_x64.exe"``)
 
 .. code-block:: cmake
 
@@ -894,11 +898,16 @@ function(fixup_bundle_item resolved_embedded_item exepath dirs)
   # to install_name_tool:
   #
   if(changes)
-    set(cmd ${CMAKE_INSTALL_NAME_TOOL} ${changes} "${resolved_embedded_item}")
-    execute_process(COMMAND ${cmd} RESULT_VARIABLE install_name_tool_result)
-    if(NOT install_name_tool_result EQUAL 0)
-      string(REPLACE ";" "' '" msg "'${cmd}'")
-      message(FATAL_ERROR "Command failed:\n ${msg}")
+    # Check for a script by extension (.bat,.sh,...) or if the file starts with "#!" (shebang)
+    file(READ ${resolved_embedded_item} file_contents LIMIT 5)
+    if(NOT "${resolved_embedded_item}" MATCHES "\\.(bat|c?sh|bash|ksh|cmd)$" AND
+       NOT file_contents MATCHES "^#!")
+      set(cmd ${CMAKE_INSTALL_NAME_TOOL} ${changes} "${resolved_embedded_item}")
+      execute_process(COMMAND ${cmd} RESULT_VARIABLE install_name_tool_result)
+      if(NOT install_name_tool_result EQUAL 0)
+        string(REPLACE ";" "' '" msg "'${cmd}'")
+        message(FATAL_ERROR "Command failed:\n ${msg}")
+      endif()
     endif()
   endif()
 endfunction()

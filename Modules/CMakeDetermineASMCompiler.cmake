@@ -11,7 +11,7 @@ if(NOT CMAKE_ASM${ASM_DIALECT}_COMPILER)
   if(NOT $ENV{ASM${ASM_DIALECT}} STREQUAL "")
     get_filename_component(CMAKE_ASM${ASM_DIALECT}_COMPILER_INIT $ENV{ASM${ASM_DIALECT}} PROGRAM PROGRAM_ARGS CMAKE_ASM${ASM_DIALECT}_FLAGS_ENV_INIT)
     if(CMAKE_ASM${ASM_DIALECT}_FLAGS_ENV_INIT)
-      set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ARG1 "${CMAKE_ASM${ASM_DIALECT}_FLAGS_ENV_INIT}" CACHE STRING "First argument to ASM${ASM_DIALECT} compiler")
+      set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ARG1 "${CMAKE_ASM${ASM_DIALECT}_FLAGS_ENV_INIT}" CACHE STRING "Arguments to ASM${ASM_DIALECT} compiler")
     endif()
     if(NOT EXISTS ${CMAKE_ASM${ASM_DIALECT}_COMPILER_INIT})
       message(FATAL_ERROR "Could not find compiler set in environment variable ASM${ASM_DIALECT}:\n$ENV{ASM${ASM_DIALECT}}.")
@@ -78,6 +78,10 @@ if(NOT CMAKE_ASM${ASM_DIALECT}_COMPILER_ID)
   set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_FLAGS_Intel "--version")
   set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_REGEX_Intel "(ICC)")
 
+  list(APPEND CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDORS IntelLLVM )
+  set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_FLAGS_IntelLLVM "--version")
+  set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_REGEX_IntelLLVM "(Intel[^\n]+oneAPI)")
+
   list(APPEND CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDORS SunPro )
   set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_FLAGS_SunPro "-V")
   set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_REGEX_SunPro "Sun C")
@@ -121,6 +125,7 @@ if(NOT CMAKE_ASM${ASM_DIALECT}_COMPILER_ID)
   include(CMakeDetermineCompilerId)
   set(userflags)
   CMAKE_DETERMINE_COMPILER_ID_VENDOR(ASM${ASM_DIALECT} "${userflags}")
+  set(_variant "")
   if("x${CMAKE_ASM${ASM_DIALECT}_COMPILER_ID}" STREQUAL "xIAR")
     # primary necessary to detect architecture, so the right archiver and linker can be picked
     # eg. "IAR Assembler V8.10.1.12857/W32 for ARM" or "IAR Assembler V4.11.1.4666 for Renesas RX"
@@ -129,14 +134,32 @@ if(NOT CMAKE_ASM${ASM_DIALECT}_COMPILER_ID)
     if("${_compileid}" MATCHES "V([0-9]+\\.[0-9]+\\.[0-9]+)")
       set(CMAKE_ASM${ASM_DIALECT}_COMPILER_VERSION ${CMAKE_MATCH_1})
     endif()
-    string(REGEX MATCHALL "([A-Za-z0-9]+)" _all_compileid_matches "${_compileid}")
+    string(REGEX MATCHALL "([A-Za-z0-9-]+)" _all_compileid_matches "${_compileid}")
     if(_all_compileid_matches)
       list(GET _all_compileid_matches "-1" CMAKE_ASM${ASM_DIALECT}_COMPILER_ARCHITECTURE_ID)
     endif()
+  elseif("x${CMAKE_ASM${ASM_DIALECT}_COMPILER_ID}" STREQUAL "xClang")
+    # Test whether an MSVC-like command-line option works.
+    execute_process(COMMAND ${CMAKE_ASM${ASM_DIALECT}_COMPILER} -?
+      OUTPUT_VARIABLE _clang_output
+      ERROR_VARIABLE _clang_output
+      RESULT_VARIABLE _clang_result)
+      if(_clang_result EQUAL 0)
+        set(CMAKE_ASM${ASM_DIALECT}_COMPILER_FRONTEND_VARIANT "MSVC")
+        set(CMAKE_ASM${ASM_DIALECT}_SIMULATE_ID MSVC)
+      else()
+        set(CMAKE_ASM${ASM_DIALECT}_COMPILER_FRONTEND_VARIANT "GNU")
+      endif()
+      set(_variant " with ${CMAKE_ASM${ASM_DIALECT}_COMPILER_FRONTEND_VARIANT}-like command-line")
   endif()
+
+  _cmake_find_compiler_sysroot(ASM${ASM_DIALECT})
+
   unset(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_OUTPUT)
   unset(_all_compileid_matches)
   unset(_compileid)
+  unset(_clang_result)
+  unset(_clang_output)
 endif()
 
 if(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID)
@@ -150,9 +173,10 @@ if(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID)
   else()
     set(_archid "")
   endif()
-  message(STATUS "The ASM${ASM_DIALECT} compiler identification is ${CMAKE_ASM${ASM_DIALECT}_COMPILER_ID}${_archid}${_version}")
+  message(STATUS "The ASM${ASM_DIALECT} compiler identification is ${CMAKE_ASM${ASM_DIALECT}_COMPILER_ID}${_archid}${_version}${_variant}")
   unset(_archid)
   unset(_version)
+  unset(_variant)
 else()
   message(STATUS "The ASM${ASM_DIALECT} compiler identification is unknown")
 endif()
@@ -210,6 +234,21 @@ foreach(_var
     )
   set(_CMAKE_ASM_${_var} "${CMAKE_ASM${ASM_DIALECT}_${_var}}")
 endforeach()
+
+if(CMAKE_ASM${ASM_DIALECT}_COMPILER_SYSROOT)
+  string(CONCAT _SET_CMAKE_ASM_COMPILER_SYSROOT
+    "set(CMAKE_ASM${ASM_DIALECT}_COMPILER_SYSROOT \"${CMAKE_ASM${ASM_DIALECT}_COMPILER_SYSROOT}\")\n"
+    "set(CMAKE_COMPILER_SYSROOT \"${CMAKE_ASM${ASM_DIALECT}_COMPILER_SYSROOT}\")")
+else()
+  set(_SET_CMAKE_ASM_COMPILER_SYSROOT "")
+endif()
+
+if(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_MATCH)
+  set(_SET_CMAKE_ASM_COMPILER_ID_VENDOR_MATCH
+    "set(CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_MATCH [==[${CMAKE_ASM${ASM_DIALECT}_COMPILER_ID_VENDOR_MATCH}]==])")
+else()
+  set(_SET_CMAKE_ASM_COMPILER_ID_VENDOR_MATCH "")
+endif()
 
 if(CMAKE_ASM${ASM_DIALECT}_COMPILER_ARCHITECTURE_ID)
   set(_SET_CMAKE_ASM_COMPILER_ARCHITECTURE_ID

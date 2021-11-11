@@ -2,18 +2,22 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
 #include "cmBinUtilsLinuxELFLinker.h"
-#include "cmAlgorithms.h"
+
+#include <sstream>
+
+#include <cm/memory>
+#include <cm/string_view>
+
+#include <cmsys/RegularExpression.hxx>
+
 #include "cmBinUtilsLinuxELFObjdumpGetRuntimeDependenciesTool.h"
+#include "cmELF.h"
 #include "cmLDConfigLDConfigTool.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmRuntimeDependencyArchive.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
-
-#include <cmsys/RegularExpression.hxx>
-
-#include <memory>
-#include <sstream>
 
 static std::string ReplaceOrigin(const std::string& rpath,
                                  const std::string& origin)
@@ -24,14 +28,16 @@ static std::string ReplaceOrigin(const std::string& rpath,
 
   cmsys::RegularExpressionMatch match;
   if (originRegex.find(rpath.c_str(), match)) {
-    std::string begin = rpath.substr(0, match.start(1));
-    std::string end = rpath.substr(match.end(1));
-    return begin + origin + end;
+    cm::string_view pathv(rpath);
+    auto begin = pathv.substr(0, match.start(1));
+    auto end = pathv.substr(match.end(1));
+    return cmStrCat(begin, origin, end);
   }
   if (originCurlyRegex.find(rpath.c_str(), match)) {
-    std::string begin = rpath.substr(0, match.start());
-    std::string end = rpath.substr(match.end());
-    return begin + origin + end;
+    cm::string_view pathv(rpath);
+    auto begin = pathv.substr(0, match.start());
+    auto end = pathv.substr(match.end());
+    return cmStrCat(begin, origin, end);
   }
   return rpath;
 }
@@ -81,6 +87,22 @@ bool cmBinUtilsLinuxELFLinker::ScanDependencies(
   std::string const& file, cmStateEnums::TargetType /* unused */)
 {
   std::vector<std::string> parentRpaths;
+
+  cmELF elf(file.c_str());
+  if (!elf) {
+    return false;
+  }
+  if (elf.GetMachine() != 0) {
+    if (this->Machine != 0) {
+      if (elf.GetMachine() != this->Machine) {
+        this->SetError("All files must have the same architecture.");
+        return false;
+      }
+    } else {
+      this->Machine = elf.GetMachine();
+    }
+  }
+
   return this->ScanDependencies(file, parentRpaths);
 }
 
@@ -145,21 +167,34 @@ bool cmBinUtilsLinuxELFLinker::ScanDependencies(
   return true;
 }
 
+namespace {
+bool FileHasArchitecture(const char* filename, std::uint16_t machine)
+{
+  cmELF elf(filename);
+  if (!elf) {
+    return false;
+  }
+  return machine == 0 || machine == elf.GetMachine();
+}
+}
+
 bool cmBinUtilsLinuxELFLinker::ResolveDependency(
   std::string const& name, std::vector<std::string> const& searchPaths,
   std::string& path, bool& resolved)
 {
   for (auto const& searchPath : searchPaths) {
-    path = searchPath + '/' + name;
-    if (cmSystemTools::PathExists(path)) {
+    path = cmStrCat(searchPath, '/', name);
+    if (cmSystemTools::PathExists(path) &&
+        FileHasArchitecture(path.c_str(), this->Machine)) {
       resolved = true;
       return true;
     }
   }
 
   for (auto const& searchPath : this->Archive->GetSearchDirectories()) {
-    path = searchPath + '/' + name;
-    if (cmSystemTools::PathExists(path)) {
+    path = cmStrCat(searchPath, '/', name);
+    if (cmSystemTools::PathExists(path) &&
+        FileHasArchitecture(path.c_str(), this->Machine)) {
       std::ostringstream warning;
       warning << "Dependency " << name << " found in search directory:\n  "
               << searchPath

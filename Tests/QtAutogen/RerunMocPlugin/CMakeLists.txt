@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(RerunMocPlugin)
 include("../AutogenCoreTest.cmake")
 
@@ -63,6 +63,7 @@ try_compile(MOC_PLUGIN
   MocPlugin
   CMAKE_FLAGS "-DQT_TEST_VERSION=${QT_TEST_VERSION}"
               "-DCMAKE_AUTOGEN_VERBOSE=${CMAKE_AUTOGEN_VERBOSE}"
+              "-DCMAKE_PREFIX_PATH:STRING=${CMAKE_PREFIX_PATH}"
               "-DQT_QMAKE_EXECUTABLE:FILEPATH=${QT_QMAKE_EXECUTABLE}"
   OUTPUT_VARIABLE output
 )
@@ -104,7 +105,7 @@ require_change_not(B)
 require_change(C)
 require_change(D)
 # There's a bug in Ninja on Windows:
-# https://gitlab.kitware.com/cmake/cmake/issues/16776
+# https://gitlab.kitware.com/cmake/cmake/-/issues/16776
 if(NOT ("${CMAKE_GENERATOR}" MATCHES "Ninja"))
   require_change(E)
 endif()
@@ -128,7 +129,7 @@ require_change_not(B)
 require_change(C)
 require_change(D)
 # There's a bug in Ninja on Windows
-# https://gitlab.kitware.com/cmake/cmake/issues/16776
+# https://gitlab.kitware.com/cmake/cmake/-/issues/16776
 if(NOT ("${CMAKE_GENERATOR}" MATCHES "Ninja"))
   require_change(E)
 endif()

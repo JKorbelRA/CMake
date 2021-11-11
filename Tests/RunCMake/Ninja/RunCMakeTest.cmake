@@ -1,5 +1,8 @@
 include(RunCMake)
 
+set(RunCMake_GENERATOR "Ninja")
+set(RunCMake_GENERATOR_IS_MULTI_CONFIG 0)
+
 # Detect ninja version so we know what tests can be supported.
 execute_process(
   COMMAND "${RunCMake_MAKE_PROGRAM}" --version
@@ -15,6 +18,15 @@ else()
   message(FATAL_ERROR "'ninja --version' reported:\n${ninja_out}")
 endif()
 
+# Sanitize NINJA_STATUS since we expect default behavior.
+unset(ENV{NINJA_STATUS})
+
+if(CMAKE_HOST_WIN32)
+  run_cmake(SelectCompilerWindows)
+else()
+  run_cmake(SelectCompilerUNIX)
+endif()
+
 function(run_NinjaToolMissing)
   set(RunCMake_MAKE_PROGRAM ninja-tool-missing)
   run_cmake(NinjaToolMissing)
@@ -25,6 +37,7 @@ function(run_NoWorkToDo)
   run_cmake(NoWorkToDo)
   set(RunCMake_TEST_NO_CLEAN 1)
   set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/NoWorkToDo-build)
+  set(RunCMake_TEST_OUTPUT_MERGE 1)
   run_cmake_command(NoWorkToDo-build ${CMAKE_COMMAND} --build .)
   run_cmake_command(NoWorkToDo-nowork ${CMAKE_COMMAND} --build . -- -d explain)
 endfunction()
@@ -34,6 +47,7 @@ function(run_VerboseBuild)
   run_cmake(VerboseBuild)
   set(RunCMake_TEST_NO_CLEAN 1)
   set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/VerboseBuild-build)
+  set(RunCMake_TEST_OUTPUT_MERGE 1)
   run_cmake_command(VerboseBuild-build ${CMAKE_COMMAND} --build . -v --clean-first)
   run_cmake_command(VerboseBuild-nowork ${CMAKE_COMMAND} --build . --verbose)
 endfunction()
@@ -56,7 +70,7 @@ run_CMP0058(WARN-by)
 run_CMP0058(NEW-no)
 run_CMP0058(NEW-by)
 
-run_cmake(CustomCommandDepfile)
+run_cmake_with_options(CustomCommandDepfile -DCMAKE_BUILD_TYPE=Debug)
 run_cmake(CustomCommandJobPool)
 run_cmake(JobPoolUsesTerminal)
 
@@ -129,6 +143,7 @@ ${ninja_stderr}
     message(FATAL_ERROR
       "top ninja build failed exited with status ${ninja_result}")
   endif()
+  set(ninja_stdout "${ninja_stdout}" PARENT_SCOPE)
 endfunction(run_ninja)
 
 function (run_LooseObjectDepends)
@@ -151,12 +166,12 @@ run_LooseObjectDepends()
 function (run_AssumedSources)
   set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/AssumedSources-build)
   run_cmake(AssumedSources)
-  run_ninja("${RunCMake_TEST_BINARY_DIR}" "target.c")
+  run_ninja("${RunCMake_TEST_BINARY_DIR}" "${RunCMake_TEST_BINARY_DIR}/target.c")
   if (NOT EXISTS "${RunCMake_TEST_BINARY_DIR}/target.c")
     message(FATAL_ERROR
       "Dependencies for an assumed source did not hook up properly for 'target.c'.")
   endif ()
-  run_ninja("${RunCMake_TEST_BINARY_DIR}" "target-no-depends.c")
+  run_ninja("${RunCMake_TEST_BINARY_DIR}" "${RunCMake_TEST_BINARY_DIR}/target-no-depends.c")
   if (EXISTS "${RunCMake_TEST_BINARY_DIR}/target-no-depends.c")
     message(FATAL_ERROR
       "Dependencies for an assumed source were magically hooked up for 'target-no-depends.c'.")
@@ -173,16 +188,6 @@ function(sleep delay)
     message(FATAL_ERROR "failed to sleep for ${delay} second.")
   endif()
 endfunction(sleep)
-
-function(touch path)
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E touch ${path}
-    RESULT_VARIABLE result
-    )
-  if(NOT result EQUAL 0)
-    message(FATAL_ERROR "failed to touch main ${path} file.")
-  endif()
-endfunction(touch)
 
 macro(ninja_escape_path path out)
   string(REPLACE "\$ " "\$\$" "${out}" "${path}")
@@ -252,8 +257,8 @@ build build.ninja: RERUN ${escaped_build_ninja_dep} || ${escaped_ninja_output_pa
   # Test regeneration rules run in order.
   set(main_cmakelists "${RunCMake_SOURCE_DIR}/CMakeLists.txt")
   sleep(${fs_delay})
-  touch("${main_cmakelists}")
-  touch("${build_ninja_dep}")
+  file(TOUCH "${main_cmakelists}")
+  file(TOUCH "${build_ninja_dep}")
   run_ninja("${top_build_dir}")
   file(TIMESTAMP "${main_cmakelists}" mtime_main_cmakelists UTC)
   file(TIMESTAMP "${sub_build_ninja}" mtime_sub_build_ninja UTC)
@@ -304,3 +309,54 @@ function (run_PreventConfigureFileDupBuildRule)
   run_ninja("${RunCMake_TEST_BINARY_DIR}" -w dupbuild=err)
 endfunction()
 run_PreventConfigureFileDupBuildRule()
+
+function (run_ChangeBuildType)
+  set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/ChangeBuildType-build)
+  set(RunCMake_TEST_OPTIONS "-DCMAKE_BUILD_TYPE:STRING=Debug")
+  run_cmake(ChangeBuildType)
+  unset(RunCMake_TEST_OPTIONS)
+  run_ninja("${RunCMake_TEST_BINARY_DIR}" -w dupbuild=err)
+endfunction()
+run_ChangeBuildType()
+
+function(run_QtAutoMocDeps)
+  set(QtX Qt${CMake_TEST_Qt_version})
+  if(CMake_TEST_${QtX}Core_Version VERSION_GREATER_EQUAL 5.15.0)
+    set(RunCMake_TEST_BINARY_DIR ${RunCMake_BINARY_DIR}/QtAutoMocDeps-build)
+    run_cmake_with_options(QtAutoMocDeps
+      "-Dwith_qt_version=${CMake_TEST_Qt_version}"
+      "-D${QtX}_DIR=${${QtX}_DIR}"
+      "-D${QtX}Core_DIR=${${QtX}Core_DIR}"
+      "-D${QtX}Widgets_DIR=${${QtX}Widgets_DIR}"
+      "-DCMAKE_PREFIX_PATH:STRING=${CMAKE_PREFIX_PATH}"
+    )
+    # Build the project.
+    run_ninja("${RunCMake_TEST_BINARY_DIR}")
+    # Touch just the library source file, which shouldn't cause a rerun of AUTOMOC
+    # for app_with_qt target.
+    file(TOUCH "${RunCMake_SOURCE_DIR}/simple_lib.cpp")
+    # Build and assert that AUTOMOC was not run for app_with_qt.
+    run_ninja("${RunCMake_TEST_BINARY_DIR}")
+    if(ninja_stdout MATCHES "Automatic MOC for target app_with_qt")
+      message(FATAL_ERROR
+        "AUTOMOC should not have executed for 'app_with_qt' target:\nstdout:\n${ninja_stdout}")
+    endif()
+    # Assert that the subdir executables were not rebuilt.
+    if(ninja_stdout MATCHES "Automatic MOC for target sub_exe_1")
+      message(FATAL_ERROR
+        "AUTOMOC should not have executed for 'sub_exe_1' target:\nstdout:\n${ninja_stdout}")
+    endif()
+    if(ninja_stdout MATCHES "Automatic MOC for target sub_exe_2")
+      message(FATAL_ERROR
+        "AUTOMOC should not have executed for 'sub_exe_2' target:\nstdout:\n${ninja_stdout}")
+    endif()
+    # Touch a header file to make sure an automoc dependency cycle is not introduced.
+    file(TOUCH "${RunCMake_SOURCE_DIR}/MyWindow.h")
+    run_ninja("${RunCMake_TEST_BINARY_DIR}")
+    # Need to run a second time to hit the dependency cycle.
+    run_ninja("${RunCMake_TEST_BINARY_DIR}")
+  endif()
+endfunction()
+if(CMake_TEST_Qt_version)
+  run_QtAutoMocDeps()
+endif()

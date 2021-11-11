@@ -1,12 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmLocalCommonGenerator_h
-#define cmLocalCommonGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "cmLocalGenerator.h"
 
@@ -20,14 +20,25 @@ class cmSourceFile;
  */
 class cmLocalCommonGenerator : public cmLocalGenerator
 {
+protected:
+  enum class WorkDir
+  {
+    TopBin,
+    CurBin,
+  };
+
 public:
-  cmLocalCommonGenerator(cmGlobalGenerator* gg, cmMakefile* mf,
-                         std::string wd);
+  cmLocalCommonGenerator(cmGlobalGenerator* gg, cmMakefile* mf, WorkDir wd);
   ~cmLocalCommonGenerator() override;
 
-  std::string const& GetConfigName() { return this->ConfigName; }
+  std::vector<std::string> const& GetConfigNames() const
+  {
+    return this->ConfigNames;
+  }
 
-  std::string GetWorkingDirectory() const { return this->WorkingDirectory; }
+  std::string const& GetWorkingDirectory() const;
+
+  std::string MaybeRelativeToWorkDir(std::string const& path) const;
 
   std::string GetTargetFortranFlags(cmGeneratorTarget const* target,
                                     std::string const& config) override;
@@ -37,11 +48,9 @@ public:
     cmGeneratorTarget const* gt = nullptr) override;
 
 protected:
-  std::string WorkingDirectory;
+  WorkDir WorkingDirectory;
 
-  std::string ConfigName;
+  std::vector<std::string> ConfigNames;
 
   friend class cmCommonTargetGenerator;
 };
-
-#endif

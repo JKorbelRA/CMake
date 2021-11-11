@@ -1,11 +1,11 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmGlobalVisualStudio11Generator_h
-#define cmGlobalVisualStudio11Generator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <iosfwd>
+#include <memory>
 #include <set>
 #include <string>
 
@@ -20,9 +20,16 @@ class cmake;
 class cmGlobalVisualStudio11Generator : public cmGlobalVisualStudio10Generator
 {
 public:
-  static cmGlobalGeneratorFactory* NewFactory();
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory();
 
   bool MatchesGeneratorName(const std::string& name) const override;
+
+  bool SupportsCustomCommandDepfile() const override { return true; }
+
+  cm::optional<cmDepfileFormat> DepfileFormat() const override
+  {
+    return cmDepfileFormat::MSBuildAdditionalInputs;
+  }
 
 protected:
   cmGlobalVisualStudio11Generator(cmake* cm, const std::string& name,
@@ -52,4 +59,3 @@ private:
   class Factory;
   friend class Factory;
 };
-#endif

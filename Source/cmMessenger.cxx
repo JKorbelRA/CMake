@@ -2,15 +2,18 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmMessenger.h"
 
-#include "cmAlgorithms.h"
 #include "cmDocumentationFormatter.h"
+#include "cmMessageMetadata.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
 #  include "cmsys/SystemInformation.hxx"
 #endif
 
 #include <sstream>
+
+#include "cmsys/Terminal.h"
 
 MessageType cmMessenger::ConvertMessageType(MessageType t) const
 {
@@ -84,7 +87,22 @@ static bool printMessagePreamble(MessageType t, std::ostream& msg)
   return true;
 }
 
-void printMessageText(std::ostream& msg, std::string const& text)
+static int getMessageColor(MessageType t)
+{
+  switch (t) {
+    case MessageType::INTERNAL_ERROR:
+    case MessageType::FATAL_ERROR:
+    case MessageType::AUTHOR_ERROR:
+      return cmsysTerminal_Color_ForegroundRed;
+    case MessageType::AUTHOR_WARNING:
+    case MessageType::WARNING:
+      return cmsysTerminal_Color_ForegroundYellow;
+    default:
+      return cmsysTerminal_Color_Normal;
+  }
+}
+
+static void printMessageText(std::ostream& msg, std::string const& text)
 {
   msg << ":\n";
   cmDocumentationFormatter formatter;
@@ -92,7 +110,7 @@ void printMessageText(std::ostream& msg, std::string const& text)
   formatter.PrintFormatted(msg, text.c_str());
 }
 
-void displayMessage(MessageType t, std::ostringstream& msg)
+static void displayMessage(MessageType t, std::ostringstream& msg)
 {
   // Add a note about warning suppression.
   if (t == MessageType::AUTHOR_WARNING) {
@@ -100,14 +118,13 @@ void displayMessage(MessageType t, std::ostringstream& msg)
            "it.";
   } else if (t == MessageType::AUTHOR_ERROR) {
     msg << "This error is for project developers. Use -Wno-error=dev to "
-           "suppress "
-           "it.";
+           "suppress it.";
   }
 
   // Add a terminating blank line.
   msg << "\n";
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   // Add a C++ stack trace to internal errors.
   if (t == MessageType::INTERNAL_ERROR) {
     std::string stack = cmsys::SystemInformation::GetProgramStack(0, 0);
@@ -121,12 +138,16 @@ void displayMessage(MessageType t, std::ostringstream& msg)
 #endif
 
   // Output the message.
+  cmMessageMetadata md;
+  md.desiredColor = getMessageColor(t);
   if (t == MessageType::FATAL_ERROR || t == MessageType::INTERNAL_ERROR ||
       t == MessageType::DEPRECATION_ERROR || t == MessageType::AUTHOR_ERROR) {
     cmSystemTools::SetErrorOccured();
-    cmSystemTools::Message(msg.str(), "Error");
+    md.title = "Error";
+    cmSystemTools::Message(msg.str(), md);
   } else {
-    cmSystemTools::Message(msg.str(), "Warning");
+    md.title = "Warning";
+    cmSystemTools::Message(msg.str(), md);
   }
 }
 
@@ -134,19 +155,16 @@ void cmMessenger::IssueMessage(MessageType t, const std::string& text,
                                const cmListFileBacktrace& backtrace) const
 {
   bool force = false;
-  if (!force) {
-    // override the message type, if needed, for warnings and errors
-    MessageType override = this->ConvertMessageType(t);
-    if (override != t) {
-      t = override;
-      force = true;
-    }
+  // override the message type, if needed, for warnings and errors
+  MessageType override = this->ConvertMessageType(t);
+  if (override != t) {
+    t = override;
+    force = true;
   }
 
-  if (!force && !this->IsMessageTypeVisible(t)) {
-    return;
+  if (force || this->IsMessageTypeVisible(t)) {
+    this->DisplayMessage(t, text, backtrace);
   }
-  this->DisplayMessage(t, text, backtrace);
 }
 
 void cmMessenger::DisplayMessage(MessageType t, const std::string& text,

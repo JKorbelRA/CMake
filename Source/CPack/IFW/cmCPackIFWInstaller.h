@@ -1,15 +1,14 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmCPackIFWInstaller_h
-#define cmCPackIFWInstaller_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-
-#include "cmCPackIFWCommon.h"
 
 #include <map>
 #include <string>
 #include <vector>
+
+#include "cmCPackIFWCommon.h"
 
 class cmCPackIFWPackage;
 class cmCPackIFWRepository;
@@ -22,8 +21,8 @@ class cmCPackIFWInstaller : public cmCPackIFWCommon
 public:
   // Types
 
-  typedef std::map<std::string, cmCPackIFWPackage*> PackagesMap;
-  typedef std::vector<cmCPackIFWRepository*> RepositoriesVector;
+  using PackagesMap = std::map<std::string, cmCPackIFWPackage*>;
+  using RepositoriesVector = std::vector<cmCPackIFWRepository*>;
 
 public:
   // Constructor
@@ -81,6 +80,10 @@ public:
   /// Wizard height
   std::string WizardDefaultHeight;
 
+  /// Set to false if the widget listing installer pages on the left side
+  /// of the wizard should not be shown
+  std::string WizardShowPageList;
+
   /// Title color
   std::string TitleColor;
 
@@ -106,6 +109,9 @@ public:
   /// uninstalling
   std::string RemoveTargetDir;
 
+  /// Set to true if command line interface features should be disabled
+  std::string DisableCommandLineInterface;
+
   /// Set to false if the installation path cannot contain space characters
   std::string AllowSpaceInPath;
 
@@ -114,6 +120,20 @@ public:
 
   /// List of resources to include in the installer binary
   std::vector<std::string> Resources;
+
+  /// A list of images to be shown on PerformInstallationPage.
+  std::vector<std::string> ProductImages;
+
+  /// Command executed after the installer is done if the user accepts the
+  /// action
+  std::string RunProgram;
+
+  /// Arguments passed to the program specified in <RunProgram>
+  std::vector<std::string> RunProgramArguments;
+
+  /// Text shown next to the check box for running the program after the
+  /// installation
+  std::string RunProgramDescription;
 
 public:
   // Internal implementation
@@ -132,5 +152,3 @@ protected:
   void printSkippedOptionWarning(const std::string& optionName,
                                  const std::string& optionValue);
 };
-
-#endif // cmCPackIFWInstaller_h

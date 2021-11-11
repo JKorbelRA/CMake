@@ -1,9 +1,9 @@
 #include "testVisualStudioSlnParser.h"
 
+#include <iostream>
+
 #include "cmVisualStudioSlnData.h"
 #include "cmVisualStudioSlnParser.h"
-
-#include <iostream>
 
 static bool parsedRight(cmVisualStudioSlnParser& parser,
                         const std::string& file, cmSlnData& data,
@@ -33,7 +33,7 @@ int testVisualStudioSlnParser(int, char* [])
 
   // Test clean parser
   if (parser.GetParseResult() != cmVisualStudioSlnParser::ResultOK) {
-    std::cerr << "cmVisualStudioSlnParser initialisation failed" << std::endl;
+    std::cerr << "cmVisualStudioSlnParser initialization failed" << std::endl;
     return 1;
   }
 

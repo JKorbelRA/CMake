@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.1.0)
+if(POLICY CMP0129)
+  cmake_policy(SET CMP0129 NEW)
+endif()
 project(WriteCompilerDetectionHeader)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -52,7 +55,7 @@ endmacro()
 # detailed features tables, not just meta-features
 
 if (CMAKE_C_COMPILE_FEATURES)
-  if(NOT CMAKE_C_COMPILER_ID MATCHES "^(Cray|PGI|XL|XLClang)$")
+  if (NOT CMAKE_C_COMPILER_ID MATCHES "^(LCC|Cray|PGI|NVHPC|XL|XLClang|IntelLLVM|Fujitsu|FujitsuClang)$")
     set(C_expected_features ${CMAKE_C_COMPILE_FEATURES})
     list(FILTER C_expected_features EXCLUDE REGEX "^c_std_[0-9][0-9]")
   endif()
@@ -95,7 +98,7 @@ if (C_expected_features)
 endif()
 
 if (CMAKE_CXX_COMPILE_FEATURES)
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Cray|PGI|XL|XLClang)$")
+  if (NOT CMAKE_CXX_COMPILER_ID MATCHES "^(LCC|Cray|PGI|NVHPC|XL|XLClang|IntelLLVM|Fujitsu|FujitsuClang)$")
     set(CXX_expected_features ${CMAKE_CXX_COMPILE_FEATURES})
     list(FILTER CXX_expected_features EXCLUDE REGEX "^cxx_std_[0-9][0-9]")
   endif()
@@ -133,9 +136,7 @@ endif()
 
 # for msvc the compiler version determines which c++11 features are available.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
-    OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
-    AND "x${CMAKE_CXX_SIMULATE_ID}" STREQUAL "xMSVC"
-    AND "x${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "xMSVC" ))
+    OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "x${CMAKE_CXX_SIMULATE_ID}" STREQUAL "xMSVC"))
   if(";${CMAKE_CXX_COMPILE_FEATURES};" MATCHES ";cxx_delegating_constructors;")
     list(APPEND true_defs EXPECTED_COMPILER_CXX_DELEGATING_CONSTRUCTORS)
     list(APPEND true_defs EXPECTED_COMPILER_CXX_VARIADIC_TEMPLATES)

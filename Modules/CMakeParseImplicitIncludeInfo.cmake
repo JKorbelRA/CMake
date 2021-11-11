@@ -7,17 +7,17 @@
 # for compilers that report them that way.  on success we return the
 # list of dirs in id_var and set state_var to the 'done' state.
 function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
-  # clear variables we append to (avoids possible polution from parent scopes)
+  # clear variables we append to (avoids possible pollution from parent scopes)
   unset(rv)
   set(log "")
 
   # Cray compiler (from cray wrapper, via PrgEnv-cray)
-  if("${CMAKE_${lang}_COMPILER_ID}" STREQUAL "Cray" AND
-     "${line}" MATCHES "^/" AND "${line}" MATCHES "/ccfe |/ftnfe " AND
-     "${line}" MATCHES " -isystem| -I")
-    string(REGEX MATCHALL " (-I ?|-isystem )([^ ]*)" incs "${line}")
+  if(CMAKE_${lang}_COMPILER_ID STREQUAL "Cray" AND
+     line MATCHES "^/" AND line MATCHES "/ccfe |/ftnfe " AND
+     line MATCHES " -isystem| -I")
+    string(REGEX MATCHALL " (-I ?|-isystem )(\"[^\"]+\"|[^ \"]+)" incs "${line}")
     foreach(inc IN LISTS incs)
-      string(REGEX REPLACE " (-I ?|-isystem )([^ ]*)" "\\2" idir "${inc}")
+      string(REGEX REPLACE " (-I ?|-isystem )(\"[^\"]+\"|[^ \"]+)" "\\2" idir "${inc}")
       list(APPEND rv "${idir}")
     endforeach()
     if(rv)
@@ -28,12 +28,12 @@ function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
   endif()
 
   # PGI compiler
-  if("${CMAKE_${lang}_COMPILER_ID}" STREQUAL "PGI")
+  if(CMAKE_${lang}_COMPILER_ID STREQUAL "PGI")
     # pgc++ verbose output differs
-    if(("${lang}" STREQUAL "C" OR "${lang}" STREQUAL "Fortran") AND
-        "${line}" MATCHES "^/" AND
-        "${line}" MATCHES "/pgc |/pgf901 |/pgftnc " AND
-        "${line}" MATCHES " -cmdline ")
+    if((lang STREQUAL "C" OR lang STREQUAL "Fortran") AND
+        line MATCHES "^/" AND
+        line MATCHES "/pgc |/pgf901 |/pgftnc " AND
+        line MATCHES " -cmdline ")
       # cmdline has unparsed cmdline, remove it
       string(REGEX REPLACE "-cmdline .*" "" line "${line}")
       if("${line}" MATCHES " -nostdinc ")
@@ -51,14 +51,14 @@ function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
       else()
         string(APPEND log "  warning: PGI C/F parse failed!\n")
       endif()
-    elseif("${lang}" STREQUAL "CXX" AND "${line}" MATCHES "^/" AND
-           "${line}" MATCHES "/pggpp1 " AND "${line}" MATCHES " -I")
+    elseif(lang STREQUAL "CXX" AND line MATCHES "^/" AND
+           line MATCHES "/pggpp1 " AND line MATCHES " -I")
       # oddly, -Mnostdinc does not get rid of system -I's, at least in
       # PGI 18.10.1 ...
       string(REGEX MATCHALL " (-I ?)([^ ]*)" incs "${line}")
       foreach(inc IN LISTS incs)
         string(REGEX REPLACE " (-I ?)([^ ]*)" "\\2" idir "${inc}")
-        if(NOT "${idir}" STREQUAL "-")   # filter out "-I-"
+        if(NOT idir STREQUAL "-")   # filter out "-I-"
           list(APPEND rv "${idir}")
         endif()
       endforeach()
@@ -71,8 +71,8 @@ function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
   endif()
 
   # SunPro compiler
-  if("${CMAKE_${lang}_COMPILER_ID}" STREQUAL "SunPro" AND
-     ("${line}" MATCHES "-D__SUNPRO_C" OR "${line}" MATCHES "-D__SUNPRO_F") )
+  if(CMAKE_${lang}_COMPILER_ID STREQUAL "SunPro" AND
+     (line MATCHES "-D__SUNPRO_C" OR line MATCHES "-D__SUNPRO_F"))
     string(REGEX MATCHALL " (-I ?)([^ ]*)" incs "${line}")
     foreach(inc IN LISTS incs)
       string(REGEX REPLACE " (-I ?)([^ ]*)" "\\2" idir "${inc}")
@@ -81,7 +81,7 @@ function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
       endif()
     endforeach()
     if(rv)
-      if ("${lang}" STREQUAL "C" OR "${lang}" STREQUAL "CXX")
+      if (lang STREQUAL "C" OR lang STREQUAL "CXX")
         # /usr/include appears to be hardwired in
         list(APPEND rv "/usr/include")
       endif()
@@ -92,24 +92,24 @@ function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
   endif()
 
   # XL compiler
-  if(("${CMAKE_${lang}_COMPILER_ID}" STREQUAL "XL"
-      OR "${CMAKE_${lang}_COMPILER_ID}" STREQUAL "XLClang")
-     AND "${line}" MATCHES "^/"
-     AND ( ("${lang}" STREQUAL "Fortran" AND
-            "${line}" MATCHES "/xl[fF]entry " AND
-            "${line}" MATCHES "OSVAR\\([^ ]+\\)")
+  if((CMAKE_${lang}_COMPILER_ID STREQUAL "XL"
+      OR CMAKE_${lang}_COMPILER_ID STREQUAL "XLClang")
+     AND line MATCHES "^/"
+     AND ( (lang STREQUAL "Fortran" AND
+            line MATCHES "/xl[fF]entry " AND
+            line MATCHES "OSVAR\\([^ ]+\\)")
            OR
-            (  ("${lang}" STREQUAL "C" OR "${lang}" STREQUAL "CXX") AND
-            "${line}" MATCHES "/xl[cC]2?entry " AND
-            "${line}" MATCHES " -qosvar=")
+            ( (lang STREQUAL "C" OR lang STREQUAL "CXX") AND
+            line MATCHES "/xl[cC]2?entry " AND
+            line MATCHES " -qosvar=")
          )  )
     # -qnostdinc cancels other stdinc flags, even if present
     string(FIND "${line}" " -qnostdinc" nostd)
-    if(NOT ${nostd} EQUAL -1)
+    if(NOT nostd EQUAL -1)
       set(rv "")    # defined but empty
       string(APPEND log "  got implicit includes via XL parser (nostdinc)\n")
     else()
-      if("${lang}" STREQUAL "CXX")
+      if(lang STREQUAL "CXX")
         string(REGEX MATCHALL " -qcpp_stdinc=([^ ]*)" std "${line}")
         string(REGEX MATCHALL " -qgcc_cpp_stdinc=([^ ]*)" gcc_std "${line}")
       else()
@@ -146,6 +146,21 @@ function(cmake_parse_implicit_include_line line lang id_var log_var state_var)
     endif()
   endif()
 
+  # Fujitsu compiler
+  if(CMAKE_${lang}_COMPILER_ID STREQUAL "Fujitsu" AND
+     line MATCHES "/ccpcom")
+    string(REGEX MATCHALL " (-I *|--sys_include=|--preinclude +)(\"[^\"]+\"|[^ \"]+)" incs "${line}")
+    foreach(inc IN LISTS incs)
+      string(REGEX REPLACE " (-I *|--sys_include=|--preinclude +)(\"[^\"]+\"|[^ \"]+)" "\\2" idir "${inc}")
+      list(APPEND rv "${idir}")
+    endforeach()
+    if(rv)
+      string(APPEND log "  got implicit includes via fujitsu ccpcom parser!\n")
+    else()
+      string(APPEND log "  warning: fujitsu ccpcom parse failed!\n")
+    endif()
+  endif()
+
   if(log)
     set(${log_var} "${log}" PARENT_SCOPE)
   else()
@@ -162,12 +177,12 @@ endfunction()
 function(cmake_parse_implicit_include_info text lang dir_var log_var state_var)
   set(state start)    # values: start, loading, done
 
-  # clear variables we append to (avoids possible polution from parent scopes)
+  # clear variables we append to (avoids possible pollution from parent scopes)
   set(implicit_dirs_tmp)
   set(log "")
 
   # go through each line of output...
-  string(REGEX REPLACE "\r?\n" ";" output_lines "${text}")
+  string(REGEX REPLACE "\r*\n" ";" output_lines "${text}")
   foreach(line IN LISTS output_lines)
     if(state STREQUAL start)
       string(FIND "${line}" "#include \"...\" search starts here:" rv)

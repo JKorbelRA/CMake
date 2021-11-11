@@ -1,6 +1,8 @@
 include(RunCTest)
 
 set(CASE_CTEST_BUILD_ARGS "")
+set(RunCMake_USE_LAUNCHERS TRUE)
+set(RunCMake_USE_CUSTOM_BUILD_COMMAND FALSE)
 
 function(run_ctest_build CASE_NAME)
   set(CASE_CTEST_BUILD_ARGS "${ARGN}")
@@ -8,6 +10,7 @@ function(run_ctest_build CASE_NAME)
 endfunction()
 
 run_ctest_build(BuildQuiet QUIET)
+run_ctest_build(ParallelLevel PARALLEL_LEVEL 1)
 
 function(run_BuildFailure)
   set(CASE_CMAKELISTS_SUFFIX_CODE [[
@@ -45,3 +48,13 @@ function(run_BuildChangeId)
   run_ctest(BuildChangeId)
 endfunction()
 run_BuildChangeId()
+
+set(RunCMake_USE_CUSTOM_BUILD_COMMAND TRUE)
+set(RunCMake_BUILD_COMMAND "${FAKE_BUILD_COMMAND_EXE}")
+run_ctest(BuildCommandFailure)
+unset(RunCMake_BUILD_COMMAND)
+
+set(RunCMake_USE_LAUNCHERS FALSE)
+set(RunCMake_BUILD_COMMAND "${COLOR_WARNING}")
+run_ctest(IgnoreColor)
+unset(RunCMake_BUILD_COMMAND)

@@ -1,28 +1,26 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmConditionEvaluator_h
-#define cmConditionEvaluator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include <list>
 #include <string>
 #include <vector>
 
-#include "cmExpandedCommandArgument.h"
+#include <cmext/string_view>
+
 #include "cmListFileCache.h"
 #include "cmMessageType.h"
 #include "cmPolicies.h"
+#include "cmValue.h"
 
+class cmExpandedCommandArgument;
 class cmMakefile;
 
 class cmConditionEvaluator
 {
 public:
-  typedef std::list<cmExpandedCommandArgument> cmArgumentList;
-
-  cmConditionEvaluator(cmMakefile& makefile, cmListFileContext context,
-                       cmListFileBacktrace bt);
+  cmConditionEvaluator(cmMakefile& makefile, cmListFileBacktrace bt);
 
   // this is a shared function for both If and Else to determine if the
   // arguments were valid, and if so, was the response true. If there is
@@ -31,15 +29,16 @@ public:
               std::string& errorString, MessageType& status);
 
 private:
+  class cmArgumentList;
+
   // Filter the given variable definition based on policy CMP0054.
-  const char* GetDefinitionIfUnquoted(
+  cmValue GetDefinitionIfUnquoted(
     const cmExpandedCommandArgument& argument) const;
 
-  const char* GetVariableOrString(
-    const cmExpandedCommandArgument& argument) const;
+  cmValue GetVariableOrString(const cmExpandedCommandArgument& argument) const;
 
-  bool IsKeyword(std::string const& keyword,
-                 cmExpandedCommandArgument& argument) const;
+  bool IsKeyword(cm::static_string_view keyword,
+                 const cmExpandedCommandArgument& argument) const;
 
   bool GetBooleanValue(cmExpandedCommandArgument& arg) const;
 
@@ -51,19 +50,14 @@ private:
                                           MessageType& status,
                                           bool oneArg = false) const;
 
-  void IncrementArguments(cmArgumentList& newArgs,
-                          cmArgumentList::iterator& argP1,
-                          cmArgumentList::iterator& argP2) const;
+  template <int N>
+  int matchKeysImpl(const cmExpandedCommandArgument&);
 
-  void HandlePredicate(bool value, int& reducible,
-                       cmArgumentList::iterator& arg, cmArgumentList& newArgs,
-                       cmArgumentList::iterator& argP1,
-                       cmArgumentList::iterator& argP2) const;
+  template <int N, typename T, typename... Keys>
+  int matchKeysImpl(const cmExpandedCommandArgument&, T, Keys...);
 
-  void HandleBinaryOp(bool value, int& reducible,
-                      cmArgumentList::iterator& arg, cmArgumentList& newArgs,
-                      cmArgumentList::iterator& argP1,
-                      cmArgumentList::iterator& argP2);
+  template <typename... Keys>
+  int matchKeys(const cmExpandedCommandArgument&, Keys...);
 
   bool HandleLevel0(cmArgumentList& newArgs, std::string& errorString,
                     MessageType& status);
@@ -80,12 +74,9 @@ private:
                     MessageType& status);
 
   cmMakefile& Makefile;
-  cmListFileContext ExecutionContext;
   cmListFileBacktrace Backtrace;
   cmPolicies::PolicyStatus Policy12Status;
   cmPolicies::PolicyStatus Policy54Status;
   cmPolicies::PolicyStatus Policy57Status;
   cmPolicies::PolicyStatus Policy64Status;
 };
-
-#endif

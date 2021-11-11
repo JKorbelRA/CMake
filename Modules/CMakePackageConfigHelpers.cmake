@@ -81,13 +81,14 @@ always relative to the installed location of the package.  This works both for
 relative and also for absolute locations.  For absolute locations it works
 only if the absolute location is a subdirectory of ``INSTALL_PREFIX``.
 
-If the ``INSTALL_PREFIX`` argument is passed, this is used as base path to
-calculate all the relative paths.  The ``<path>`` argument must be an absolute
-path.  If this argument is not passed, the :variable:`CMAKE_INSTALL_PREFIX`
-variable will be used instead.  The default value is good when generating a
-FooConfig.cmake file to use your package from the install tree.  When
-generating a FooConfig.cmake file to use your package from the build tree this
-option should be used.
+.. versionadded:: 3.1
+  If the ``INSTALL_PREFIX`` argument is passed, this is used as base path to
+  calculate all the relative paths.  The ``<path>`` argument must be an absolute
+  path.  If this argument is not passed, the :variable:`CMAKE_INSTALL_PREFIX`
+  variable will be used instead.  The default value is good when generating a
+  FooConfig.cmake file to use your package from the install tree.  When
+  generating a FooConfig.cmake file to use your package from the build tree this
+  option should be used.
 
 By default ``configure_package_config_file`` also generates two helper macros,
 ``set_and_check()`` and ``check_required_components()`` into the
@@ -142,12 +143,12 @@ The ``COMPATIBILITY`` mode ``AnyNewerVersion`` means that the installed
 package version will be considered compatible if it is newer or exactly the
 same as the requested version.  This mode should be used for packages which
 are fully backward compatible, also across major versions.
-If ``SameMajorVersion`` is used instead, then the behaviour differs from
+If ``SameMajorVersion`` is used instead, then the behavior differs from
 ``AnyNewerVersion`` in that the major version number must be the same as
 requested, e.g.  version 2.0 will not be considered compatible if 1.0 is
 requested.  This mode should be used for packages which guarantee backward
 compatibility within the same major version.
-If ``SameMinorVersion`` is used, the behaviour is the same as
+If ``SameMinorVersion`` is used, the behavior is the same as
 ``SameMajorVersion``, but both major and minor version must be the same as
 requested, e.g version 0.2 will not be compatible if 0.1 is requested.
 If ``ExactVersion`` is used, then the package is only considered compatible if
@@ -159,17 +160,28 @@ If your project has more elaborated version matching rules, you will need to
 write your own custom ``ConfigVersion.cmake`` file instead of using this
 macro.
 
-If ``ARCH_INDEPENDENT`` is given, the installed package version will be
-considered compatible even if it was built for a different architecture than
-the requested architecture.  Otherwise, an architecture check will be performed,
-and the package will be considered compatible only if the architecture matches
-exactly.  For example, if the package is built for a 32-bit architecture, the
-package is only considered compatible if it is used on a 32-bit architecture,
-unless ``ARCH_INDEPENDENT`` is given, in which case the package is considered
-compatible on any architecture.
+.. versionadded:: 3.11
+  The ``SameMinorVersion`` compatibility mode.
+
+.. versionadded:: 3.14
+  If ``ARCH_INDEPENDENT`` is given, the installed package version will be
+  considered compatible even if it was built for a different architecture than
+  the requested architecture.  Otherwise, an architecture check will be performed,
+  and the package will be considered compatible only if the architecture matches
+  exactly.  For example, if the package is built for a 32-bit architecture, the
+  package is only considered compatible if it is used on a 32-bit architecture,
+  unless ``ARCH_INDEPENDENT`` is given, in which case the package is considered
+  compatible on any architecture.
 
 .. note:: ``ARCH_INDEPENDENT`` is intended for header-only libraries or similar
-   packages with no binaries.
+  packages with no binaries.
+
+.. versionadded:: 3.19
+  ``COMPATIBILITY_MODE`` ``AnyNewerVersion``, ``SameMajorVersion`` and
+  ``SameMinorVersion`` handle the version range if any is specified
+  (see :command:`find_package` command for the details).
+  ``ExactVersion`` mode is incompatible with version ranges and will display an
+  author warning if one is specified.
 
 Internally, this macro executes :command:`configure_file()` to create the
 resulting version file.  Depending on the ``COMPATIBILITY``, the corresponding

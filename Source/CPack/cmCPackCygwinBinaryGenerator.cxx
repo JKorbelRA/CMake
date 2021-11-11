@@ -2,22 +2,22 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCPackCygwinBinaryGenerator.h"
 
+#include "cmsys/SystemTools.hxx"
+
 #include "cmCPackLog.h"
 #include "cmGeneratedFileStream.h"
 #include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
 #include "cmake.h"
 
-#include "cmsys/SystemTools.hxx"
-
 cmCPackCygwinBinaryGenerator::cmCPackCygwinBinaryGenerator()
+  : cmCPackArchiveGenerator(cmArchiveWrite::CompressBZip2, "paxr", ".tar.bz2")
 {
 }
 
-cmCPackCygwinBinaryGenerator::~cmCPackCygwinBinaryGenerator()
-{
-}
+cmCPackCygwinBinaryGenerator::~cmCPackCygwinBinaryGenerator() = default;
 
 int cmCPackCygwinBinaryGenerator::InitializeInternal()
 {
@@ -28,13 +28,11 @@ int cmCPackCygwinBinaryGenerator::InitializeInternal()
 
 int cmCPackCygwinBinaryGenerator::PackageFiles()
 {
-  std::string packageName = this->GetOption("CPACK_PACKAGE_NAME");
-  packageName += "-";
-  packageName += this->GetOption("CPACK_PACKAGE_VERSION");
+  std::string packageName =
+    cmStrCat(this->GetOption("CPACK_PACKAGE_NAME"), '-',
+             this->GetOption("CPACK_PACKAGE_VERSION"));
   packageName = cmsys::SystemTools::LowerCase(packageName);
-  std::string manifest = "/usr/share/doc/";
-  manifest += packageName;
-  manifest += "/MANIFEST";
+  std::string manifest = cmStrCat("/usr/share/doc/", packageName, "/MANIFEST");
   std::string manifestFile = this->GetOption("CPACK_TEMPORARY_DIRECTORY");
   // Create a MANIFEST file that contains all of the files in
   // the tar file
@@ -43,7 +41,7 @@ int cmCPackCygwinBinaryGenerator::PackageFiles()
   // create an extra scope to force the stream
   // to create the file before the super class is called
   {
-    cmGeneratedFileStream ofs(manifestFile.c_str());
+    cmGeneratedFileStream ofs(manifestFile);
     for (std::string const& file : files) {
       // remove the temp dir and replace with /usr
       ofs << file.substr(tempdir.size()) << "\n";
@@ -60,14 +58,15 @@ int cmCPackCygwinBinaryGenerator::PackageFiles()
 const char* cmCPackCygwinBinaryGenerator::GetOutputExtension()
 {
   this->OutputExtension = "-";
-  const char* patchNumber = this->GetOption("CPACK_CYGWIN_PATCH_NUMBER");
+  cmValue patchNumber = this->GetOption("CPACK_CYGWIN_PATCH_NUMBER");
   if (!patchNumber) {
-    patchNumber = "1";
+    this->OutputExtension += "1";
     cmCPackLogger(cmCPackLog::LOG_WARNING,
                   "CPACK_CYGWIN_PATCH_NUMBER not specified using 1"
                     << std::endl);
+  } else {
+    this->OutputExtension += patchNumber;
   }
-  this->OutputExtension += patchNumber;
   this->OutputExtension += ".tar.bz2";
   return this->OutputExtension.c_str();
 }

@@ -21,7 +21,10 @@ Inclusion of this module defines the following variables:
 
   Destination for files of a given type.  This value may be passed to
   the ``DESTINATION`` options of :command:`install` commands for the
-  corresponding file type.
+  corresponding file type.  It should typically be a path relative to
+  the installation prefix so that it can be converted to an absolute
+  path in a relocatable way (see ``CMAKE_INSTALL_FULL_<dir>``).
+  However, an absolute path is also allowed.
 
 ``CMAKE_INSTALL_FULL_<dir>``
 
@@ -46,7 +49,8 @@ where ``<dir>`` is one of:
 ``LOCALSTATEDIR``
   modifiable single-machine data (``var``)
 ``RUNSTATEDIR``
-  run-time variable data (``LOCALSTATEDIR/run``)
+  .. versionadded:: 3.9
+    run-time variable data (``LOCALSTATEDIR/run``)
 ``LIBDIR``
   object code libraries (``lib`` or ``lib64``
   or ``lib/<multiarch-tuple>`` on Debian)
@@ -72,6 +76,8 @@ used and the value will appear in the cache for editing by the user.
 
 Special Cases
 ^^^^^^^^^^^^^
+
+.. versionadded:: 3.4
 
 The following values of :variable:`CMAKE_INSTALL_PREFIX` are special:
 
@@ -113,7 +119,9 @@ Macros
 
   ::
 
-    GNUInstallDirs_get_absolute_install_dir(absvar var)
+    GNUInstallDirs_get_absolute_install_dir(absvar var dirname)
+
+  .. versionadded:: 3.7
 
   Set the given variable ``absvar`` to the absolute path contained
   within the variable ``var``.  This is to allow the computation of an
@@ -121,7 +129,12 @@ Macros
   above.  While this macro is used to compute the various
   ``CMAKE_INSTALL_FULL_<dir>`` variables, it is exposed publicly to
   allow users who create additional path variables to also compute
-  absolute paths where necessary, using the same logic.
+  absolute paths where necessary, using the same logic.  ``dirname`` is
+  the directory name to get, e.g. ``BINDIR``.
+
+  .. versionchanged:: 3.20
+    Added the ``<dirname>`` parameter.  Previous versions of CMake passed
+    this value through the variable ``${dir}``.
 #]=======================================================================]
 
 cmake_policy(PUSH)
@@ -205,6 +218,7 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR OR (_libdir_set
   # Override this default 'lib' with 'lib64' iff:
   #  - we are on Linux system but NOT cross-compiling
   #  - we are NOT on debian
+  #  - we are NOT building for conda
   #  - we are on a 64 bits system
   # reason is: amd64 ABI: https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI
   # For Debian with multiarch, use 'lib/${CMAKE_LIBRARY_ARCHITECTURE}' if
@@ -221,9 +235,39 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR OR (_libdir_set
     # default one. When CMAKE_INSTALL_PREFIX changes, the value is
     # updated to the new default, unless the user explicitly changed it.
   endif()
+  if (NOT DEFINED CMAKE_SYSTEM_NAME OR NOT DEFINED CMAKE_SIZEOF_VOID_P)
+    message(AUTHOR_WARNING
+      "Unable to determine default CMAKE_INSTALL_LIBDIR directory because no target architecture is known. "
+      "Please enable at least one language before including GNUInstallDirs.")
+  endif()
+
   if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|kFreeBSD|GNU)$"
       AND NOT CMAKE_CROSSCOMPILING)
-    if (EXISTS "/etc/debian_version") # is this a debian system ?
+    unset(__system_type_for_install)
+    if(DEFINED ENV{CONDA_BUILD} AND DEFINED ENV{PREFIX})
+      set(conda_prefix "$ENV{PREFIX}")
+      cmake_path(ABSOLUTE_PATH conda_prefix NORMALIZE)
+      if("${CMAKE_INSTALL_PREFIX}" STREQUAL conda_prefix)
+        set(__system_type_for_install "conda")
+      endif()
+    elseif(DEFINED ENV{CONDA_PREFIX})
+      set(conda_prefix "$ENV{CONDA_PREFIX}")
+      cmake_path(ABSOLUTE_PATH conda_prefix NORMALIZE)
+      if("${CMAKE_INSTALL_PREFIX}" STREQUAL conda_prefix)
+        set(__system_type_for_install "conda")
+      endif()
+    endif()
+    if(NOT __system_type_for_install)
+      if (EXISTS "/etc/alpine-release")
+        set(__system_type_for_install "alpine")
+      elseif (EXISTS "/etc/arch-release")
+        set(__system_type_for_install "arch linux")
+      elseif (EXISTS "/etc/debian_version")
+        set(__system_type_for_install "debian")
+      endif()
+    endif()
+
+    if(__system_type_for_install STREQUAL "debian")
       if(CMAKE_LIBRARY_ARCHITECTURE)
         if("${CMAKE_INSTALL_PREFIX}" MATCHES "^/usr/?$")
           set(_LIBDIR_DEFAULT "lib/${CMAKE_LIBRARY_ARCHITECTURE}")
@@ -233,21 +277,18 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR OR (_libdir_set
           set(__LAST_LIBDIR_DEFAULT "lib/${CMAKE_LIBRARY_ARCHITECTURE}")
         endif()
       endif()
-    else() # not debian, rely on CMAKE_SIZEOF_VOID_P:
-      if(NOT DEFINED CMAKE_SIZEOF_VOID_P)
-        message(AUTHOR_WARNING
-          "Unable to determine default CMAKE_INSTALL_LIBDIR directory because no target architecture is known. "
-          "Please enable at least one language before including GNUInstallDirs.")
-      else()
-        if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
-          set(_LIBDIR_DEFAULT "lib64")
-          if(DEFINED _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX)
-            set(__LAST_LIBDIR_DEFAULT "lib64")
-          endif()
+    elseif(NOT DEFINED __system_type_for_install)
+      # not debian, alpine, arch, or conda so rely on CMAKE_SIZEOF_VOID_P:
+      if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
+        set(_LIBDIR_DEFAULT "lib64")
+        if(DEFINED _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX)
+          set(__LAST_LIBDIR_DEFAULT "lib64")
         endif()
       endif()
     endif()
   endif()
+  unset(__system_type_for_install)
+
   if(NOT DEFINED CMAKE_INSTALL_LIBDIR)
     set(CMAKE_INSTALL_LIBDIR "${_LIBDIR_DEFAULT}" CACHE PATH "Object code libraries (${_LIBDIR_DEFAULT})")
   elseif(DEFINED __LAST_LIBDIR_DEFAULT
@@ -323,13 +364,25 @@ mark_as_advanced(
   )
 
 macro(GNUInstallDirs_get_absolute_install_dir absvar var)
+  set(GGAID_extra_args ${ARGN})
+  list(LENGTH GGAID_extra_args GGAID_extra_arg_count)
+  if(GGAID_extra_arg_count GREATER "0")
+    list(GET GGAID_extra_args 0 GGAID_dir)
+  else()
+    # Historical behavior: use ${dir} from caller's scope
+    set(GGAID_dir "${dir}")
+    message(AUTHOR_WARNING
+      "GNUInstallDirs_get_absolute_install_dir called without third argument. "
+      "Using \${dir} from the caller's scope for compatibility with CMake 3.19 and below.")
+  endif()
+
   if(NOT IS_ABSOLUTE "${${var}}")
     # Handle special cases:
     # - CMAKE_INSTALL_PREFIX == /
     # - CMAKE_INSTALL_PREFIX == /usr
     # - CMAKE_INSTALL_PREFIX == /opt/...
     if("${CMAKE_INSTALL_PREFIX}" STREQUAL "/")
-      if("${dir}" STREQUAL "SYSCONFDIR" OR "${dir}" STREQUAL "LOCALSTATEDIR" OR "${dir}" STREQUAL "RUNSTATEDIR")
+      if("${GGAID_dir}" STREQUAL "SYSCONFDIR" OR "${GGAID_dir}" STREQUAL "LOCALSTATEDIR" OR "${GGAID_dir}" STREQUAL "RUNSTATEDIR")
         set(${absvar} "/${${var}}")
       else()
         if (NOT "${${var}}" MATCHES "^usr/")
@@ -338,13 +391,13 @@ macro(GNUInstallDirs_get_absolute_install_dir absvar var)
         set(${absvar} "/${${var}}")
       endif()
     elseif("${CMAKE_INSTALL_PREFIX}" MATCHES "^/usr/?$")
-      if("${dir}" STREQUAL "SYSCONFDIR" OR "${dir}" STREQUAL "LOCALSTATEDIR" OR "${dir}" STREQUAL "RUNSTATEDIR")
+      if("${GGAID_dir}" STREQUAL "SYSCONFDIR" OR "${GGAID_dir}" STREQUAL "LOCALSTATEDIR" OR "${GGAID_dir}" STREQUAL "RUNSTATEDIR")
         set(${absvar} "/${${var}}")
       else()
         set(${absvar} "${CMAKE_INSTALL_PREFIX}/${${var}}")
       endif()
     elseif("${CMAKE_INSTALL_PREFIX}" MATCHES "^/opt/.*")
-      if("${dir}" STREQUAL "SYSCONFDIR" OR "${dir}" STREQUAL "LOCALSTATEDIR" OR "${dir}" STREQUAL "RUNSTATEDIR")
+      if("${GGAID_dir}" STREQUAL "SYSCONFDIR" OR "${GGAID_dir}" STREQUAL "LOCALSTATEDIR" OR "${GGAID_dir}" STREQUAL "RUNSTATEDIR")
         set(${absvar} "/${${var}}${CMAKE_INSTALL_PREFIX}")
       else()
         set(${absvar} "${CMAKE_INSTALL_PREFIX}/${${var}}")
@@ -355,6 +408,10 @@ macro(GNUInstallDirs_get_absolute_install_dir absvar var)
   else()
     set(${absvar} "${${var}}")
   endif()
+
+  unset(GGAID_dir)
+  unset(GGAID_extra_arg_count)
+  unset(GGAID_extra_args)
 endmacro()
 
 # Result directories
@@ -377,7 +434,7 @@ foreach(dir
     MANDIR
     DOCDIR
     )
-  GNUInstallDirs_get_absolute_install_dir(CMAKE_INSTALL_FULL_${dir} CMAKE_INSTALL_${dir})
+  GNUInstallDirs_get_absolute_install_dir(CMAKE_INSTALL_FULL_${dir} CMAKE_INSTALL_${dir} ${dir})
 endforeach()
 
 cmake_policy(POP)

@@ -1,20 +1,19 @@
-#include "cmUVProcessChain.h"
-
-#include "cmAlgorithms.h"
-#include "cmGetPipes.h"
-#include "cmUVHandlePtr.h"
-#include "cmUVStreambuf.h"
-
-#include "cm_uv.h"
-
 #include <algorithm>
+#include <csignal>
 #include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include <csignal>
+#include <cm/memory>
+
+#include <cm3p/uv.h>
+
+#include "cmGetPipes.h"
+#include "cmUVHandlePtr.h"
+#include "cmUVProcessChain.h"
+#include "cmUVStreambuf.h"
 
 struct ExpectedStatus
 {
@@ -65,14 +64,15 @@ bool operator==(const cmUVProcessChain::Status* actual,
   return true;
 }
 
-bool resultsMatch(const std::vector<const cmUVProcessChain::Status*>& actual,
-                  const std::vector<ExpectedStatus>& expected)
+static bool resultsMatch(
+  const std::vector<const cmUVProcessChain::Status*>& actual,
+  const std::vector<ExpectedStatus>& expected)
 {
   return actual.size() == expected.size() &&
     std::equal(actual.begin(), actual.end(), expected.begin());
 }
 
-std::string getInput(std::istream& input)
+static std::string getInput(std::istream& input)
 {
   char buffer[1024];
   std::ostringstream str;
@@ -104,8 +104,9 @@ std::ostream& operator<<(
   return func(stream);
 }
 
-void printResults(const std::vector<const cmUVProcessChain::Status*>& actual,
-                  const std::vector<ExpectedStatus>& expected)
+static void printResults(
+  const std::vector<const cmUVProcessChain::Status*>& actual,
+  const std::vector<ExpectedStatus>& expected)
 {
   std::cout << "Expected: " << std::endl;
   for (auto const& e : expected) {
@@ -130,8 +131,8 @@ void printResults(const std::vector<const cmUVProcessChain::Status*>& actual,
   }
 }
 
-bool checkExecution(cmUVProcessChainBuilder& builder,
-                    std::unique_ptr<cmUVProcessChain>& chain)
+static bool checkExecution(cmUVProcessChainBuilder& builder,
+                           std::unique_ptr<cmUVProcessChain>& chain)
 {
   std::vector<const cmUVProcessChain::Status*> status;
 
@@ -172,7 +173,7 @@ bool checkExecution(cmUVProcessChainBuilder& builder,
   return true;
 }
 
-bool checkOutput(std::istream& outputStream, std::istream& errorStream)
+static bool checkOutput(std::istream& outputStream, std::istream& errorStream)
 {
   std::string output = getInput(outputStream);
   if (output != "HELO WRD!") {
@@ -182,6 +183,10 @@ bool checkOutput(std::istream& outputStream, std::istream& errorStream)
   }
 
   std::string error = getInput(errorStream);
+  auto qemu_error_pos = error.find("qemu:");
+  if (qemu_error_pos != std::string::npos) {
+    error.resize(qemu_error_pos);
+  }
   if (error.length() != 3 || error.find('1') == std::string::npos ||
       error.find('2') == std::string::npos ||
       error.find('3') == std::string::npos) {

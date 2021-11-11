@@ -27,6 +27,7 @@
 # Tru64                         Tru64
 # Ultrix                        ULTRIX
 # cygwin                        CYGWIN_NT-5.1
+# MSYS                          MSYS_NT-6.1
 # MacOSX                        Darwin
 
 
@@ -43,11 +44,41 @@ if(CMAKE_HOST_UNIX)
     else()
       exec_program(${CMAKE_UNAME} ARGS -r OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_VERSION)
     endif()
-    if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux|CYGWIN.*|Darwin|^GNU$")
+    if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux|CYGWIN.*|MSYS.*|^GNU$|Android")
       exec_program(${CMAKE_UNAME} ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
         RETURN_VALUE val)
-      if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
-         CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "Power Macintosh")
+    elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+      # If we are running on Apple Silicon, honor CMAKE_APPLE_SILICON_PROCESSOR.
+      if(DEFINED CMAKE_APPLE_SILICON_PROCESSOR)
+        set(_CMAKE_APPLE_SILICON_PROCESSOR "${CMAKE_APPLE_SILICON_PROCESSOR}")
+      elseif(DEFINED ENV{CMAKE_APPLE_SILICON_PROCESSOR})
+        set(_CMAKE_APPLE_SILICON_PROCESSOR "$ENV{CMAKE_APPLE_SILICON_PROCESSOR}")
+      else()
+        set(_CMAKE_APPLE_SILICON_PROCESSOR "")
+      endif()
+      if(_CMAKE_APPLE_SILICON_PROCESSOR)
+        if(";${_CMAKE_APPLE_SILICON_PROCESSOR};" MATCHES "^;(arm64|x86_64);$")
+          execute_process(COMMAND sysctl -q hw.optional.arm64
+            OUTPUT_VARIABLE _sysctl_stdout
+            ERROR_VARIABLE _sysctl_stderr
+            RESULT_VARIABLE _sysctl_result
+            )
+          if(NOT _sysctl_result EQUAL 0 OR NOT _sysctl_stdout MATCHES "hw.optional.arm64: 1")
+            set(_CMAKE_APPLE_SILICON_PROCESSOR "")
+          endif()
+          unset(_sysctl_result)
+          unset(_sysctl_stderr)
+          unset(_sysctl_stdout)
+        endif()
+      endif()
+      if(_CMAKE_APPLE_SILICON_PROCESSOR)
+        set(CMAKE_HOST_SYSTEM_PROCESSOR "${_CMAKE_APPLE_SILICON_PROCESSOR}")
+      else()
+        exec_program(${CMAKE_UNAME} ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
+          RETURN_VALUE val)
+      endif()
+      unset(_CMAKE_APPLE_SILICON_PROCESSOR)
+      if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "Power Macintosh")
         # OS X ppc 'uname -m' may report 'Power Macintosh' instead of 'powerpc'
         set(CMAKE_HOST_SYSTEM_PROCESSOR "powerpc")
       endif()
@@ -128,37 +159,14 @@ endif()
 
 include(Platform/${CMAKE_SYSTEM_NAME}-Determine OPTIONAL)
 
-macro(ADJUST_CMAKE_SYSTEM_VARIABLES _PREFIX)
-  if(NOT ${_PREFIX}_NAME)
-    set(${_PREFIX}_NAME "UnknownOS")
-  endif()
-
-  # fix for BSD/OS , remove the /
-  if(${_PREFIX}_NAME MATCHES BSD.OS)
-    set(${_PREFIX}_NAME BSDOS)
-  endif()
-
-  # fix for GNU/kFreeBSD, remove the GNU/
-  if(${_PREFIX}_NAME MATCHES kFreeBSD)
-    set(${_PREFIX}_NAME kFreeBSD)
-  endif()
-
-  # fix for CYGWIN which has windows version in it
-  if(${_PREFIX}_NAME MATCHES CYGWIN)
-    set(${_PREFIX}_NAME CYGWIN)
-  endif()
-
-  # set CMAKE_SYSTEM to the CMAKE_SYSTEM_NAME
-  set(${_PREFIX}  ${${_PREFIX}_NAME})
-  # if there is a CMAKE_SYSTEM_VERSION then add a -${CMAKE_SYSTEM_VERSION}
-  if(${_PREFIX}_VERSION)
-    set(${_PREFIX} ${${_PREFIX}}-${${_PREFIX}_VERSION})
-  endif()
-
-endmacro()
-
-ADJUST_CMAKE_SYSTEM_VARIABLES(CMAKE_SYSTEM)
-ADJUST_CMAKE_SYSTEM_VARIABLES(CMAKE_HOST_SYSTEM)
+set(CMAKE_SYSTEM ${CMAKE_SYSTEM_NAME})
+if(CMAKE_SYSTEM_VERSION)
+  string(APPEND CMAKE_SYSTEM -${CMAKE_SYSTEM_VERSION})
+endif()
+set(CMAKE_HOST_SYSTEM ${CMAKE_HOST_SYSTEM_NAME})
+if(CMAKE_HOST_SYSTEM_VERSION)
+  string(APPEND CMAKE_HOST_SYSTEM -${CMAKE_HOST_SYSTEM_VERSION})
+endif()
 
 # this file is also executed from cpack, then we don't need to generate these files
 # in this case there is no CMAKE_BINARY_DIR

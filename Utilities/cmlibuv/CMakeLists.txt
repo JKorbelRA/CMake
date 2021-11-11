@@ -2,7 +2,7 @@ project(libuv C)
 
 # Disable warnings to avoid changing 3rd party code.
 if(CMAKE_C_COMPILER_ID MATCHES
-    "^(GNU|Clang|AppleClang|XLClang|XL|VisualAge|SunPro|HP|Intel)$")
+    "^(GNU|LCC|Clang|AppleClang|XLClang|XL|VisualAge|SunPro|HP|Intel|IntelLLVM|NVHPC)$")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 elseif(CMAKE_C_COMPILER_ID STREQUAL "PathScale")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -woffall")
@@ -137,7 +137,26 @@ if(CMAKE_SYSTEM_NAME STREQUAL "AIX")
     )
 endif()
 
-if(CMAKE_SYSTEM_NAME MATCHES "CYGWIN")
+if(CMAKE_SYSTEM_NAME STREQUAL "OS400")
+  list(APPEND uv_headers
+    include/uv/posix.h
+    )
+  list(APPEND uv_defines
+    _ALL_SOURCE
+    _XOPEN_SOURCE=500
+    _LINUX_SOURCE_COMPAT
+    _THREAD_SAFE
+    )
+  list(APPEND uv_sources
+    src/unix/aix-common.c
+    src/unix/ibmi.c
+    src/unix/posix-poll.c
+    src/unix/no-fsevents.c
+    src/unix/no-proctitle.c
+    )
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "CYGWIN" OR CMAKE_SYSTEM_NAME MATCHES "MSYS")
   list(APPEND uv_libraries
     )
   list(APPEND uv_headers
@@ -297,6 +316,41 @@ if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
   list(APPEND uv_sources
     src/unix/no-proctitle.c
     src/unix/sunos.c
+    )
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "HP-UX")
+  list(APPEND uv_libraries
+    rt
+    )
+  list(APPEND uv_headers
+    include/uv/posix.h
+    )
+  list(APPEND uv_defines
+    _XOPEN_SOURCE_EXTENDED
+    )
+  list(APPEND uv_sources
+    src/unix/hpux.c
+    src/unix/no-fsevents.c
+    src/unix/posix-poll.c
+    )
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  list(APPEND uv_headers
+    include/uv/posix.h
+    )
+  list(APPEND uv_defines
+    _XOPEN_SOURCE=700
+    )
+  list(APPEND uv_sources
+    src/unix/posix-hrtime.c
+    src/unix/posix-poll.c
+    src/unix/no-fsevents.c
+    src/unix/no-proctitle.c
+    )
+  list(APPEND uv_libraries
+    socket
     )
 endif()
 

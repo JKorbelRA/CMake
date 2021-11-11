@@ -6,12 +6,17 @@ include(CheckSymbolExists)
 include(CheckTypeSize)
 include(TestBigEndian)
 
+if(WIN32)
+  add_definitions(-DMYTHREAD_VISTA)
+else()
+  add_definitions(-DMYTHREAD_POSIX)
+endif()
+
 CHECK_INCLUDE_FILE(byteswap.h HAVE_BYTESWAP_H)
-CHECK_INCLUDE_FILE(inttypes.h HAVE_INTTYPES_H)
 CHECK_INCLUDE_FILE(limits.h HAVE_LIMITS_H)
 CHECK_INCLUDE_FILE(memory.h HAVE_MEMORY_H)
 CHECK_INCLUDE_FILE(strings.h HAVE_STRINGS_H)
-CHECK_INCLUDE_FILE(string.h HAVE_STRING_H)
+set(HAVE_STRING_H 1)
 CHECK_INCLUDE_FILE(sys/sysctl.h HAVE_SYS_SYSCTL_H)
 
 CHECK_INCLUDE_FILE(stdbool.h HAVE_STDBOOL_H)
@@ -60,42 +65,11 @@ set(HAVE_MF_BT4 1)
 set(HAVE_MF_HC3 1)
 set(HAVE_MF_HC4 1)
 
-CHECK_TYPE_SIZE(int16_t INT16_T)
-CHECK_TYPE_SIZE(int32_t INT32_T)
-CHECK_TYPE_SIZE(int64_t INT64_T)
-CHECK_TYPE_SIZE(intmax_t INTMAX_T)
-CHECK_TYPE_SIZE(uint8_t UINT8_T)
-CHECK_TYPE_SIZE(uint16_t UINT16_T)
-CHECK_TYPE_SIZE(uint32_t UINT32_T)
-CHECK_TYPE_SIZE(uint64_t UINT64_T)
-CHECK_TYPE_SIZE(uintmax_t UINTMAX_T)
-
-CHECK_TYPE_SIZE("short" SIZE_OF_SHORT)
-CHECK_TYPE_SIZE("int" SIZE_OF_INT)
-CHECK_TYPE_SIZE("long" SIZE_OF_LONG)
-CHECK_TYPE_SIZE("long long" SIZE_OF_LONG_LONG)
-
-CHECK_TYPE_SIZE("unsigned short" SIZE_OF_UNSIGNED_SHORT)
-CHECK_TYPE_SIZE("unsigned" SIZE_OF_UNSIGNED)
-CHECK_TYPE_SIZE("unsigned long" SIZE_OF_UNSIGNED_LONG)
-CHECK_TYPE_SIZE("unsigned long long" SIZE_OF_UNSIGNED_LONG_LONG)
-CHECK_TYPE_SIZE("size_t" SIZEOF_SIZE_T)
-
-CHECK_TYPE_SIZE("__int64" __INT64)
-CHECK_TYPE_SIZE("unsigned __int64" UNSIGNED___INT64)
-
-CHECK_TYPE_SIZE(uintptr_t UINTPTR_T)
-IF(NOT HAVE_UINTPTR_T)
-  IF("${CMAKE_SIZEOF_VOID_P}" EQUAL 8)
-    SET(uintptr_t "uint64_t")
-  ELSE()
-    SET(uintptr_t "uint32_t")
-  ENDIF()
-ENDIF()
-
-
 SET(LZMA_SRCS
+  common/mythread.h
   common/sysdefs.h
+  common/tuklib_cpucores.c
+  common/tuklib_cpucores.h
   common/tuklib_integer.h
   liblzma/check/check.c
   liblzma/check/crc32_fast.c
@@ -126,14 +100,17 @@ SET(LZMA_SRCS
   liblzma/common/filter_encoder.c
   liblzma/common/filter_flags_decoder.c
   liblzma/common/filter_flags_encoder.c
+  liblzma/common/hardware_cputhreads.c
   liblzma/common/index.c
   liblzma/common/index_decoder.c
   liblzma/common/index_encoder.c
   liblzma/common/index_hash.c
+  liblzma/common/outqueue.c
   liblzma/common/stream_buffer_decoder.c
   liblzma/common/stream_buffer_encoder.c
   liblzma/common/stream_decoder.c
   liblzma/common/stream_encoder.c
+  liblzma/common/stream_encoder_mt.c
   liblzma/common/stream_flags_common.c
   liblzma/common/stream_flags_decoder.c
   liblzma/common/stream_flags_encoder.c
@@ -183,7 +160,7 @@ INCLUDE_DIRECTORIES(
 
 # Disable warnings to avoid changing 3rd party code.
 IF(CMAKE_C_COMPILER_ID MATCHES
-    "^(GNU|Clang|AppleClang|XLClang|XL|VisualAge|SunPro|HP|Intel)$")
+    "^(GNU|LCC|Clang|AppleClang|XLClang|XL|VisualAge|SunPro|HP|Intel|IntelLLVM|NVHPC)$")
   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 ELSEIF(CMAKE_C_COMPILER_ID STREQUAL "PathScale")
   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -woffall")
@@ -195,7 +172,7 @@ IF(CMAKE_C_COMPILER_ID STREQUAL "XL")
   # Disable the XL compiler optimizer because it causes crashes
   # and other bad behavior in liblzma code.
   SET_PROPERTY(TARGET cmliblzma PROPERTY COMPILE_FLAGS "-qnooptimize")
-ELSEIF(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND
+ELSEIF((CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "LCC") AND
        CMAKE_C_COMPILER_VERSION VERSION_LESS 3.4)
   # Disable the old GNU compiler optimizer.
   SET_PROPERTY(TARGET cmliblzma PROPERTY COMPILE_FLAGS "-O0")

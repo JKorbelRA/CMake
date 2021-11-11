@@ -7,6 +7,7 @@
 #include "cmStateDirectory.h"
 #include "cmStateSnapshot.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
 #include "cmake.h"
 
 namespace {
@@ -21,7 +22,7 @@ enum IncludeGuardScope
 std::string GetIncludeGuardVariableName(std::string const& filePath)
 {
   std::string result = "__INCGUARD_";
-#ifdef CMAKE_BUILD_WITH_CMAKE
+#ifndef CMAKE_BOOTSTRAP
   result += cmSystemTools::ComputeStringMD5(filePath);
 #else
   result += cmSystemTools::MakeCidentifier(filePath);
@@ -50,11 +51,11 @@ bool CheckIncludeGuardIsSet(cmMakefile* mf, std::string const& includeGuardVar)
 } // anonymous namespace
 
 // cmIncludeGuardCommand
-bool cmIncludeGuardCommand::InitialPass(std::vector<std::string> const& args,
-                                        cmExecutionStatus& status)
+bool cmIncludeGuardCommand(std::vector<std::string> const& args,
+                           cmExecutionStatus& status)
 {
   if (args.size() > 1) {
-    this->SetError(
+    status.SetError(
       "given an invalid number of arguments. The command takes at "
       "most 1 argument.");
     return false;
@@ -69,15 +70,15 @@ bool cmIncludeGuardCommand::InitialPass(std::vector<std::string> const& args,
     } else if (arg == "GLOBAL") {
       scope = GLOBAL;
     } else {
-      this->SetError("given an invalid scope: " + arg);
+      status.SetError("given an invalid scope: " + arg);
       return false;
     }
   }
 
   std::string includeGuardVar = GetIncludeGuardVariableName(
-    this->Makefile->GetDefinition("CMAKE_CURRENT_LIST_FILE"));
+    *status.GetMakefile().GetDefinition("CMAKE_CURRENT_LIST_FILE"));
 
-  cmMakefile* const mf = this->Makefile;
+  cmMakefile* const mf = &status.GetMakefile();
 
   switch (scope) {
     case VARIABLE:
@@ -85,7 +86,7 @@ bool cmIncludeGuardCommand::InitialPass(std::vector<std::string> const& args,
         status.SetReturnInvoked();
         return true;
       }
-      mf->AddDefinition(includeGuardVar, true);
+      mf->AddDefinitionBool(includeGuardVar, true);
       break;
     case DIRECTORY:
       if (CheckIncludeGuardIsSet(mf, includeGuardVar)) {

@@ -1,21 +1,22 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmCPackIFWGenerator_h
-#define cmCPackIFWGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmCPackComponentGroup.h"
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
 #include "cmCPackGenerator.h"
 #include "cmCPackIFWCommon.h"
 #include "cmCPackIFWInstaller.h"
 #include "cmCPackIFWPackage.h"
 #include "cmCPackIFWRepository.h"
 
-#include <map>
-#include <set>
-#include <string>
-#include <vector>
+class cmCPackComponent;
+class cmCPackComponentGroup;
 
 /** \class cmCPackIFWGenerator
  * \brief A generator for Qt Installer Framework tools
@@ -29,12 +30,10 @@ class cmCPackIFWGenerator
 public:
   cmCPackTypeMacro(cmCPackIFWGenerator, cmCPackGenerator);
 
-  typedef std::map<std::string, cmCPackIFWPackage> PackagesMap;
-  typedef std::map<std::string, cmCPackIFWRepository> RepositoriesMap;
-  typedef std::map<std::string, cmCPackComponent> ComponentsMap;
-  typedef std::map<std::string, cmCPackComponentGroup> ComponentGoupsMap;
-  typedef std::map<std::string, cmCPackIFWPackage::DependenceStruct>
-    DependenceMap;
+  using PackagesMap = std::map<std::string, cmCPackIFWPackage>;
+  using RepositoriesMap = std::map<std::string, cmCPackIFWRepository>;
+  using DependenceMap =
+    std::map<std::string, cmCPackIFWPackage::DependenceStruct>;
 
   using cmCPackIFWCommon::GetOption;
   using cmCPackIFWCommon::IsOn;
@@ -141,16 +140,22 @@ protected:
   std::map<cmCPackComponentGroup*, cmCPackIFWPackage*> GroupPackages;
 
 private:
+  std::vector<std::string> BuildRepogenCommand();
+  int RunRepogen(const std::string& ifwTmpFile);
+
+  std::vector<std::string> BuildBinaryCreatorCommmand();
+  int RunBinaryCreator(const std::string& ifwTmpFile);
+
   std::string RepoGen;
   std::string BinCreator;
   std::string FrameworkVersion;
   std::string ExecutableSuffix;
   std::string OutputExtension;
+  std::string ArchiveFormat;
+  std::string ArchiveCompression;
 
-  bool OnlineOnly;
-  bool ResolveDuplicateNames;
+  bool OnlineOnly{};
+  bool ResolveDuplicateNames{};
   std::vector<std::string> PkgsDirsVector;
   std::vector<std::string> RepoDirsVector;
 };
-
-#endif

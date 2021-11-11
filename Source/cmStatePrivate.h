@@ -1,8 +1,7 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
-#ifndef cmStatePrivate_h
-#define cmStatePrivate_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
@@ -48,7 +47,7 @@ struct cmStateDetail::SnapshotDataType
 
 struct cmStateDetail::PolicyStackEntry : public cmPolicies::PolicyMap
 {
-  typedef cmPolicies::PolicyMap derived;
+  using derived = cmPolicies::PolicyMap;
   PolicyStackEntry(bool w = false)
     : Weak(w)
   {
@@ -68,30 +67,18 @@ struct cmStateDetail::BuildsystemDirectoryStateType
   std::string Location;
   std::string OutputLocation;
 
-  // The top-most directories for relative path conversion.  Both the
-  // source and destination location of a relative path conversion
-  // must be underneath one of these directories (both under source or
-  // both under binary) in order for the relative path to be evaluated
-  // safely by the build tools.
-  std::string RelativePathTopSource;
-  std::string RelativePathTopBinary;
+  std::vector<BT<std::string>> IncludeDirectories;
 
-  std::vector<std::string> IncludeDirectories;
-  std::vector<cmListFileBacktrace> IncludeDirectoryBacktraces;
+  std::vector<BT<std::string>> CompileDefinitions;
 
-  std::vector<std::string> CompileDefinitions;
-  std::vector<cmListFileBacktrace> CompileDefinitionsBacktraces;
+  std::vector<BT<std::string>> CompileOptions;
 
-  std::vector<std::string> CompileOptions;
-  std::vector<cmListFileBacktrace> CompileOptionsBacktraces;
+  std::vector<BT<std::string>> LinkOptions;
 
-  std::vector<std::string> LinkOptions;
-  std::vector<cmListFileBacktrace> LinkOptionsBacktraces;
-
-  std::vector<std::string> LinkDirectories;
-  std::vector<cmListFileBacktrace> LinkDirectoriesBacktraces;
+  std::vector<BT<std::string>> LinkDirectories;
 
   std::vector<std::string> NormalTargetNames;
+  std::vector<std::string> ImportedTargetNames;
 
   std::string ProjectName;
 
@@ -99,5 +86,3 @@ struct cmStateDetail::BuildsystemDirectoryStateType
 
   std::vector<cmStateSnapshot> Children;
 };
-
-#endif

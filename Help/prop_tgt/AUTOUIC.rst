@@ -5,8 +5,8 @@ Should the target be processed with auto-uic (for Qt projects).
 
 :prop_tgt:`AUTOUIC` is a boolean specifying whether CMake will handle
 the Qt ``uic`` code generator automatically, i.e. without having to use
-the :module:`QT4_WRAP_UI() <FindQt4>` or ``QT5_WRAP_UI()`` macro. Currently
-Qt4 and Qt5 are supported.
+commands like :module:`QT4_WRAP_UI() <FindQt4>`, ``QT5_WRAP_UI()``, etc.
+Currently, Qt versions 4 to 6 are supported.
 
 This property is initialized by the value of the :variable:`CMAKE_AUTOUIC`
 variable if it is set when a target is created.
@@ -52,8 +52,11 @@ Modifiers
 The ``uic`` executable will be detected automatically, but can be forced to
 a certain binary using this target property.
 
-:prop_sf:`AUTOUIC_OPTIONS`: Additional command line options for ``uic`` can
-be set via this source file property on a ``<base_name>.ui`` file.
+:prop_tgt:`AUTOUIC_OPTIONS`:
+Additional command line options for ``uic`` can be set via this target
+property.  The corresponding :prop_sf:`AUTOUIC_OPTIONS` source file property
+can be used to specify options to be applied only to a specific
+``<base_name>.ui`` file.
 
 :prop_sf:`SKIP_AUTOUIC`:
 Source files can be excluded from :prop_tgt:`AUTOUIC` processing by setting

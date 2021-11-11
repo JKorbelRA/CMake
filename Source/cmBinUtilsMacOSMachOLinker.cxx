@@ -3,14 +3,30 @@
 
 #include "cmBinUtilsMacOSMachOLinker.h"
 
-#include "cmAlgorithms.h"
-#include "cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool.h"
-#include "cmRuntimeDependencyArchive.h"
-#include "cmSystemTools.h"
-
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
+#include <cm/memory>
+
+#include "cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool.h"
+#include "cmRuntimeDependencyArchive.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+
+namespace {
+bool IsMissingSystemDylib(std::string const& path)
+{
+  // Starting on macOS 11, the dynamic loader has a builtin cache of
+  // system-provided dylib files that do not exist on the filesystem.
+  // Tell our caller that these are expected to be missing.
+  return ((cmHasLiteralPrefix(path, "/System/Library/") ||
+           cmHasLiteralPrefix(path, "/usr/lib/")) &&
+          !cmSystemTools::PathExists(path));
+}
+}
 
 cmBinUtilsMacOSMachOLinker::cmBinUtilsMacOSMachOLinker(
   cmRuntimeDependencyArchive* archive)
@@ -38,6 +54,26 @@ bool cmBinUtilsMacOSMachOLinker::Prepare()
   return true;
 }
 
+auto cmBinUtilsMacOSMachOLinker::GetFileInfo(std::string const& file)
+  -> const FileInfo*
+{
+  // Memoize processed rpaths and library dependencies to reduce the number
+  // of calls to otool, especially in the case of heavily recursive libraries
+  auto iter = ScannedFileInfo.find(file);
+  if (iter != ScannedFileInfo.end()) {
+    return &iter->second;
+  }
+
+  FileInfo file_info;
+  if (!this->Tool->GetFileInfo(file, file_info.libs, file_info.rpaths)) {
+    // Call to otool failed
+    return nullptr;
+  }
+
+  auto iter_inserted = ScannedFileInfo.insert({ file, std::move(file_info) });
+  return &iter_inserted.first->second;
+}
+
 bool cmBinUtilsMacOSMachOLinker::ScanDependencies(
   std::string const& file, cmStateEnums::TargetType type)
 {
@@ -51,17 +87,18 @@ bool cmBinUtilsMacOSMachOLinker::ScanDependencies(
   if (!executableFile.empty()) {
     executablePath = cmSystemTools::GetFilenamePath(executableFile);
   }
-  return this->ScanDependencies(file, executablePath);
+  const FileInfo* file_info = this->GetFileInfo(file);
+  if (file_info == nullptr) {
+    return false;
+  }
+  return this->ScanDependencies(file, file_info->libs, file_info->rpaths,
+                                executablePath);
 }
 
 bool cmBinUtilsMacOSMachOLinker::ScanDependencies(
-  std::string const& file, std::string const& executablePath)
+  std::string const& file, std::vector<std::string> const& libs,
+  std::vector<std::string> const& rpaths, std::string const& executablePath)
 {
-  std::vector<std::string> libs, rpaths;
-  if (!this->Tool->GetFileInfo(file, libs, rpaths)) {
-    return false;
-  }
-
   std::string loaderPath = cmSystemTools::GetFilenamePath(file);
   return this->GetFileDependencies(libs, executablePath, loaderPath, rpaths);
 }
@@ -79,11 +116,20 @@ bool cmBinUtilsMacOSMachOLinker::GetFileDependencies(
         return false;
       }
       if (resolved) {
-        if (!this->Archive->IsPostExcluded(path)) {
+        if (!this->Archive->IsPostExcluded(path) &&
+            !IsMissingSystemDylib(path)) {
           auto filename = cmSystemTools::GetFilenameName(path);
           bool unique;
-          this->Archive->AddResolvedPath(filename, path, unique);
-          if (unique && !this->ScanDependencies(path, executablePath)) {
+          const FileInfo* dep_file_info = this->GetFileInfo(path);
+          if (dep_file_info == nullptr) {
+            return false;
+          }
+
+          this->Archive->AddResolvedPath(filename, path, unique,
+                                         dep_file_info->rpaths);
+          if (unique &&
+              !this->ScanDependencies(path, dep_file_info->libs,
+                                      dep_file_info->rpaths, executablePath)) {
             return false;
           }
         }

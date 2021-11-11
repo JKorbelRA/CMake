@@ -74,7 +74,9 @@ package.
 
 By setting the :variable:`CMAKE_DISABLE_FIND_PACKAGE_<PackageName>` variable to
 ``TRUE``, the ``<PackageName>`` package will not be searched, and will always
-be ``NOTFOUND``.
+be ``NOTFOUND``. Likewise, setting the
+:variable:`CMAKE_REQUIRE_FIND_PACKAGE_<PackageName>` to ``TRUE`` will make the
+package REQUIRED.
 
 .. _`Config File Packages`:
 
@@ -447,7 +449,7 @@ be true. This can be tested with logic in the package configuration file:
   set(_supported_components Plot Table)
 
   foreach(_comp ${ClimbingStats_FIND_COMPONENTS})
-    if (NOT ";${_supported_components};" MATCHES _comp)
+    if (NOT ";${_supported_components};" MATCHES ";${_comp};")
       set(ClimbingStats_FOUND False)
       set(ClimbingStats_NOT_FOUND_MESSAGE "Unsupported component: ${_comp}")
     endif()
@@ -654,8 +656,13 @@ allows one to disable them using the following variables:
   :command:`export(PACKAGE)` populates the user package registry unless
   the :variable:`CMAKE_EXPORT_NO_PACKAGE_REGISTRY` variable explicitly
   disables it.
-* :variable:`CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY` disables the
-  User Package Registry in all the :command:`find_package` calls.
+* :variable:`CMAKE_FIND_USE_PACKAGE_REGISTRY` disables the
+  User Package Registry in all the :command:`find_package` calls when
+  set to ``FALSE``.
+* Deprecated :variable:`CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY` disables the
+  User Package Registry in all the :command:`find_package` calls when set
+  to ``TRUE``. This variable is ignored when
+  :variable:`CMAKE_FIND_USE_PACKAGE_REGISTRY` has been set.
 * :variable:`CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY` disables
   the System Package Registry in all the :command:`find_package` calls.
 

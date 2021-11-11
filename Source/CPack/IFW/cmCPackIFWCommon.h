@@ -1,12 +1,13 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmCPackIFWCommon_h
-#define cmCPackIFWCommon_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <map>
 #include <string>
+
+#include "cmValue.h"
 
 class cmCPackIFWGenerator;
 class cmXMLWriter;
@@ -27,7 +28,7 @@ public:
 public:
   // Internal implementation
 
-  const char* GetOption(const std::string& op) const;
+  cmValue GetOption(const std::string& op) const;
   bool IsOn(const std::string& op) const;
   bool IsSetToOff(const std::string& op) const;
   bool IsSetToEmpty(const std::string& op) const;
@@ -35,17 +36,17 @@ public:
   /**
    * Compare \a version with QtIFW framework version
    */
-  bool IsVersionLess(const char* version);
+  bool IsVersionLess(const char* version) const;
 
   /**
    * Compare \a version with QtIFW framework version
    */
-  bool IsVersionGreater(const char* version);
+  bool IsVersionGreater(const char* version) const;
 
   /**
    * Compare \a version with QtIFW framework version
    */
-  bool IsVersionEqual(const char* version);
+  bool IsVersionEqual(const char* version) const;
 
   /** Expand the list argument containing the map of the key-value pairs.
    *  If the number of elements is odd, then the first value is used as the
@@ -65,7 +66,7 @@ public:
   cmCPackIFWGenerator* Generator;
 
 protected:
-  void WriteGeneratedByToStrim(cmXMLWriter& xout);
+  void WriteGeneratedByToStrim(cmXMLWriter& xout) const;
 };
 
 #define cmCPackIFWLogger(logType, msg)                                        \
@@ -77,5 +78,3 @@ protected:
                              cmCPackLog_msg.str().c_str());                   \
     }                                                                         \
   } while (false)
-
-#endif // cmCPackIFWCommon_h

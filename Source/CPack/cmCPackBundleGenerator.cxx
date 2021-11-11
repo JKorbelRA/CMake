@@ -6,7 +6,9 @@
 #include <vector>
 
 #include "cmCPackLog.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
 
 cmCPackBundleGenerator::cmCPackBundleGenerator() = default;
 
@@ -14,8 +16,8 @@ cmCPackBundleGenerator::~cmCPackBundleGenerator() = default;
 
 int cmCPackBundleGenerator::InitializeInternal()
 {
-  const char* name = this->GetOption("CPACK_BUNDLE_NAME");
-  if (nullptr == name) {
+  cmValue name = this->GetOption("CPACK_BUNDLE_NAME");
+  if (!name) {
     cmCPackLogger(cmCPackLog::LOG_ERROR,
                   "CPACK_BUNDLE_NAME must be set to use the Bundle generator."
                     << std::endl);
@@ -32,7 +34,7 @@ int cmCPackBundleGenerator::InitializeInternal()
                     "Cannot locate codesign command" << std::endl);
       return 0;
     }
-    this->SetOptionIfNotSet("CPACK_COMMAND_CODESIGN", codesign_path.c_str());
+    this->SetOptionIfNotSet("CPACK_COMMAND_CODESIGN", codesign_path);
   }
 
   return this->Superclass::InitializeInternal();
@@ -40,9 +42,8 @@ int cmCPackBundleGenerator::InitializeInternal()
 
 const char* cmCPackBundleGenerator::GetPackagingInstallPrefix()
 {
-  this->InstallPrefix = "/";
-  this->InstallPrefix += this->GetOption("CPACK_BUNDLE_NAME");
-  this->InstallPrefix += ".app/Contents/Resources";
+  this->InstallPrefix = cmStrCat('/', this->GetOption("CPACK_BUNDLE_NAME"),
+                                 ".app/Contents/Resources");
 
   return this->InstallPrefix.c_str();
 }
@@ -51,30 +52,24 @@ int cmCPackBundleGenerator::ConstructBundle()
 {
 
   // Get required arguments ...
-  const std::string cpack_bundle_name = this->GetOption("CPACK_BUNDLE_NAME")
-    ? this->GetOption("CPACK_BUNDLE_NAME")
-    : "";
-  if (cpack_bundle_name.empty()) {
+  cmValue cpack_bundle_name = this->GetOption("CPACK_BUNDLE_NAME");
+  if (cpack_bundle_name->empty()) {
     cmCPackLogger(cmCPackLog::LOG_ERROR,
                   "CPACK_BUNDLE_NAME must be set." << std::endl);
 
     return 0;
   }
 
-  const std::string cpack_bundle_plist = this->GetOption("CPACK_BUNDLE_PLIST")
-    ? this->GetOption("CPACK_BUNDLE_PLIST")
-    : "";
-  if (cpack_bundle_plist.empty()) {
+  cmValue cpack_bundle_plist = this->GetOption("CPACK_BUNDLE_PLIST");
+  if (cpack_bundle_plist->empty()) {
     cmCPackLogger(cmCPackLog::LOG_ERROR,
                   "CPACK_BUNDLE_PLIST must be set." << std::endl);
 
     return 0;
   }
 
-  const std::string cpack_bundle_icon = this->GetOption("CPACK_BUNDLE_ICON")
-    ? this->GetOption("CPACK_BUNDLE_ICON")
-    : "";
-  if (cpack_bundle_icon.empty()) {
+  cmValue cpack_bundle_icon = this->GetOption("CPACK_BUNDLE_ICON");
+  if (cpack_bundle_icon->empty()) {
     cmCPackLogger(cmCPackLog::LOG_ERROR,
                   "CPACK_BUNDLE_ICON must be set." << std::endl);
 
@@ -82,18 +77,15 @@ int cmCPackBundleGenerator::ConstructBundle()
   }
 
   // Get optional arguments ...
-  const std::string cpack_bundle_startup_command =
-    this->GetOption("CPACK_BUNDLE_STARTUP_COMMAND")
-    ? this->GetOption("CPACK_BUNDLE_STARTUP_COMMAND")
-    : "";
+  cmValue cpack_bundle_startup_command =
+    this->GetOption("CPACK_BUNDLE_STARTUP_COMMAND");
 
   // The staging directory contains everything that will end-up inside the
   // final disk image ...
-  std::ostringstream staging;
-  staging << toplevel;
+  std::string const staging = toplevel;
 
   std::ostringstream contents;
-  contents << staging.str() << "/" << cpack_bundle_name << ".app/"
+  contents << staging << "/" << cpack_bundle_name << ".app/"
            << "Contents";
 
   std::ostringstream application;
@@ -139,7 +131,7 @@ int cmCPackBundleGenerator::ConstructBundle()
 
   // Optionally a user-provided startup command (could be an
   // executable or a script) ...
-  if (!cpack_bundle_startup_command.empty()) {
+  if (!cpack_bundle_startup_command->empty()) {
     std::ostringstream command_source;
     command_source << cpack_bundle_startup_command;
 
@@ -181,32 +173,25 @@ bool cmCPackBundleGenerator::SupportsComponentInstallation() const
 
 int cmCPackBundleGenerator::SignBundle(const std::string& src_dir)
 {
-  const std::string cpack_apple_cert_app =
-    this->GetOption("CPACK_BUNDLE_APPLE_CERT_APP")
-    ? this->GetOption("CPACK_BUNDLE_APPLE_CERT_APP")
-    : "";
+  cmValue cpack_apple_cert_app =
+    this->GetOption("CPACK_BUNDLE_APPLE_CERT_APP");
 
   // codesign the application.
-  if (!cpack_apple_cert_app.empty()) {
+  if (!cpack_apple_cert_app->empty()) {
     std::string output;
     std::string bundle_path;
-    bundle_path = src_dir + "/";
-    bundle_path += this->GetOption("CPACK_BUNDLE_NAME");
-    bundle_path += ".app";
+    bundle_path =
+      cmStrCat(src_dir, '/', this->GetOption("CPACK_BUNDLE_NAME"), ".app");
 
     // A list of additional files to sign, ie. frameworks and plugins.
     const std::string sign_parameter =
       this->GetOption("CPACK_BUNDLE_APPLE_CODESIGN_PARAMETER")
-      ? this->GetOption("CPACK_BUNDLE_APPLE_CODESIGN_PARAMETER")
+      ? *this->GetOption("CPACK_BUNDLE_APPLE_CODESIGN_PARAMETER")
       : "--deep -f";
 
-    const std::string sign_files =
-      this->GetOption("CPACK_BUNDLE_APPLE_CODESIGN_FILES")
-      ? this->GetOption("CPACK_BUNDLE_APPLE_CODESIGN_FILES")
-      : "";
+    cmValue sign_files = this->GetOption("CPACK_BUNDLE_APPLE_CODESIGN_FILES");
 
-    std::vector<std::string> relFiles;
-    cmSystemTools::ExpandListArgument(sign_files, relFiles);
+    std::vector<std::string> relFiles = cmExpandedList(sign_files);
 
     // sign the files supplied by the user, ie. frameworks.
     for (auto const& file : relFiles) {

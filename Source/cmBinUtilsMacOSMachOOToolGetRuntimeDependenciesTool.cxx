@@ -3,12 +3,12 @@
 
 #include "cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool.h"
 
-#include "cmRuntimeDependencyArchive.h"
-#include "cmUVProcessChain.h"
+#include <sstream>
 
 #include <cmsys/RegularExpression.hxx>
 
-#include <sstream>
+#include "cmRuntimeDependencyArchive.h"
+#include "cmUVProcessChain.h"
 
 cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool::
   cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool(
@@ -44,7 +44,7 @@ bool cmBinUtilsMacOSMachOOToolGetRuntimeDependenciesTool::GetFileInfo(
   std::string line;
   static const cmsys::RegularExpression rpathRegex("^ *cmd LC_RPATH$");
   static const cmsys::RegularExpression loadDylibRegex(
-    "^ *cmd LC_LOAD_DYLIB$");
+    "^ *cmd LC_LOAD(_WEAK)?_DYLIB$");
   static const cmsys::RegularExpression pathRegex(
     "^ *path (.*) \\(offset [0-9]+\\)$");
   static const cmsys::RegularExpression nameRegex(

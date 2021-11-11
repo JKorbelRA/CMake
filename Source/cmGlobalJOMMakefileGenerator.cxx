@@ -39,8 +39,9 @@ void cmGlobalJOMMakefileGenerator::GetDocumentation(
   entry.Brief = "Generates JOM makefiles.";
 }
 
-void cmGlobalJOMMakefileGenerator::PrintCompilerAdvice(
-  std::ostream& os, std::string const& lang, const char* envVar) const
+void cmGlobalJOMMakefileGenerator::PrintCompilerAdvice(std::ostream& os,
+                                                       std::string const& lang,
+                                                       cmValue envVar) const
 {
   if (lang == "CXX" || lang == "C") {
     /* clang-format off */
@@ -66,7 +67,7 @@ cmGlobalJOMMakefileGenerator::GenerateBuildCommand(
   // Since we have full control over the invocation of JOM, let us
   // make it quiet.
   jomMakeOptions.push_back(this->MakeSilentFlag);
-  cmAppend(jomMakeOptions, makeOptions);
+  cm::append(jomMakeOptions, makeOptions);
 
   // JOM does parallel builds by default, the -j is only needed if a specific
   // number is given

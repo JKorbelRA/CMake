@@ -1,6 +1,12 @@
 CMAKE_CFG_INTDIR
 ----------------
 
+.. deprecated:: 3.21
+
+  This variable has poor support on :generator:`Ninja Multi-Config`, and
+  predates the existence of the :genex:`$<CONFIG>` generator expression. Use
+  ``$<CONFIG>`` instead.
+
 Build-time reference to per-configuration output subdirectory.
 
 For native build systems supporting multiple configurations in the
@@ -16,6 +22,8 @@ Example values:
   $(Configuration)     = Visual Studio 10
   $(CONFIGURATION)     = Xcode
   .                    = Make-based tools
+  .                    = Ninja
+  ${CONFIGURATION}     = Ninja Multi-Config
 
 Since these values are evaluated by the native build system, this
 variable is suitable only for use in command lines that will be

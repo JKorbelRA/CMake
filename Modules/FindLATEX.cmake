@@ -11,6 +11,10 @@ This module finds an installed LaTeX and determines the location
 of the compiler.  Additionally the module looks for Latex-related
 software like BibTeX.
 
+.. versionadded:: 3.2
+  Component processing; support for htlatex, pdftops, Biber, xindy, XeLaTeX,
+  LuaLaTeX.
+
 This module sets the following result variables::
 
   LATEX_FOUND:          whether found Latex and requested components
@@ -57,6 +61,10 @@ if (WIN32)
   # Try to find the MikTex binary path (look for its package manager).
   find_path(MIKTEX_BINARY_PATH mpm.exe
     "[HKEY_LOCAL_MACHINE\\SOFTWARE\\MiK\\MiKTeX\\CurrentVersion\\MiKTeX;Install Root]/miktex/bin"
+     "$ENV{LOCALAPPDATA}/Programs/MiKTeX/miktex/bin"
+     "$ENV{LOCALAPPDATA}/Programs/MiKTeX/miktex/bin/x64"
+     "$ENV{APPDATA}/Programs/MiKTeX/miktex/bin"
+     "$ENV{APPDATA}/Programs/MiKTeX/miktex/bin/x64"
     DOC
     "Path to the MikTex binary directory."
   )

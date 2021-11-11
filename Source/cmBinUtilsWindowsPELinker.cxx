@@ -2,15 +2,17 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
 #include "cmBinUtilsWindowsPELinker.h"
-#include "cmAlgorithms.h"
+
+#include <sstream>
+#include <vector>
+
+#include <cm/memory>
+
 #include "cmBinUtilsWindowsPEDumpbinGetRuntimeDependenciesTool.h"
 #include "cmBinUtilsWindowsPEObjdumpGetRuntimeDependenciesTool.h"
 #include "cmRuntimeDependencyArchive.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
-
-#include <memory>
-#include <sstream>
-#include <vector>
 
 #ifdef _WIN32
 #  include <windows.h>
@@ -109,7 +111,7 @@ bool cmBinUtilsWindowsPELinker::ResolveDependency(std::string const& name,
   dirs.insert(dirs.begin(), origin);
 
   for (auto const& searchPath : dirs) {
-    path = searchPath + '/' + name;
+    path = cmStrCat(searchPath, '/', name);
     if (cmSystemTools::PathExists(path)) {
       resolved = true;
       return true;

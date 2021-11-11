@@ -12,34 +12,93 @@ Finds the ``pkg-config`` executable and adds the :command:`pkg_get_variable`,
 following variables will also be set:
 
 ``PKG_CONFIG_FOUND``
-  if pkg-config executable was found
-``PKG_CONFIG_EXECUTABLE``
-  pathname of the pkg-config program
+  True if a pkg-config executable was found.
+
 ``PKG_CONFIG_VERSION_STRING``
-  version of pkg-config (since CMake 2.8.8)
+  .. versionadded:: 2.8.8
+
+  The version of pkg-config that was found.
+
+``PKG_CONFIG_EXECUTABLE``
+  The pathname of the pkg-config program.
+
+``PKG_CONFIG_ARGN``
+  .. versionadded:: 3.22
+
+  A list of arguments to pass to pkg-config.
+
+Both ``PKG_CONFIG_EXECUTABLE`` and ``PKG_CONFIG_ARGN`` are initialized by the
+module, but may be overridden by the user.  See `Variables Affecting Behavior`_
+for how these variables are initialized.
 
 #]========================================]
+
+cmake_policy(PUSH)
+cmake_policy(SET CMP0054 NEW) # if() quoted variables not dereferenced
+cmake_policy(SET CMP0057 NEW) # if IN_LIST
 
 ### Common stuff ####
 set(PKG_CONFIG_VERSION 1)
 
 # find pkg-config, use PKG_CONFIG if set
 if((NOT PKG_CONFIG_EXECUTABLE) AND (NOT "$ENV{PKG_CONFIG}" STREQUAL ""))
-  set(PKG_CONFIG_EXECUTABLE "$ENV{PKG_CONFIG}" CACHE FILEPATH "pkg-config executable")
+  separate_arguments(PKG_CONFIG_FROM_ENV_SPLIT NATIVE_COMMAND PROGRAM SEPARATE_ARGS "$ENV{PKG_CONFIG}")
+  list(LENGTH PKG_CONFIG_FROM_ENV_SPLIT PKG_CONFIG_FROM_ENV_SPLIT_ARGC)
+  if(PKG_CONFIG_FROM_ENV_SPLIT_ARGC GREATER 0)
+    list(GET PKG_CONFIG_FROM_ENV_SPLIT 0 PKG_CONFIG_FROM_ENV_ARGV0)
+    if(PKG_CONFIG_FROM_ENV_SPLIT_ARGC GREATER 1)
+      list(SUBLIST PKG_CONFIG_FROM_ENV_SPLIT 1 -1 PKG_CONFIG_ARGN)
+    endif()
+    set(PKG_CONFIG_EXECUTABLE "${PKG_CONFIG_FROM_ENV_ARGV0}" CACHE FILEPATH "pkg-config executable")
+  endif()
 endif()
-find_program(PKG_CONFIG_EXECUTABLE NAMES pkg-config DOC "pkg-config executable")
+
+set(PKG_CONFIG_NAMES "pkg-config")
+if(CMAKE_HOST_WIN32)
+  list(PREPEND PKG_CONFIG_NAMES "pkg-config.bat")
+endif()
+list(PREPEND PKG_CONFIG_NAMES "pkgconf")
+
+find_program(PKG_CONFIG_EXECUTABLE
+  NAMES ${PKG_CONFIG_NAMES}
+  NAMES_PER_DIR
+  DOC "pkg-config executable")
 mark_as_advanced(PKG_CONFIG_EXECUTABLE)
 
+set(PKG_CONFIG_ARGN "${PKG_CONFIG_ARGN}" CACHE STRING "Arguments to supply to pkg-config")
+mark_as_advanced(PKG_CONFIG_ARGN)
+
+set(_PKG_CONFIG_FAILURE_MESSAGE "")
 if (PKG_CONFIG_EXECUTABLE)
-  execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --version
-    OUTPUT_VARIABLE PKG_CONFIG_VERSION_STRING
-    ERROR_QUIET
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} ${PKG_CONFIG_ARGN} --version
+    OUTPUT_VARIABLE PKG_CONFIG_VERSION_STRING OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_VARIABLE _PKG_CONFIG_VERSION_ERROR ERROR_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _PKG_CONFIG_VERSION_RESULT
+    )
+
+  if (NOT _PKG_CONFIG_VERSION_RESULT EQUAL 0)
+    string(REPLACE "\n" "\n    " _PKG_CONFIG_VERSION_ERROR "      ${_PKG_CONFIG_VERSION_ERROR}")
+    if(PKG_CONFIG_ARGN)
+      string(REPLACE ";" " " PKG_CONFIG_ARGN " ${PKG_CONFIG_ARGN}")
+    endif()
+    string(APPEND _PKG_CONFIG_FAILURE_MESSAGE
+      "The command\n"
+      "      \"${PKG_CONFIG_EXECUTABLE}\"${PKG_CONFIG_ARGN} --version\n"
+      "    failed with output:\n${PKG_CONFIG_VERSION_STRING}\n"
+      "    stderr: \n${_PKG_CONFIG_VERSION_ERROR}\n"
+      "    result: \n${_PKG_CONFIG_VERSION_RESULT}"
+      )
+    set(PKG_CONFIG_EXECUTABLE "")
+    set(PKG_CONFIG_ARGN "")
+    unset(PKG_CONFIG_VERSION_STRING)
+  endif ()
+  unset(_PKG_CONFIG_VERSION_RESULT)
 endif ()
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 find_package_handle_standard_args(PkgConfig
                                   REQUIRED_VARS PKG_CONFIG_EXECUTABLE
+                                  REASON_FAILURE_MESSAGE "${_PKG_CONFIG_FAILURE_MESSAGE}"
                                   VERSION_VAR PKG_CONFIG_VERSION_STRING)
 
 # This is needed because the module name is "PkgConfig" but the name of
@@ -49,10 +108,18 @@ set(PKG_CONFIG_FOUND "${PKGCONFIG_FOUND}")
 
 # Unsets the given variables
 macro(_pkgconfig_unset var)
+  # Clear normal variable (possibly set by project code).
+  unset(${var})
+  # Store as cache variable.
+  # FIXME: Add a policy to switch to a normal variable.
   set(${var} "" CACHE INTERNAL "")
 endmacro()
 
 macro(_pkgconfig_set var value)
+  # Clear normal variable (possibly set by project code).
+  unset(${var})
+  # Store as cache variable.
+  # FIXME: Add a policy to switch to a normal variable.
   set(${var} ${value} CACHE INTERNAL "")
 endmacro()
 
@@ -61,7 +128,7 @@ macro(_pkgconfig_invoke _pkglist _prefix _varname _regexp)
   set(_pkgconfig_invoke_result)
 
   execute_process(
-    COMMAND ${PKG_CONFIG_EXECUTABLE} ${ARGN} ${_pkglist}
+    COMMAND ${PKG_CONFIG_EXECUTABLE} ${PKG_CONFIG_ARGN} ${ARGN} ${_pkglist}
     OUTPUT_VARIABLE _pkgconfig_invoke_result
     RESULT_VARIABLE _pkgconfig_failed
     OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -193,7 +260,13 @@ function(_pkg_find_libs _prefix _no_cmake_path _no_cmake_environment_path)
   endif()
 
   unset(_search_paths)
+  unset(_next_is_framework)
   foreach (flag IN LISTS ${_prefix}_LDFLAGS)
+    if (_next_is_framework)
+      list(APPEND _libs "-framework ${flag}")
+      unset(_next_is_framework)
+      continue()
+    endif ()
     if (flag MATCHES "^-L(.*)")
       list(APPEND _search_paths ${CMAKE_MATCH_1})
       continue()
@@ -201,6 +274,9 @@ function(_pkg_find_libs _prefix _no_cmake_path _no_cmake_environment_path)
     if (flag MATCHES "^-l(.*)")
       set(_pkg_search "${CMAKE_MATCH_1}")
     else()
+      if (flag STREQUAL "-framework")
+        set(_next_is_framework TRUE)
+      endif ()
       continue()
     endif()
 
@@ -214,7 +290,11 @@ function(_pkg_find_libs _prefix _no_cmake_path _no_cmake_environment_path)
                  NAMES ${_pkg_search}
                  ${_find_opts})
     mark_as_advanced(pkgcfg_lib_${_prefix}_${_pkg_search})
-    list(APPEND _libs "${pkgcfg_lib_${_prefix}_${_pkg_search}}")
+    if(pkgcfg_lib_${_prefix}_${_pkg_search})
+      list(APPEND _libs "${pkgcfg_lib_${_prefix}_${_pkg_search}}")
+    else()
+      list(APPEND _libs ${_pkg_search})
+    endif()
   endforeach()
 
   set(${_prefix}_LINK_LIBRARIES "${_libs}" PARENT_SCOPE)
@@ -222,9 +302,7 @@ endfunction()
 
 # create an imported target from all the information returned by pkg-config
 function(_pkg_create_imp_target _prefix _imp_target_global)
-  # only create the target if it is linkable, i.e. no executables
-  if (NOT TARGET PkgConfig::${_prefix}
-      AND ( ${_prefix}_INCLUDE_DIRS OR ${_prefix}_LINK_LIBRARIES OR ${_prefix}_LDFLAGS_OTHER OR ${_prefix}_CFLAGS_OTHER ))
+  if (NOT TARGET PkgConfig::${_prefix})
     if(${_imp_target_global})
       set(_global_opt "GLOBAL")
     else()
@@ -333,7 +411,7 @@ macro(_pkg_set_path_internal)
       # remove empty values from the list
       list(REMOVE_ITEM _pkgconfig_path "")
       file(TO_NATIVE_PATH "${_pkgconfig_path}" _pkgconfig_path)
-      if(UNIX)
+      if(CMAKE_HOST_UNIX)
         string(REPLACE ";" ":" _pkgconfig_path "${_pkgconfig_path}")
         string(REPLACE "\\ " " " _pkgconfig_path "${_pkgconfig_path}")
       endif()
@@ -344,6 +422,14 @@ macro(_pkg_set_path_internal)
     unset(_lib_dirs)
     unset(_pkgconfig_path)
   endif()
+
+  # Tell pkg-config not to strip any -L paths so we can search them all.
+  if(DEFINED ENV{PKG_CONFIG_ALLOW_SYSTEM_LIBS})
+    set(_pkgconfig_allow_system_libs_old "$ENV{PKG_CONFIG_ALLOW_SYSTEM_LIBS}")
+  else()
+    unset(_pkgconfig_allow_system_libs_old)
+  endif()
+  set(ENV{PKG_CONFIG_ALLOW_SYSTEM_LIBS} 0)
 endmacro()
 
 macro(_pkg_restore_path_internal)
@@ -351,10 +437,68 @@ macro(_pkg_restore_path_internal)
     # Restore the environment variable
     set(ENV{PKG_CONFIG_PATH} "${_pkgconfig_path_old}")
   endif()
+  if(DEFINED _pkgconfig_allow_system_libs_old)
+    set(ENV{PKG_CONFIG_ALLOW_SYSTEM_LIBS} "${_pkgconfig_allow_system_libs_old}")
+    unset(_pkgconfig_allow_system_libs_old)
+  endif()
 
   unset(_extra_paths)
   unset(_pkgconfig_path_old)
 endmacro()
+
+# pkg-config returns frameworks in --libs-only-other
+# they need to be in ${_prefix}_LIBRARIES so "-framework a -framework b" does
+# not incorrectly be combined to "-framework a b"
+function(_pkgconfig_extract_frameworks _prefix)
+  set(ldflags "${${_prefix}_LDFLAGS_OTHER}")
+  list(FIND ldflags "-framework" FR_POS)
+  list(LENGTH ldflags LD_LENGTH)
+
+  # reduce length by 1 as we need "-framework" and the next entry
+  math(EXPR LD_LENGTH "${LD_LENGTH} - 1")
+  while (FR_POS GREATER -1 AND LD_LENGTH GREATER FR_POS)
+    list(REMOVE_AT ldflags ${FR_POS})
+    list(GET ldflags ${FR_POS} HEAD)
+    list(REMOVE_AT ldflags ${FR_POS})
+    math(EXPR LD_LENGTH "${LD_LENGTH} - 2")
+
+    list(APPEND LIBS "-framework ${HEAD}")
+
+    list(FIND ldflags "-framework" FR_POS)
+  endwhile ()
+  set(${_prefix}_LIBRARIES ${${_prefix}_LIBRARIES} ${LIBS} PARENT_SCOPE)
+  set(${_prefix}_LDFLAGS_OTHER "${ldflags}" PARENT_SCOPE)
+endfunction()
+
+# pkg-config returns -isystem include directories in --cflags-only-other,
+# depending on the version and if there is a space between -isystem and
+# the actual path
+function(_pkgconfig_extract_isystem _prefix)
+  set(cflags "${${_prefix}_CFLAGS_OTHER}")
+  set(outflags "")
+  set(incdirs "${${_prefix}_INCLUDE_DIRS}")
+
+  set(next_is_isystem FALSE)
+  foreach (THING IN LISTS cflags)
+    # This may filter "-isystem -isystem". That would not work anyway,
+    # so let it happen.
+    if (THING STREQUAL "-isystem")
+      set(next_is_isystem TRUE)
+      continue()
+    endif ()
+    if (next_is_isystem)
+      set(next_is_isystem FALSE)
+      list(APPEND incdirs "${THING}")
+    elseif (THING MATCHES "^-isystem")
+      string(SUBSTRING "${THING}" 8 -1 THING)
+      list(APPEND incdirs "${THING}")
+    else ()
+      list(APPEND outflags "${THING}")
+    endif ()
+  endforeach ()
+  set(${_prefix}_CFLAGS_OTHER "${outflags}" PARENT_SCOPE)
+  set(${_prefix}_INCLUDE_DIRS "${incdirs}" PARENT_SCOPE)
+endfunction()
 
 ###
 macro(_pkg_check_modules_internal _is_required _is_silent _no_cmake_path _no_cmake_environment_path _imp_target _imp_target_global _prefix)
@@ -363,6 +507,7 @@ macro(_pkg_check_modules_internal _is_required _is_silent _no_cmake_path _no_cma
   _pkgconfig_unset(${_prefix}_PREFIX)
   _pkgconfig_unset(${_prefix}_INCLUDEDIR)
   _pkgconfig_unset(${_prefix}_LIBDIR)
+  _pkgconfig_unset(${_prefix}_MODULE_NAME)
   _pkgconfig_unset(${_prefix}_LIBS)
   _pkgconfig_unset(${_prefix}_LIBS_L)
   _pkgconfig_unset(${_prefix}_LIBS_PATHS)
@@ -437,7 +582,7 @@ macro(_pkg_check_modules_internal _is_required _is_silent _no_cmake_path _no_cma
 
       # execute the query
       execute_process(
-        COMMAND ${PKG_CONFIG_EXECUTABLE} ${_pkg_check_modules_exist_query}
+        COMMAND ${PKG_CONFIG_EXECUTABLE} ${PKG_CONFIG_ARGN} ${_pkg_check_modules_exist_query}
         RESULT_VARIABLE _pkgconfig_retval
         ERROR_VARIABLE _pkgconfig_error
         ERROR_STRIP_TRAILING_WHITESPACE)
@@ -480,6 +625,7 @@ macro(_pkg_check_modules_internal _is_required _is_silent _no_cmake_path _no_cma
         foreach (variable IN ITEMS PREFIX INCLUDEDIR LIBDIR)
           _pkgconfig_set("${_pkg_check_prefix}_${variable}" "${${_pkg_check_prefix}_${variable}}")
         endforeach ()
+          _pkgconfig_set("${_pkg_check_prefix}_MODULE_NAME" "${_pkg_check_modules_pkg}")
 
         if (NOT ${_is_silent})
           message(STATUS "  Found ${_pkg_check_modules_pkg}, version ${_pkgconfig_VERSION}")
@@ -487,14 +633,22 @@ macro(_pkg_check_modules_internal _is_required _is_silent _no_cmake_path _no_cma
       endforeach()
 
       # set variables which are combined for multiple modules
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LIBRARIES           "(^| )-l" --libs-only-l )
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LIBRARY_DIRS        "(^| )-L" --libs-only-L )
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LDFLAGS             ""        --libs )
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LDFLAGS_OTHER       ""        --libs-only-other )
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LIBRARIES     "(^| )-l"             --libs-only-l )
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LIBRARY_DIRS  "(^| )-L"             --libs-only-L )
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LDFLAGS       ""                    --libs )
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" LDFLAGS_OTHER ""                    --libs-only-other )
 
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" INCLUDE_DIRS        "(^| )-I" --cflags-only-I )
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" CFLAGS              ""        --cflags )
-      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" CFLAGS_OTHER        ""        --cflags-only-other )
+      if (APPLE AND "-framework" IN_LIST ${_prefix}_LDFLAGS_OTHER)
+        _pkgconfig_extract_frameworks("${_prefix}")
+      endif()
+
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" INCLUDE_DIRS  "(^| )(-I|-isystem ?)" --cflags-only-I )
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" CFLAGS        ""                    --cflags )
+      _pkgconfig_invoke_dyn("${_pkg_check_modules_packages}" "${_prefix}" CFLAGS_OTHER  ""                    --cflags-only-other )
+
+      if (${_prefix}_CFLAGS_OTHER MATCHES "-isystem")
+        _pkgconfig_extract_isystem("${_prefix}")
+      endif ()
 
       _pkg_recalculate("${_prefix}" ${_no_cmake_path} ${_no_cmake_environment_path} ${_imp_target} ${_imp_target_global})
     endif()
@@ -528,19 +682,38 @@ endmacro()
 
   When the ``QUIET`` argument is given, no status messages will be printed.
 
-  By default, if :variable:`CMAKE_MINIMUM_REQUIRED_VERSION` is 3.1 or
-  later, or if :variable:`PKG_CONFIG_USE_CMAKE_PREFIX_PATH` is set to a
-  boolean ``True`` value, then the :variable:`CMAKE_PREFIX_PATH`,
-  :variable:`CMAKE_FRAMEWORK_PATH`, and :variable:`CMAKE_APPBUNDLE_PATH` cache
-  and environment variables will be added to the ``pkg-config`` search path.
-  The ``NO_CMAKE_PATH`` and ``NO_CMAKE_ENVIRONMENT_PATH`` arguments
-  disable this behavior for the cache variables and environment variables
-  respectively.
+  .. versionadded:: 3.1
+    The :variable:`CMAKE_PREFIX_PATH`,
+    :variable:`CMAKE_FRAMEWORK_PATH`, and :variable:`CMAKE_APPBUNDLE_PATH` cache
+    and environment variables will be added to the ``pkg-config`` search path.
+    The ``NO_CMAKE_PATH`` and ``NO_CMAKE_ENVIRONMENT_PATH`` arguments
+    disable this behavior for the cache variables and environment variables
+    respectively.
+    The :variable:`PKG_CONFIG_USE_CMAKE_PREFIX_PATH` variable set to ``FALSE``
+    disables this behavior globally.
 
-  The ``IMPORTED_TARGET`` argument will create an imported target named
-  ``PkgConfig::<prefix>`` that can be passed directly as an argument to
-  :command:`target_link_libraries`. The ``GLOBAL`` argument will make the
-  imported target available in global scope.
+    .. This didn't actually work until 3.3.
+
+  .. versionadded:: 3.6
+    The ``IMPORTED_TARGET`` argument will create an imported target named
+    ``PkgConfig::<prefix>`` that can be passed directly as an argument to
+    :command:`target_link_libraries`.
+
+    .. This didn't actually work until 3.7.
+
+  .. versionadded:: 3.13
+    The ``GLOBAL`` argument will make the
+    imported target available in global scope.
+
+  .. versionadded:: 3.15
+    Non-library linker options reported by ``pkg-config`` are stored in the
+    :prop_tgt:`INTERFACE_LINK_OPTIONS` target property.
+
+  .. versionchanged:: 3.18
+    Include directories specified with ``-isystem`` are stored in the
+    :prop_tgt:`INTERFACE_INCLUDE_DIRECTORIES` target property.  Previous
+    versions of CMake left them in the :prop_tgt:`INTERFACE_COMPILE_OPTIONS`
+    property.
 
   Each ``<moduleSpec>`` can be either a bare module name or it can be a
   module name with a version constraint (operators ``=``, ``<``, ``>``,
@@ -579,6 +752,11 @@ endmacro()
   All but ``<XXX>_FOUND`` may be a :ref:`;-list <CMake Language Lists>` if the
   associated variable returned from ``pkg-config`` has multiple values.
 
+  .. versionchanged:: 3.18
+    Include directories specified with ``-isystem`` are stored in the
+    ``<XXX>_INCLUDE_DIRS`` variable.  Previous versions of CMake left them
+    in ``<XXX>_CFLAGS_OTHER``.
+
   There are some special variables whose prefix depends on the number of
   ``<moduleSpec>`` given.  When there is only one ``<moduleSpec>``,
   ``<YYY>`` will simply be ``<prefix>``, but if two or more ``<moduleSpec>``
@@ -592,6 +770,16 @@ endmacro()
     include directory of the module
   ``<YYY>_LIBDIR``
     lib directory of the module
+
+  .. versionchanged:: 3.8
+    For any given ``<prefix>``, ``pkg_check_modules()`` can be called multiple
+    times with different parameters.  Previous versions of CMake cached and
+    returned the first successful result.
+
+  .. versionchanged:: 3.16
+    If a full path to the found library can't be determined, but it's still
+    visible to the linker, pass it through as ``-l<name>``.  Previous versions
+    of CMake failed in this case.
 
   Examples:
 
@@ -664,6 +852,11 @@ endmacro()
                       [IMPORTED_TARGET [GLOBAL]]
                       <moduleSpec> [<moduleSpec>...])
 
+  .. versionadded:: 3.16
+    If a module is found, the ``<prefix>_MODULE_NAME`` variable will contain the
+    name of the matching module. This variable can be used if you need to run
+    :command:`pkg_get_variable`.
+
   Example:
 
   .. code-block:: cmake
@@ -688,6 +881,7 @@ macro(pkg_search_module _prefix _module0)
 
       if (${_prefix}_FOUND)
         set(_pkg_modules_found 1)
+        break()
       endif()
     endforeach()
 
@@ -705,6 +899,8 @@ endmacro()
 
 #[========================================[.rst:
 .. command:: pkg_get_variable
+
+  .. versionadded:: 3.4
 
   Retrieves the value of a pkg-config variable ``varName`` and stores it in the
   result variable ``resultVar`` in the calling scope.
@@ -738,11 +934,34 @@ Variables Affecting Behavior
 
 .. variable:: PKG_CONFIG_EXECUTABLE
 
-  This can be set to the path of the pkg-config executable.  If not provided,
-  it will be set by the module as a result of calling :command:`find_program`
-  internally.  The ``PKG_CONFIG`` environment variable can be used as a hint.
+  This cache variable can be set to the path of the pkg-config executable.
+  :command:`find_program` is called internally by the module with this
+  variable.
+
+  .. versionadded:: 3.1
+    The ``PKG_CONFIG`` environment variable can be used as a hint if
+    ``PKG_CONFIG_EXECUTABLE`` has not yet been set.
+
+  .. versionchanged:: 3.22
+    If the ``PKG_CONFIG`` environment variable is set, only the first
+    argument is taken from it when using it as a hint.
+
+.. variable:: PKG_CONFIG_ARGN
+
+  .. versionadded:: 3.22
+
+  This cache variable can be set to a list of arguments to additionally pass
+  to pkg-config if needed. If not provided, it will be initialized from the
+  ``PKG_CONFIG`` environment variable, if set. The first argument in that
+  environment variable is assumed to be the pkg-config program, while all
+  remaining arguments after that are used to initialize ``PKG_CONFIG_ARGN``.
+  If no such environment variable is defined, ``PKG_CONFIG_ARGN`` is
+  initialized to an empty string. The module does not update the variable once
+  it has been set in the cache.
 
 .. variable:: PKG_CONFIG_USE_CMAKE_PREFIX_PATH
+
+  .. versionadded:: 3.1
 
   Specifies whether :command:`pkg_check_modules` and
   :command:`pkg_search_module` should add the paths in the
@@ -759,3 +978,5 @@ Variables Affecting Behavior
 ### Local Variables:
 ### mode: cmake
 ### End:
+
+cmake_policy(POP)

@@ -7,6 +7,8 @@
 
 #include "cmCPluginAPI.h"
 
+#include <cstdlib>
+
 #include "cmExecutionStatus.h"
 #include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
@@ -14,25 +16,23 @@
 #include "cmState.h"
 #include "cmVersion.h"
 
-#include <stdlib.h>
-
 #ifdef __QNX__
 #  include <malloc.h> /* for malloc/free on QNX */
 #endif
 
 extern "C" {
 
-void CCONV* cmGetClientData(void* info)
+static void CCONV* cmGetClientData(void* info)
 {
   return ((cmLoadedCommandInfo*)info)->ClientData;
 }
 
-void CCONV cmSetClientData(void* info, void* cd)
+static void CCONV cmSetClientData(void* info, void* cd)
 {
   ((cmLoadedCommandInfo*)info)->ClientData = cd;
 }
 
-void CCONV cmSetError(void* info, const char* err)
+static void CCONV cmSetError(void* info, const char* err)
 {
   if (((cmLoadedCommandInfo*)info)->Error) {
     free(((cmLoadedCommandInfo*)info)->Error);
@@ -40,38 +40,42 @@ void CCONV cmSetError(void* info, const char* err)
   ((cmLoadedCommandInfo*)info)->Error = strdup(err);
 }
 
-unsigned int CCONV cmGetCacheMajorVersion(void* arg)
+static unsigned int CCONV cmGetCacheMajorVersion(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   cmState* state = mf->GetState();
   return state->GetCacheMajorVersion();
 }
-unsigned int CCONV cmGetCacheMinorVersion(void* arg)
+static unsigned int CCONV cmGetCacheMinorVersion(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   cmState* state = mf->GetState();
   return state->GetCacheMinorVersion();
 }
 
-unsigned int CCONV cmGetMajorVersion(void*)
+static unsigned int CCONV cmGetMajorVersion(void*)
 {
   return cmVersion::GetMajorVersion();
 }
 
-unsigned int CCONV cmGetMinorVersion(void*)
+static unsigned int CCONV cmGetMinorVersion(void*)
 {
   return cmVersion::GetMinorVersion();
 }
 
-void CCONV cmAddDefinition(void* arg, const char* name, const char* value)
+static void CCONV cmAddDefinition(void* arg, const char* name,
+                                  const char* value)
 {
-  cmMakefile* mf = static_cast<cmMakefile*>(arg);
-  mf->AddDefinition(name, value);
+  if (value) {
+    cmMakefile* mf = static_cast<cmMakefile*>(arg);
+    mf->AddDefinition(name, value);
+  }
 }
 
 /* Add a definition to this makefile and the global cmake cache. */
-void CCONV cmAddCacheDefinition(void* arg, const char* name, const char* value,
-                                const char* doc, int type)
+static void CCONV cmAddCacheDefinition(void* arg, const char* name,
+                                       const char* value, const char* doc,
+                                       int type)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
 
@@ -97,7 +101,7 @@ void CCONV cmAddCacheDefinition(void* arg, const char* name, const char* value,
   }
 }
 
-const char* CCONV cmGetProjectName(void* arg)
+static const char* CCONV cmGetProjectName(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   static std::string name;
@@ -105,63 +109,63 @@ const char* CCONV cmGetProjectName(void* arg)
   return name.c_str();
 }
 
-const char* CCONV cmGetHomeDirectory(void* arg)
+static const char* CCONV cmGetHomeDirectory(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return mf->GetHomeDirectory().c_str();
 }
-const char* CCONV cmGetHomeOutputDirectory(void* arg)
+static const char* CCONV cmGetHomeOutputDirectory(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return mf->GetHomeOutputDirectory().c_str();
 }
-const char* CCONV cmGetStartDirectory(void* arg)
+static const char* CCONV cmGetStartDirectory(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return mf->GetCurrentSourceDirectory().c_str();
 }
-const char* CCONV cmGetStartOutputDirectory(void* arg)
+static const char* CCONV cmGetStartOutputDirectory(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return mf->GetCurrentBinaryDirectory().c_str();
 }
-const char* CCONV cmGetCurrentDirectory(void* arg)
+static const char* CCONV cmGetCurrentDirectory(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return mf->GetCurrentSourceDirectory().c_str();
 }
-const char* CCONV cmGetCurrentOutputDirectory(void* arg)
+static const char* CCONV cmGetCurrentOutputDirectory(void* arg)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return mf->GetCurrentBinaryDirectory().c_str();
 }
-const char* CCONV cmGetDefinition(void* arg, const char* def)
+static const char* CCONV cmGetDefinition(void* arg, const char* def)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
-  return mf->GetDefinition(def);
+  return mf->GetDefinition(def).GetCStr();
 }
 
-int CCONV cmIsOn(void* arg, const char* name)
+static int CCONV cmIsOn(void* arg, const char* name)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return static_cast<int>(mf->IsOn(name));
 }
 
 /** Check if a command exists. */
-int CCONV cmCommandExists(void* arg, const char* name)
+static int CCONV cmCommandExists(void* arg, const char* name)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   return static_cast<int>(mf->GetState()->GetCommand(name) ? 1 : 0);
 }
 
-void CCONV cmAddDefineFlag(void* arg, const char* definition)
+static void CCONV cmAddDefineFlag(void* arg, const char* definition)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   mf->AddDefineFlag(definition);
 }
 
-void CCONV cmAddLinkDirectoryForTarget(void* arg, const char* tgt,
-                                       const char* d)
+static void CCONV cmAddLinkDirectoryForTarget(void* arg, const char* tgt,
+                                              const char* d)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   cmTarget* t = mf->FindLocalNonAliasTarget(tgt);
@@ -171,11 +175,11 @@ void CCONV cmAddLinkDirectoryForTarget(void* arg, const char* tgt,
       std::string(tgt) + " for directory " + std::string(d));
     return;
   }
-  t->InsertLinkDirectory(d, mf->GetBacktrace());
+  t->InsertLinkDirectory(BT<std::string>(d, mf->GetBacktrace()));
 }
 
-void CCONV cmAddExecutable(void* arg, const char* exename, int numSrcs,
-                           const char** srcs, int win32)
+static void CCONV cmAddExecutable(void* arg, const char* exename, int numSrcs,
+                                  const char** srcs, int win32)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   std::vector<std::string> srcs2;
@@ -189,10 +193,11 @@ void CCONV cmAddExecutable(void* arg, const char* exename, int numSrcs,
   }
 }
 
-void CCONV cmAddUtilityCommand(void* arg, const char* utilityName,
-                               const char* command, const char* arguments,
-                               int all, int numDepends, const char** depends,
-                               int, const char**)
+static void CCONV cmAddUtilityCommand(void* arg, const char* utilityName,
+                                      const char* command,
+                                      const char* arguments, int all,
+                                      int numDepends, const char** depends,
+                                      int, const char**)
 {
   // Get the makefile instance.  Perform an extra variable expansion
   // now because the API caller expects it.
@@ -218,14 +223,17 @@ void CCONV cmAddUtilityCommand(void* arg, const char* utilityName,
   }
 
   // Pass the call to the makefile instance.
-  mf->AddUtilityCommand(utilityName, cmMakefile::TargetOrigin::Project,
-                        (all ? false : true), nullptr, depends2, commandLines);
+  std::vector<std::string> no_byproducts;
+  mf->AddUtilityCommand(utilityName, !all, nullptr, no_byproducts, depends2,
+                        commandLines,
+                        mf->GetPolicyStatus(cmPolicies::CMP0116));
 }
-void CCONV cmAddCustomCommand(void* arg, const char* source,
-                              const char* command, int numArgs,
-                              const char** args, int numDepends,
-                              const char** depends, int numOutputs,
-                              const char** outputs, const char* target)
+
+static void CCONV cmAddCustomCommand(void* arg, const char* source,
+                                     const char* command, int numArgs,
+                                     const char** args, int numDepends,
+                                     const char** depends, int numOutputs,
+                                     const char** outputs, const char* target)
 {
   // Get the makefile instance.  Perform an extra variable expansion
   // now because the API caller expects it.
@@ -259,14 +267,16 @@ void CCONV cmAddCustomCommand(void* arg, const char* source,
   // Pass the call to the makefile instance.
   const char* no_comment = nullptr;
   mf->AddCustomCommandOldStyle(target, outputs2, depends2, source,
-                               commandLines, no_comment);
+                               commandLines, no_comment,
+                               mf->GetPolicyStatus(cmPolicies::CMP0116));
 }
 
-void CCONV cmAddCustomCommandToOutput(void* arg, const char* output,
-                                      const char* command, int numArgs,
-                                      const char** args,
-                                      const char* main_dependency,
-                                      int numDepends, const char** depends)
+static void CCONV cmAddCustomCommandToOutput(void* arg, const char* output,
+                                             const char* command, int numArgs,
+                                             const char** args,
+                                             const char* main_dependency,
+                                             int numDepends,
+                                             const char** depends)
 {
   // Get the makefile instance.  Perform an extra variable expansion
   // now because the API caller expects it.
@@ -294,12 +304,14 @@ void CCONV cmAddCustomCommandToOutput(void* arg, const char* output,
   const char* no_comment = nullptr;
   const char* no_working_dir = nullptr;
   mf->AddCustomCommandToOutput(output, depends2, main_dependency, commandLines,
-                               no_comment, no_working_dir);
+                               no_comment, no_working_dir,
+                               mf->GetPolicyStatus(cmPolicies::CMP0116));
 }
 
-void CCONV cmAddCustomCommandToTarget(void* arg, const char* target,
-                                      const char* command, int numArgs,
-                                      const char** args, int commandType)
+static void CCONV cmAddCustomCommandToTarget(void* arg, const char* target,
+                                             const char* command, int numArgs,
+                                             const char** args,
+                                             int commandType)
 {
   // Get the makefile instance.
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
@@ -317,16 +329,16 @@ void CCONV cmAddCustomCommandToTarget(void* arg, const char* target,
   commandLines.push_back(commandLine);
 
   // Select the command type.
-  cmTarget::CustomCommandType cctype = cmTarget::POST_BUILD;
+  cmCustomCommandType cctype = cmCustomCommandType::POST_BUILD;
   switch (commandType) {
     case CM_PRE_BUILD:
-      cctype = cmTarget::PRE_BUILD;
+      cctype = cmCustomCommandType::PRE_BUILD;
       break;
     case CM_PRE_LINK:
-      cctype = cmTarget::PRE_LINK;
+      cctype = cmCustomCommandType::PRE_LINK;
       break;
     case CM_POST_BUILD:
-      cctype = cmTarget::POST_BUILD;
+      cctype = cmCustomCommandType::POST_BUILD;
       break;
   }
 
@@ -336,7 +348,8 @@ void CCONV cmAddCustomCommandToTarget(void* arg, const char* target,
   const char* no_comment = nullptr;
   const char* no_working_dir = nullptr;
   mf->AddCustomCommandToTarget(target, no_byproducts, no_depends, commandLines,
-                               cctype, no_comment, no_working_dir);
+                               cctype, no_comment, no_working_dir,
+                               mf->GetPolicyStatus(cmPolicies::CMP0116));
 }
 
 static void addLinkLibrary(cmMakefile* mf, std::string const& target,
@@ -368,8 +381,8 @@ static void addLinkLibrary(cmMakefile* mf, std::string const& target,
   t->AddLinkLibrary(*mf, lib, llt);
 }
 
-void CCONV cmAddLinkLibraryForTarget(void* arg, const char* tgt,
-                                     const char* value, int libtype)
+static void CCONV cmAddLinkLibraryForTarget(void* arg, const char* tgt,
+                                            const char* value, int libtype)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
 
@@ -386,8 +399,8 @@ void CCONV cmAddLinkLibraryForTarget(void* arg, const char* tgt,
   }
 }
 
-void CCONV cmAddLibrary(void* arg, const char* libname, int shared,
-                        int numSrcs, const char** srcs)
+static void CCONV cmAddLibrary(void* arg, const char* libname, int shared,
+                               int numSrcs, const char** srcs)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   std::vector<std::string> srcs2;
@@ -401,8 +414,8 @@ void CCONV cmAddLibrary(void* arg, const char* libname, int shared,
     srcs2);
 }
 
-char CCONV* cmExpandVariablesInString(void* arg, const char* source,
-                                      int escapeQuotes, int atOnly)
+static char CCONV* cmExpandVariablesInString(void* arg, const char* source,
+                                             int escapeQuotes, int atOnly)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   std::string barf = source;
@@ -411,24 +424,27 @@ char CCONV* cmExpandVariablesInString(void* arg, const char* source,
   return strdup(result.c_str());
 }
 
-int CCONV cmExecuteCommand(void* arg, const char* name, int numArgs,
-                           const char** args)
+static int CCONV cmExecuteCommand(void* arg, const char* name, int numArgs,
+                                  const char** args)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
-  cmListFileFunction lff;
-  lff.Name = name;
+
+  std::vector<cmListFileArgument> lffArgs;
+  lffArgs.reserve(numArgs);
   for (int i = 0; i < numArgs; ++i) {
     // Assume all arguments are quoted.
-    lff.Arguments.emplace_back(args[i], cmListFileArgument::Quoted, 0);
+    lffArgs.emplace_back(args[i], cmListFileArgument::Quoted, 0);
   }
-  cmExecutionStatus status;
+
+  cmListFileFunction lff{ name, 0, std::move(lffArgs) };
+  cmExecutionStatus status(*mf);
   return mf->ExecuteCommand(lff, status);
 }
 
-void CCONV cmExpandSourceListArguments(void* arg, int numArgs,
-                                       const char** args, int* resArgc,
-                                       char*** resArgv,
-                                       unsigned int startArgumentIndex)
+static void CCONV cmExpandSourceListArguments(void* arg, int numArgs,
+                                              const char** args, int* resArgc,
+                                              char*** resArgv,
+                                              unsigned int startArgumentIndex)
 {
   (void)arg;
   (void)startArgumentIndex;
@@ -449,7 +465,7 @@ void CCONV cmExpandSourceListArguments(void* arg, int numArgs,
   *resArgv = resargv;
 }
 
-void CCONV cmFreeArguments(int argc, char** argv)
+static void CCONV cmFreeArguments(int argc, char** argv)
 {
   int i;
   for (i = 0; i < argc; ++i) {
@@ -458,7 +474,7 @@ void CCONV cmFreeArguments(int argc, char** argv)
   free(argv);
 }
 
-int CCONV cmGetTotalArgumentSize(int argc, char** argv)
+static int CCONV cmGetTotalArgumentSize(int argc, char** argv)
 {
   int i;
   int result = 0;
@@ -484,37 +500,21 @@ struct cmCPluginAPISourceFile
 
 // Keep a map from real cmSourceFile instances stored in a makefile to
 // the CPluginAPI proxy source file.
-class cmCPluginAPISourceFileMap
-  : public std::map<cmSourceFile*, cmCPluginAPISourceFile*>
-{
-public:
-  typedef std::map<cmSourceFile*, cmCPluginAPISourceFile*> derived;
-  typedef derived::iterator iterator;
-  typedef derived::value_type value_type;
-  cmCPluginAPISourceFileMap() = default;
-  ~cmCPluginAPISourceFileMap()
-  {
-    for (auto const& i : *this) {
-      delete i.second;
-    }
-  }
-  cmCPluginAPISourceFileMap(const cmCPluginAPISourceFileMap&) = delete;
-  cmCPluginAPISourceFileMap& operator=(const cmCPluginAPISourceFileMap&) =
-    delete;
-};
-cmCPluginAPISourceFileMap cmCPluginAPISourceFiles;
+using cmCPluginAPISourceFileMap =
+  std::map<cmSourceFile*, std::unique_ptr<cmCPluginAPISourceFile>>;
+static cmCPluginAPISourceFileMap cmCPluginAPISourceFiles;
 
-void* CCONV cmCreateSourceFile(void)
+static void* CCONV cmCreateSourceFile()
 {
   return new cmCPluginAPISourceFile;
 }
 
-void* CCONV cmCreateNewSourceFile(void*)
+static void* CCONV cmCreateNewSourceFile(void*)
 {
   return new cmCPluginAPISourceFile;
 }
 
-void CCONV cmDestroySourceFile(void* arg)
+static void CCONV cmDestroySourceFile(void* arg)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   // Only delete if it was created by cmCreateSourceFile or
@@ -524,32 +524,31 @@ void CCONV cmDestroySourceFile(void* arg)
   }
 }
 
-void CCONV* cmGetSource(void* arg, const char* name)
+static void CCONV* cmGetSource(void* arg, const char* name)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   if (cmSourceFile* rsf = mf->GetSource(name)) {
     // Lookup the proxy source file object for this source.
-    cmCPluginAPISourceFileMap::iterator i = cmCPluginAPISourceFiles.find(rsf);
+    auto i = cmCPluginAPISourceFiles.find(rsf);
     if (i == cmCPluginAPISourceFiles.end()) {
       // Create a proxy source file object for this source.
-      cmCPluginAPISourceFile* sf = new cmCPluginAPISourceFile;
+      auto sf = cm::make_unique<cmCPluginAPISourceFile>();
       sf->RealSourceFile = rsf;
-      sf->FullPath = rsf->GetFullPath();
+      sf->FullPath = rsf->ResolveFullPath();
       sf->SourceName =
         cmSystemTools::GetFilenameWithoutLastExtension(sf->FullPath);
       sf->SourceExtension =
         cmSystemTools::GetFilenameLastExtension(sf->FullPath);
 
       // Store the proxy in the map so it can be re-used and deleted later.
-      cmCPluginAPISourceFileMap::value_type entry(rsf, sf);
-      i = cmCPluginAPISourceFiles.insert(entry).first;
+      i = cmCPluginAPISourceFiles.emplace(rsf, std::move(sf)).first;
     }
-    return i->second;
+    return i->second.get();
   }
   return nullptr;
 }
 
-void* CCONV cmAddSource(void* arg, void* arg2)
+static void* CCONV cmAddSource(void* arg, void* arg2)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   cmCPluginAPISourceFile* osf = static_cast<cmCPluginAPISourceFile*>(arg2);
@@ -559,58 +558,64 @@ void* CCONV cmAddSource(void* arg, void* arg2)
 
   // Create the real cmSourceFile instance and copy over saved information.
   cmSourceFile* rsf = mf->GetOrCreateSource(osf->FullPath);
-  rsf->GetProperties() = osf->Properties;
+  rsf->SetProperties(osf->Properties);
+  // In case the properties contain the GENERATED property,
+  // mark the real cmSourceFile as generated.
+  if (rsf->GetIsGenerated()) {
+    rsf->MarkAsGenerated();
+  }
   for (std::string const& d : osf->Depends) {
     rsf->AddDepend(d);
   }
 
   // Create the proxy for the real source file.
-  cmCPluginAPISourceFile* sf = new cmCPluginAPISourceFile;
+  auto sf = cm::make_unique<cmCPluginAPISourceFile>();
   sf->RealSourceFile = rsf;
   sf->FullPath = osf->FullPath;
   sf->SourceName = osf->SourceName;
   sf->SourceExtension = osf->SourceExtension;
 
   // Store the proxy in the map so it can be re-used and deleted later.
-  cmCPluginAPISourceFiles[rsf] = sf;
-  return sf;
+  auto* value = sf.get();
+  cmCPluginAPISourceFiles[rsf] = std::move(sf);
+  return value;
 }
 
-const char* CCONV cmSourceFileGetSourceName(void* arg)
+static const char* CCONV cmSourceFileGetSourceName(void* arg)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   return sf->SourceName.c_str();
 }
 
-const char* CCONV cmSourceFileGetFullPath(void* arg)
+static const char* CCONV cmSourceFileGetFullPath(void* arg)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   return sf->FullPath.c_str();
 }
 
-const char* CCONV cmSourceFileGetProperty(void* arg, const char* prop)
+static const char* CCONV cmSourceFileGetProperty(void* arg, const char* prop)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   if (cmSourceFile* rsf = sf->RealSourceFile) {
-    return rsf->GetProperty(prop);
+    return rsf->GetProperty(prop).GetCStr();
   }
   if (!strcmp(prop, "LOCATION")) {
     return sf->FullPath.c_str();
   }
-  return sf->Properties.GetPropertyValue(prop);
+  return sf->Properties.GetPropertyValue(prop).GetCStr();
 }
 
-int CCONV cmSourceFileGetPropertyAsBool(void* arg, const char* prop)
+static int CCONV cmSourceFileGetPropertyAsBool(void* arg, const char* prop)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   if (cmSourceFile* rsf = sf->RealSourceFile) {
     return rsf->GetPropertyAsBool(prop) ? 1 : 0;
   }
-  return cmSystemTools::IsOn(cmSourceFileGetProperty(arg, prop)) ? 1 : 0;
+  return cmIsOn(cmSourceFileGetProperty(arg, prop)) ? 1 : 0;
 }
 
-void CCONV cmSourceFileSetProperty(void* arg, const char* prop,
-                                   const char* value)
+static void CCONV cmSourceFileSetProperty(void* arg, const char* prop,
+                                          const char* value)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   if (cmSourceFile* rsf = sf->RealSourceFile) {
@@ -623,7 +628,7 @@ void CCONV cmSourceFileSetProperty(void* arg, const char* prop,
   }
 }
 
-void CCONV cmSourceFileAddDepend(void* arg, const char* depend)
+static void CCONV cmSourceFileAddDepend(void* arg, const char* depend)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   if (cmSourceFile* rsf = sf->RealSourceFile) {
@@ -633,11 +638,11 @@ void CCONV cmSourceFileAddDepend(void* arg, const char* depend)
   }
 }
 
-void CCONV cmSourceFileSetName(void* arg, const char* name, const char* dir,
-                               int numSourceExtensions,
-                               const char** sourceExtensions,
-                               int numHeaderExtensions,
-                               const char** headerExtensions)
+static void CCONV cmSourceFileSetName(void* arg, const char* name,
+                                      const char* dir, int numSourceExtensions,
+                                      const char** sourceExtensions,
+                                      int numHeaderExtensions,
+                                      const char** headerExtensions)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   if (sf->RealSourceFile) {
@@ -688,9 +693,7 @@ void CCONV cmSourceFileSetName(void* arg, const char* name, const char* dir,
 
   // Next, try the various source extensions
   for (std::string const& ext : sourceExts) {
-    hname = pathname;
-    hname += ".";
-    hname += ext;
+    hname = cmStrCat(pathname, '.', ext);
     if (cmSystemTools::FileExists(hname)) {
       sf->SourceExtension = ext;
       sf->FullPath = hname;
@@ -700,9 +703,7 @@ void CCONV cmSourceFileSetName(void* arg, const char* name, const char* dir,
 
   // Finally, try the various header extensions
   for (std::string const& ext : headerExts) {
-    hname = pathname;
-    hname += ".";
-    hname += ext;
+    hname = cmStrCat(pathname, '.', ext);
     if (cmSystemTools::FileExists(hname)) {
       sf->SourceExtension = ext;
       sf->FullPath = hname;
@@ -722,8 +723,9 @@ void CCONV cmSourceFileSetName(void* arg, const char* name, const char* dir,
   cmSystemTools::Error(e.str());
 }
 
-void CCONV cmSourceFileSetName2(void* arg, const char* name, const char* dir,
-                                const char* ext, int headerFileOnly)
+static void CCONV cmSourceFileSetName2(void* arg, const char* name,
+                                       const char* dir, const char* ext,
+                                       int headerFileOnly)
 {
   cmCPluginAPISourceFile* sf = static_cast<cmCPluginAPISourceFile*>(arg);
   if (sf->RealSourceFile) {
@@ -738,7 +740,7 @@ void CCONV cmSourceFileSetName2(void* arg, const char* name, const char* dir,
   }
   sf->SourceName = name;
   std::string fname = sf->SourceName;
-  if (ext && strlen(ext)) {
+  if (cmNonempty(ext)) {
     fname += ".";
     fname += ext;
   }
@@ -747,57 +749,58 @@ void CCONV cmSourceFileSetName2(void* arg, const char* name, const char* dir,
   sf->SourceExtension = ext;
 }
 
-char* CCONV cmGetFilenameWithoutExtension(const char* name)
+static char* CCONV cmGetFilenameWithoutExtension(const char* name)
 {
   std::string sres = cmSystemTools::GetFilenameWithoutExtension(name);
   return strdup(sres.c_str());
 }
 
-char* CCONV cmGetFilenamePath(const char* name)
+static char* CCONV cmGetFilenamePath(const char* name)
 {
   std::string sres = cmSystemTools::GetFilenamePath(name);
   return strdup(sres.c_str());
 }
 
-char* CCONV cmCapitalized(const char* name)
+static char* CCONV cmCapitalized(const char* name)
 {
   std::string sres = cmSystemTools::Capitalized(name);
   return strdup(sres.c_str());
 }
 
-void CCONV cmCopyFileIfDifferent(const char* name1, const char* name2)
+static void CCONV cmCopyFileIfDifferent(const char* name1, const char* name2)
 {
   cmSystemTools::CopyFileIfDifferent(name1, name2);
 }
 
-void CCONV cmRemoveFile(const char* name)
+static void CCONV cmRemoveFile(const char* name)
 {
   cmSystemTools::RemoveFile(name);
 }
 
-void CCONV cmDisplayStatus(void* arg, const char* message)
+static void CCONV cmDisplayStatus(void* arg, const char* message)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
   mf->DisplayStatus(message, -1);
 }
 
-void CCONV cmFree(void* data)
+static void CCONV cmFree(void* data)
 {
   free(data);
 }
 
-void CCONV DefineSourceFileProperty(void* arg, const char* name,
-                                    const char* briefDocs,
-                                    const char* longDocs, int chained)
+static void CCONV DefineSourceFileProperty(void* arg, const char* name,
+                                           const char* briefDocs,
+                                           const char* longDocs, int chained)
 {
   cmMakefile* mf = static_cast<cmMakefile*>(arg);
-  mf->GetState()->DefineProperty(name, cmProperty::SOURCE_FILE, briefDocs,
-                                 longDocs, chained != 0);
+  mf->GetState()->DefineProperty(name, cmProperty::SOURCE_FILE,
+                                 briefDocs ? briefDocs : "",
+                                 longDocs ? longDocs : "", chained != 0);
 }
 
 } // close the extern "C" scope
 
-cmCAPI cmStaticCAPI = {
+static cmCAPI cmStaticCAPI = {
   cmGetClientData,
   cmGetTotalArgumentSize,
   cmFreeArguments,

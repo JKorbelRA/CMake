@@ -1,22 +1,25 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmExportBuildFileGenerator_h
-#define cmExportBuildFileGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmAlgorithms.h"
+#include <iosfwd>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <cmext/algorithm>
+
 #include "cmExportFileGenerator.h"
 #include "cmStateTypes.h"
 
-#include <iosfwd>
-#include <string>
-#include <vector>
-
 class cmExportSet;
+class cmFileSet;
 class cmGeneratorTarget;
 class cmGlobalGenerator;
 class cmLocalGenerator;
+class cmTargetExport;
 
 /** \class cmExportBuildFileGenerator
  * \brief Generate a file exporting targets from a build tree.
@@ -40,7 +43,7 @@ public:
   void GetTargets(std::vector<std::string>& targets) const;
   void AppendTargets(std::vector<std::string> const& targets)
   {
-    cmAppend(this->Targets, targets);
+    cm::append(this->Targets, targets);
   }
   void SetExportSet(cmExportSet*);
 
@@ -59,12 +62,12 @@ protected:
     cmGeneratorTarget const* target) const;
   void HandleMissingTarget(std::string& link_libs,
                            std::vector<std::string>& missingTargets,
-                           cmGeneratorTarget* depender,
+                           cmGeneratorTarget const* depender,
                            cmGeneratorTarget* dependee) override;
 
-  void ComplainAboutMissingTarget(cmGeneratorTarget* depender,
-                                  cmGeneratorTarget* dependee,
-                                  int occurrences);
+  void ComplainAboutMissingTarget(cmGeneratorTarget const* depender,
+                                  cmGeneratorTarget const* dependee,
+                                  std::vector<std::string> const& namespaces);
 
   /** Fill in properties indicating built file locations.  */
   void SetImportLocationProperty(const std::string& config,
@@ -72,16 +75,19 @@ protected:
                                  cmGeneratorTarget* target,
                                  ImportPropertyMap& properties);
 
-  std::string InstallNameDir(cmGeneratorTarget* target,
+  std::string InstallNameDir(cmGeneratorTarget const* target,
                              const std::string& config) override;
 
-  std::vector<std::string> FindNamespaces(cmGlobalGenerator* gg,
-                                          const std::string& name);
+  std::string GetFileSetDirectories(cmGeneratorTarget* gte, cmFileSet* fileSet,
+                                    cmTargetExport* te) override;
+  std::string GetFileSetFiles(cmGeneratorTarget* gte, cmFileSet* fileSet,
+                              cmTargetExport* te) override;
+
+  std::pair<std::vector<std::string>, std::string> FindBuildExportInfo(
+    cmGlobalGenerator* gg, const std::string& name);
 
   std::vector<std::string> Targets;
   cmExportSet* ExportSet;
   std::vector<cmGeneratorTarget*> Exports;
   cmLocalGenerator* LG;
 };
-
-#endif

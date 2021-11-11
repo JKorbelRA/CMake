@@ -51,6 +51,12 @@ checkForProperty(bld_testLib4 "EXPORTED_PROPERTY2"  "EXPORTING_TESTLIB4_1")
 checkForProperty(exp_testLib4 "EXPORTED_PROPERTY2"  "EXPORTING_TESTLIB4_1")
 checkForProperty(bld_testLib4 "EXPORTED_PROPERTY3"  "EXPORTING_TESTLIB4_2")
 checkForProperty(exp_testLib4 "EXPORTED_PROPERTY3"  "EXPORTING_TESTLIB4_2")
+checkForProperty(bld_testLibDeprecation "DEPRECATION"  "Deprecated version. Please use latest version")
+checkForProperty(exp_testLibDeprecation "DEPRECATION"  "Deprecated version. Please use latest version")
+
+# Try linking to a deprecated library
+target_link_libraries(imp_testExe1 exp_testLibDeprecation)
+
 
 # Try linking to a library imported from the install tree.
 target_link_libraries(imp_testExe1
@@ -63,6 +69,10 @@ target_link_libraries(imp_testExe1
   exp_testLibCycleA
   exp_testLibPerConfigDest
   )
+
+add_library(imp_testInterfaceInclude1 STATIC imp_testInterfaceInclude1.c)
+target_include_directories(imp_testInterfaceInclude1 SYSTEM PRIVATE testInterfaceIncludeSystem)
+target_link_libraries(imp_testInterfaceInclude1 PRIVATE exp_testInterfaceIncludeUser)
 
 # Try building a plugin to an executable imported from the install tree.
 add_library(imp_mod1 MODULE imp_mod1.c)
@@ -103,6 +113,10 @@ target_link_libraries(imp_testExe1b
   bld_testLibCycleA
   bld_testLibPerConfigDest
   )
+
+add_library(imp_testInterfaceInclude1b STATIC imp_testInterfaceInclude1.c)
+target_include_directories(imp_testInterfaceInclude1b SYSTEM PRIVATE testInterfaceIncludeSystem)
+target_link_libraries(imp_testInterfaceInclude1b PRIVATE bld_testInterfaceIncludeUser)
 
 add_custom_target(check_testLib1_genex ALL
   COMMAND ${CMAKE_COMMAND} -DtestLib1=$<TARGET_FILE:exp_testLib1>
@@ -319,14 +333,14 @@ target_compile_definitions(deps_shared_iface
     $<$<STREQUAL:$<TARGET_PROPERTY:CUSTOM_STRING>,testcontent>:CUSTOM_STRING_IS_MATCH>
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "LCC")
   target_compile_definitions(deps_shared_iface
     PRIVATE
       "DO_GNU_TESTS"
   )
 endif()
 
-if (APPLE OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+if (APPLE OR CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "LCC")
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag(-fPIE run_pic_test)
 else()
@@ -359,7 +373,7 @@ endif()
 
 add_executable(deps_shared_iface2 deps_shared_iface.cpp)
 target_link_libraries(deps_shared_iface2 bld_testSharedLibDepends bld_subdirlib)
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "LCC")
   target_compile_definitions(deps_shared_iface2
     PRIVATE
       "DO_GNU_TESTS"
@@ -407,6 +421,7 @@ endforeach()
 unset(_configs)
 
 if (((CMAKE_C_COMPILER_ID STREQUAL GNU AND CMAKE_C_COMPILER_VERSION VERSION_GREATER 4.4)
+    OR CMAKE_C_COMPILER_ID MATCHES "LCC"
     OR (CMAKE_C_COMPILER_ID STREQUAL Clang AND NOT "x${CMAKE_CXX_SIMULATE_ID}" STREQUAL "xMSVC"))
     AND (CMAKE_GENERATOR STREQUAL "Unix Makefiles" OR CMAKE_GENERATOR STREQUAL "Ninja"))
   include(CheckCXXCompilerFlag)
@@ -498,4 +513,11 @@ checkForProperty(Req::testLinkDirectories "INTERFACE_LINK_DIRECTORIES" "${CMAKE_
 if(CMAKE_GENERATOR MATCHES "Make|Ninja")
   checkForProperty(bld_testLinkDepends "INTERFACE_LINK_DEPENDS" "BUILD_LINK_DEPENDS")
   checkForProperty(Req::testLinkDepends "INTERFACE_LINK_DEPENDS" "${CMAKE_INSTALL_PREFIX}/INSTALL_LINK_DEPENDS")
+endif()
+
+#------------------------------------------------------------------------------
+# test import of CUDA language level
+if(CMake_TEST_CUDA)
+  checkForProperty(bld_cudaInterfaceLib "INTERFACE_COMPILE_FEATURES" "cuda_std_11")
+  checkForProperty(Req::cudaInterfaceLib "INTERFACE_COMPILE_FEATURES" "cuda_std_14")
 endif()

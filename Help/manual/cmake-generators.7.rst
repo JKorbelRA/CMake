@@ -52,13 +52,16 @@ Makefile Generators
    /generator/Unix Makefiles
    /generator/Watcom WMake
 
-Ninja Generator
-^^^^^^^^^^^^^^^
+.. _`Ninja Generators`:
+
+Ninja Generators
+^^^^^^^^^^^^^^^^
 
 .. toctree::
    :maxdepth: 1
 
    /generator/Ninja
+   /generator/Ninja Multi-Config
 
 .. _`IDE Build Tool Generators`:
 
@@ -88,6 +91,7 @@ Visual Studio Generators
    /generator/Visual Studio 14 2015
    /generator/Visual Studio 15 2017
    /generator/Visual Studio 16 2019
+   /generator/Visual Studio 17 2022
 
 Other Generators
 ^^^^^^^^^^^^^^^^

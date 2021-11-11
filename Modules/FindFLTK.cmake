@@ -77,6 +77,10 @@ The following cache variables are also available to set or use:
 
 ``FLTK_IMAGES_LIBRARY_DEBUG``
   The FLTK Images library (debug)
+
+.. versionadded:: 3.11
+  Debug and Release variants are found separately and use per-configuration
+  variables.
 #]=======================================================================]
 
 if(NOT FLTK_SKIP_OPENGL)
@@ -104,7 +108,7 @@ if(APPLE)
   set( FLTK_PLATFORM_DEPENDENT_LIBS  "-framework Carbon -framework Cocoa -framework ApplicationServices -lz")
 endif()
 
-# If FLTK_INCLUDE_DIR is already defined we assigne its value to FLTK_DIR
+# If FLTK_INCLUDE_DIR is already defined we assign its value to FLTK_DIR.
 if(FLTK_INCLUDE_DIR)
   set(FLTK_DIR ${FLTK_INCLUDE_DIR})
 endif()
@@ -148,13 +152,17 @@ if(NOT FLTK_DIR)
 endif()
 
 # Check if FLTK was built using CMake
-if(EXISTS ${FLTK_DIR}/FLTKConfig.cmake)
-  set(FLTK_BUILT_WITH_CMAKE 1)
-endif()
+foreach(fltk_include IN LISTS FLTK_DIR)
+  if(EXISTS "${fltk_include}/FLTKConfig.cmake")
+    set(FLTK_BUILT_WITH_CMAKE 1)
+    set(FLTK_CMAKE_PATH "${fltk_include}/FLTKConfig.cmake")
+    break()
+  endif()
+endforeach()
 
 if(FLTK_BUILT_WITH_CMAKE)
   set(FLTK_FOUND 1)
-  include(${FLTK_DIR}/FLTKConfig.cmake)
+  include("${FLTK_CMAKE_PATH}")
 
   # Fluid
   if(FLUID_COMMAND)
