@@ -15,6 +15,7 @@
 #include "cmVersion.h"
 #include "cmVersionConfig.h"
 
+class cmFileSet;
 class cmGeneratorTarget;
 class cmTargetExport;
 
@@ -185,6 +186,16 @@ protected:
   bool PopulateExportProperties(cmGeneratorTarget const* gte,
                                 ImportPropertyMap& properties,
                                 std::string& errorMessage);
+
+  void GenerateTargetFileSets(cmGeneratorTarget* gte, std::ostream& os,
+                              cmTargetExport* te = nullptr);
+
+  virtual std::string GetFileSetDirectories(cmGeneratorTarget* gte,
+                                            cmFileSet* fileSet,
+                                            cmTargetExport* te) = 0;
+  virtual std::string GetFileSetFiles(cmGeneratorTarget* gte,
+                                      cmFileSet* fileSet,
+                                      cmTargetExport* te) = 0;
 
   // The namespace in which the exports are placed in the generated file.
   std::string Namespace;
