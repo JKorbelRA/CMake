@@ -12,6 +12,7 @@
 
 #include <cm/optional>
 
+#include "cmConstStack.h"
 #include "cmSystemTools.h"
 
 /** \class cmListFileCache
@@ -51,9 +52,9 @@ struct cmListFileArgument
 class cmListFileFunction
 {
 public:
-  cmListFileFunction(std::string name, long line,
+  cmListFileFunction(std::string name, long line, long lineEnd,
                      std::vector<cmListFileArgument> args)
-    : Impl{ std::make_shared<Implementation>(std::move(name), line,
+    : Impl{ std::make_shared<Implementation>(std::move(name), line, lineEnd,
                                              std::move(args)) }
   {
   }
@@ -69,6 +70,7 @@ public:
   }
 
   long Line() const noexcept { return this->Impl->Line; }
+  long LineEnd() const noexcept { return this->Impl->LineEnd; }
 
   std::vector<cmListFileArgument> const& Arguments() const noexcept
   {
@@ -78,11 +80,12 @@ public:
 private:
   struct Implementation
   {
-    Implementation(std::string name, long line,
+    Implementation(std::string name, long line, long lineEnd,
                    std::vector<cmListFileArgument> args)
       : OriginalName{ std::move(name) }
       , LowerCaseName{ cmSystemTools::LowerCase(this->OriginalName) }
       , Line{ line }
+      , LineEnd{ lineEnd }
       , Arguments{ std::move(args) }
     {
     }
@@ -90,6 +93,7 @@ private:
     std::string OriginalName;
     std::string LowerCaseName;
     long Line = 0;
+    long LineEnd = 0;
     std::vector<cmListFileArgument> Arguments;
   };
 
@@ -125,6 +129,17 @@ public:
   {
   }
 
+  static cmListFileContext FromListFilePath(std::string const& filePath)
+  {
+    // We are entering a file-level scope but have not yet reached
+    // any specific line or command invocation within it.  This context
+    // is useful to print when it is at the top but otherwise can be
+    // skipped during call stack printing.
+    cmListFileContext lfc;
+    lfc.FilePath = filePath;
+    return lfc;
+  }
+
   static cmListFileContext FromListFileFunction(
     cmListFileFunction const& lff, std::string const& fileName,
     cm::optional<std::string> deferId = {})
@@ -143,38 +158,16 @@ bool operator<(const cmListFileContext& lhs, const cmListFileContext& rhs);
 bool operator==(cmListFileContext const& lhs, cmListFileContext const& rhs);
 bool operator!=(cmListFileContext const& lhs, cmListFileContext const& rhs);
 
-// Represent a backtrace (call stack).  Provide value semantics
-// but use efficient reference-counting underneath to avoid copies.
+// Represent a backtrace (call stack) with efficient value semantics.
 class cmListFileBacktrace
+  : public cmConstStack<cmListFileContext, cmListFileBacktrace>
 {
-public:
-  // Default-constructed backtrace is empty.
-  cmListFileBacktrace() = default;
-
-  // Get a backtrace with the given file scope added to the top.
-  cmListFileBacktrace Push(std::string const& file) const;
-
-  // Get a backtrace with the given call context added to the top.
-  cmListFileBacktrace Push(cmListFileContext const& lfc) const;
-
-  // Get a backtrace with the top level removed.
-  // May not be called until after a matching Push.
-  cmListFileBacktrace Pop() const;
-
-  // Get the context at the top of the backtrace.
-  // This may be called only if Empty() would return false.
-  cmListFileContext const& Top() const;
-
-  // Return true if this backtrace is empty.
-  bool Empty() const;
-
-private:
-  struct Entry;
-  std::shared_ptr<Entry const> TopEntry;
-  cmListFileBacktrace(std::shared_ptr<Entry const> parent,
-                      cmListFileContext const& lfc);
-  cmListFileBacktrace(std::shared_ptr<Entry const> top);
+  using cmConstStack::cmConstStack;
+  friend class cmConstStack<cmListFileContext, cmListFileBacktrace>;
 };
+#ifndef cmListFileCache_cxx
+extern template class cmConstStack<cmListFileContext, cmListFileBacktrace>;
+#endif
 
 // Wrap type T as a value with a backtrace.  For purposes of
 // ordering and equality comparison, only the original value is
@@ -230,9 +223,10 @@ public:
   friend bool operator==(T const& l, BTs<T> const& r) { return l == r.Value; }
 };
 
-std::vector<BT<std::string>> ExpandListWithBacktrace(
+std::vector<BT<std::string>> cmExpandListWithBacktrace(
   std::string const& list,
-  cmListFileBacktrace const& bt = cmListFileBacktrace());
+  cmListFileBacktrace const& bt = cmListFileBacktrace(),
+  bool emptyArgs = false);
 
 struct cmListFile
 {

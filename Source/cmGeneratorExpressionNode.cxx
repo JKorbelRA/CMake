@@ -1198,6 +1198,152 @@ static const struct LinkLanguageAndIdNode : public cmGeneratorExpressionNode
   }
 } linkLanguageAndIdNode;
 
+static const struct LinkLibraryNode : public cmGeneratorExpressionNode
+{
+  LinkLibraryNode() {} // NOLINT(modernize-use-equals-default)
+
+  int NumExpectedParameters() const override { return OneOrMoreParameters; }
+
+  std::string Evaluate(
+    const std::vector<std::string>& parameters,
+    cmGeneratorExpressionContext* context,
+    const GeneratorExpressionContent* content,
+    cmGeneratorExpressionDAGChecker* dagChecker) const override
+  {
+    if (!context->HeadTarget || !dagChecker ||
+        !dagChecker->EvaluatingLinkLibraries()) {
+      reportError(context, content->GetOriginalExpression(),
+                  "$<LINK_LIBRARY:...> may only be used with binary targets "
+                  "to specify link libraries.");
+      return std::string();
+    }
+
+    std::vector<std::string> list;
+    cmExpandLists(parameters.begin(), parameters.end(), list);
+    if (list.empty()) {
+      reportError(
+        context, content->GetOriginalExpression(),
+        "$<LINK_LIBRARY:...> expects a feature name as first argument.");
+      return std::string();
+    }
+    if (list.size() == 1) {
+      // no libraries specified, ignore this genex
+      return std::string();
+    }
+
+    static cmsys::RegularExpression featureNameValidator("^[A-Za-z0-9_]+$");
+    auto const& feature = list.front();
+    if (!featureNameValidator.find(feature)) {
+      reportError(context, content->GetOriginalExpression(),
+                  cmStrCat("The feature name '", feature,
+                           "' contains invalid characters."));
+      return std::string();
+    }
+
+    const auto LL_BEGIN = cmStrCat("<LINK_LIBRARY:", feature, '>');
+    const auto LL_END = cmStrCat("</LINK_LIBRARY:", feature, '>');
+
+    // filter out $<LINK_LIBRARY:..> tags with same feature
+    // and raise an error for any different feature
+    cm::erase_if(list, [&](const std::string& item) -> bool {
+      return item == LL_BEGIN || item == LL_END;
+    });
+    auto it =
+      std::find_if(list.cbegin() + 1, list.cend(),
+                   [&feature](const std::string& item) -> bool {
+                     return cmHasPrefix(item, "<LINK_LIBRARY:"_s) &&
+                       item.substr(14, item.find('>', 14) - 14) != feature;
+                   });
+    if (it != list.cend()) {
+      reportError(
+        context, content->GetOriginalExpression(),
+        "$<LINK_LIBRARY:...> with different features cannot be nested.");
+      return std::string();
+    }
+    // $<LINK_GROUP:...> must not appear as part of $<LINK_LIBRARY:...>
+    it = std::find_if(list.cbegin() + 1, list.cend(),
+                      [](const std::string& item) -> bool {
+                        return cmHasPrefix(item, "<LINK_GROUP:"_s);
+                      });
+    if (it != list.cend()) {
+      reportError(context, content->GetOriginalExpression(),
+                  "$<LINK_GROUP:...> cannot be nested inside a "
+                  "$<LINK_LIBRARY:...> expression.");
+      return std::string();
+    }
+
+    list.front() = LL_BEGIN;
+    list.push_back(LL_END);
+
+    return cmJoin(list, ";"_s);
+  }
+} linkLibraryNode;
+
+static const struct LinkGroupNode : public cmGeneratorExpressionNode
+{
+  LinkGroupNode() {} // NOLINT(modernize-use-equals-default)
+
+  int NumExpectedParameters() const override { return OneOrMoreParameters; }
+
+  std::string Evaluate(
+    const std::vector<std::string>& parameters,
+    cmGeneratorExpressionContext* context,
+    const GeneratorExpressionContent* content,
+    cmGeneratorExpressionDAGChecker* dagChecker) const override
+  {
+    if (!context->HeadTarget || !dagChecker ||
+        !dagChecker->EvaluatingLinkLibraries()) {
+      reportError(context, content->GetOriginalExpression(),
+                  "$<LINK_GROUP:...> may only be used with binary targets "
+                  "to specify group of link libraries.");
+      return std::string();
+    }
+
+    std::vector<std::string> list;
+    cmExpandLists(parameters.begin(), parameters.end(), list);
+    if (list.empty()) {
+      reportError(
+        context, content->GetOriginalExpression(),
+        "$<LINK_GROUP:...> expects a feature name as first argument.");
+      return std::string();
+    }
+    // $<LINK_GROUP:..> cannot be nested
+    if (std::find_if(list.cbegin(), list.cend(),
+                     [](const std::string& item) -> bool {
+                       return cmHasPrefix(item, "<LINK_GROUP"_s);
+                     }) != list.cend()) {
+      reportError(context, content->GetOriginalExpression(),
+                  "$<LINK_GROUP:...> cannot be nested.");
+      return std::string();
+    }
+    if (list.size() == 1) {
+      // no libraries specified, ignore this genex
+      return std::string();
+    }
+
+    static cmsys::RegularExpression featureNameValidator("^[A-Za-z0-9_]+$");
+    auto const& feature = list.front();
+    if (!featureNameValidator.find(feature)) {
+      reportError(context, content->GetOriginalExpression(),
+                  cmStrCat("The feature name '", feature,
+                           "' contains invalid characters."));
+      return std::string();
+    }
+
+    const auto LG_BEGIN = cmStrCat(
+      "<LINK_GROUP:", feature, ':',
+      cmJoin(cmRange<decltype(list.cbegin())>(list.cbegin() + 1, list.cend()),
+             "|"_s),
+      '>');
+    const auto LG_END = cmStrCat("</LINK_GROUP:", feature, '>');
+
+    list.front() = LG_BEGIN;
+    list.push_back(LG_END);
+
+    return cmJoin(list, ";"_s);
+  }
+} linkGroupNode;
+
 static const struct HostLinkNode : public cmGeneratorExpressionNode
 {
   HostLinkNode() {} // NOLINT(modernize-use-equals-default)
@@ -1269,7 +1415,8 @@ static std::string getLinkedTargetsContent(
 {
   std::string result;
   if (cmLinkImplementationLibraries const* impl =
-        target->GetLinkImplementationLibraries(context->Config)) {
+        target->GetLinkImplementationLibraries(
+          context->Config, cmGeneratorTarget::LinkInterfaceFor::Usage)) {
     for (cmLinkImplItem const& lib : impl->Libraries) {
       if (lib.Target) {
         // Pretend $<TARGET_PROPERTY:lib.Target,prop> appeared in our
@@ -1638,7 +1785,7 @@ static const struct TargetObjectsNode : public cmGeneratorExpressionNode
     {
       std::string reason;
       if (!context->EvaluateForBuildsystem &&
-          !gg->HasKnownObjectFileLocation(&reason)) {
+          !gt->Target->HasKnownObjectFileLocation(&reason)) {
         std::ostringstream e;
         e << "The evaluation of the TARGET_OBJECTS generator expression "
              "is only suitable for consumption by CMake (limited"
@@ -1951,6 +2098,7 @@ class ArtifactPathTag;
 class ArtifactPdbTag;
 class ArtifactSonameTag;
 class ArtifactBundleDirTag;
+class ArtifactBundleDirNameTag;
 class ArtifactBundleContentDirTag;
 
 template <typename ArtifactT, typename ComponentT>
@@ -2006,6 +2154,12 @@ struct TargetFilesystemArtifactDependency<ArtifactT, ArtifactDirTag>
 };
 template <>
 struct TargetFilesystemArtifactDependency<ArtifactBundleDirTag,
+                                          ArtifactPathTag>
+  : TargetFilesystemArtifactDependencyCMP0112
+{
+};
+template <>
+struct TargetFilesystemArtifactDependency<ArtifactBundleDirNameTag,
                                           ArtifactPathTag>
   : TargetFilesystemArtifactDependencyCMP0112
 {
@@ -2134,6 +2288,31 @@ struct TargetFilesystemArtifactResultCreator<ArtifactBundleDirTag>
     std::string outpath = target->GetDirectory(context->Config) + '/';
     return target->BuildBundleDirectory(outpath, context->Config,
                                         cmGeneratorTarget::BundleDirLevel);
+  }
+};
+
+template <>
+struct TargetFilesystemArtifactResultCreator<ArtifactBundleDirNameTag>
+{
+  static std::string Create(cmGeneratorTarget* target,
+                            cmGeneratorExpressionContext* context,
+                            const GeneratorExpressionContent* content)
+  {
+    if (target->IsImported()) {
+      ::reportError(
+        context, content->GetOriginalExpression(),
+        "TARGET_BUNDLE_DIR_NAME not allowed for IMPORTED targets.");
+      return std::string();
+    }
+    if (!target->IsBundleOnApple()) {
+      ::reportError(
+        context, content->GetOriginalExpression(),
+        "TARGET_BUNDLE_DIR_NAME is allowed only for Bundle targets.");
+      return std::string();
+    }
+
+    return target->GetAppBundleDirectory(context->Config,
+                                         cmGeneratorTarget::BundleDirLevel);
   }
 };
 
@@ -2270,7 +2449,8 @@ struct TargetFilesystemArtifact : public TargetArtifactBase
       return std::string();
     }
     // Not a dependent target if we are querying for ArtifactDirTag,
-    // ArtifactNameTag, ArtifactBundleDirTag, and ArtifactBundleContentDirTag
+    // ArtifactNameTag, ArtifactBundleDirTag, ArtifactBundleDirNameTag,
+    // and ArtifactBundleContentDirTag
     TargetFilesystemArtifactDependency<ArtifactT, ComponentT>::AddDependency(
       target, context);
 
@@ -2310,6 +2490,10 @@ static const TargetFilesystemArtifactNodeGroup<ArtifactPdbTag>
 
 static const TargetFilesystemArtifact<ArtifactBundleDirTag, ArtifactPathTag>
   targetBundleDirNode;
+
+static const TargetFilesystemArtifact<ArtifactBundleDirNameTag,
+                                      ArtifactNameTag>
+  targetBundleDirNameNode;
 
 static const TargetFilesystemArtifact<ArtifactBundleContentDirTag,
                                       ArtifactPathTag>
@@ -2636,6 +2820,7 @@ const cmGeneratorExpressionNode* cmGeneratorExpressionNode::GetNode(
     { "TARGET_SONAME_FILE_DIR", &targetSoNameNodeGroup.FileDir },
     { "TARGET_PDB_FILE_DIR", &targetPdbNodeGroup.FileDir },
     { "TARGET_BUNDLE_DIR", &targetBundleDirNode },
+    { "TARGET_BUNDLE_DIR_NAME", &targetBundleDirNameNode },
     { "TARGET_BUNDLE_CONTENT_DIR", &targetBundleContentDirNode },
     { "STREQUAL", &strEqualNode },
     { "EQUAL", &equalNode },
@@ -2668,6 +2853,8 @@ const cmGeneratorExpressionNode* cmGeneratorExpressionNode::GetNode(
     { "COMPILE_LANGUAGE", &languageNode },
     { "LINK_LANG_AND_ID", &linkLanguageAndIdNode },
     { "LINK_LANGUAGE", &linkLanguageNode },
+    { "LINK_LIBRARY", &linkLibraryNode },
+    { "LINK_GROUP", &linkGroupNode },
     { "HOST_LINK", &hostLinkNode },
     { "DEVICE_LINK", &deviceLinkNode },
     { "SHELL_PATH", &shellPathNode }

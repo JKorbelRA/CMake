@@ -4,18 +4,17 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "cmInstallGenerator.h"
-#include "cmListFileCache.h"
 #include "cmScriptGenerator.h"
 
 class cmExportInstallFileGenerator;
 class cmExportSet;
+class cmListFileBacktrace;
 class cmLocalGenerator;
 
 /** \class cmInstallExportGenerator
@@ -50,6 +49,7 @@ public:
   std::string const& GetDestination() const { return this->Destination; }
   std::string GetDestinationFile() const;
   std::string GetFileName() const { return this->FileName; }
+  std::string GetTempDir() const;
 
 protected:
   void GenerateScript(std::ostream& os) override;
@@ -57,8 +57,8 @@ protected:
   void GenerateScriptActions(std::ostream& os, Indent indent) override;
   void GenerateImportFile(cmExportSet const* exportSet);
   void GenerateImportFile(const char* config, cmExportSet const* exportSet);
+  std::string TempDirCalculate() const;
   void ComputeTempDir();
-  size_t GetMaxConfigLength() const;
 
   cmExportSet* const ExportSet;
   std::string const FilePermissions;

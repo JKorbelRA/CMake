@@ -182,6 +182,8 @@ set(SRCS
   cmComputeTargetDepends.cxx
   cmConsoleBuf.h
   cmConsoleBuf.cxx
+  cmConstStack.h
+  cmConstStack.tcc
   cmCPackPropertiesGenerator.h
   cmCPackPropertiesGenerator.cxx
   cmCryptoHash.cxx
@@ -358,6 +360,8 @@ set(SRCS
   cmLocalCommonGenerator.h
   cmLocalGenerator.cxx
   cmLocalGenerator.h
+  cmPlaceholderExpander.cxx
+  cmPlaceholderExpander.h
   cmRulePlaceholderExpander.cxx
   cmRulePlaceholderExpander.h
   cmLocalUnixMakefileGenerator3.cxx
@@ -456,6 +460,8 @@ set(SRCS
   cmVariableWatch.h
   cmVersion.cxx
   cmVersion.h
+  cmWindowsRegistry.cxx
+  cmWindowsRegistry.h
   cmWorkerPool.cxx
   cmWorkerPool.h
   cmWorkingDirectory.cxx
@@ -728,7 +734,7 @@ set(SRCS
   bindexplib.cxx
   )
 
-SET_PROPERTY(SOURCE cmProcessOutput.cxx APPEND PROPERTY COMPILE_DEFINITIONS
+SET_PROPERTY(SOURCE cmProcessOutput.cxx cmWindowsRegistry.cxx APPEND PROPERTY COMPILE_DEFINITIONS
   KWSYS_ENCODING_DEFAULT_CODEPAGE=${KWSYS_ENCODING_DEFAULT_CODEPAGE})
 
 # Xcode only works on Apple
@@ -1121,7 +1127,6 @@ if(APPLE)
     CPack/cmCPackBundleGenerator.cxx
     CPack/cmCPackDragNDropGenerator.cxx
     CPack/cmCPackPKGGenerator.cxx
-    CPack/cmCPackPackageMakerGenerator.cxx
     CPack/cmCPackProductBuildGenerator.cxx
     )
 endif()

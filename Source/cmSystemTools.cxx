@@ -1821,6 +1821,7 @@ bool copy_data(struct archive* ar, struct archive* aw)
 
 bool extract_tar(const std::string& outFileName,
                  const std::vector<std::string>& files, bool verbose,
+                 cmSystemTools::cmTarExtractTimestamps extractTimestamps,
                  bool extract)
 {
   cmLocaleRAII localeRAII;
@@ -1879,10 +1880,12 @@ bool extract_tar(const std::string& outFileName,
       cmSystemTools::Stdout("\n");
     }
     if (extract) {
-      r = archive_write_disk_set_options(ext, ARCHIVE_EXTRACT_TIME);
-      if (r != ARCHIVE_OK) {
-        ArchiveError("Problem with archive_write_disk_set_options(): ", ext);
-        break;
+      if (extractTimestamps == cmSystemTools::cmTarExtractTimestamps::Yes) {
+        r = archive_write_disk_set_options(ext, ARCHIVE_EXTRACT_TIME);
+        if (r != ARCHIVE_OK) {
+          ArchiveError("Problem with archive_write_disk_set_options(): ", ext);
+          break;
+        }
       }
 
       r = archive_write_header(ext, entry);
@@ -1942,13 +1945,15 @@ bool extract_tar(const std::string& outFileName,
 
 bool cmSystemTools::ExtractTar(const std::string& outFileName,
                                const std::vector<std::string>& files,
+                               cmTarExtractTimestamps extractTimestamps,
                                bool verbose)
 {
 #if !defined(CMAKE_BOOTSTRAP)
-  return extract_tar(outFileName, files, verbose, true);
+  return extract_tar(outFileName, files, verbose, extractTimestamps, true);
 #else
   (void)outFileName;
   (void)files;
+  (void)extractTimestamps;
   (void)verbose;
   return false;
 #endif
@@ -1959,7 +1964,8 @@ bool cmSystemTools::ListTar(const std::string& outFileName,
                             bool verbose)
 {
 #if !defined(CMAKE_BOOTSTRAP)
-  return extract_tar(outFileName, files, verbose, false);
+  return extract_tar(outFileName, files, verbose, cmTarExtractTimestamps::Yes,
+                     false);
 #else
   (void)outFileName;
   (void)files;
@@ -3314,12 +3320,22 @@ cmsys::Status cmSystemTools::CreateSymlink(std::string const& origName,
   uv_fs_t req;
   int flags = 0;
 #if defined(_WIN32)
-  if (cmsys::SystemTools::FileIsDirectory(origName)) {
-    flags |= UV_FS_SYMLINK_DIR;
+  bool const isDir = cmsys::SystemTools::FileIsDirectory(origName);
+  if (isDir) {
+    flags |= UV_FS_SYMLINK_JUNCTION;
   }
 #endif
   int err = uv_fs_symlink(nullptr, &req, origName.c_str(), newName.c_str(),
                           flags, nullptr);
+#if defined(_WIN32)
+  if (err && uv_fs_get_system_error(&req) == ERROR_NOT_SUPPORTED && isDir) {
+    // Try fallback to symlink for network (requires additional permissions).
+    flags ^= UV_FS_SYMLINK_JUNCTION | UV_FS_SYMLINK_DIR;
+    err = uv_fs_symlink(nullptr, &req, origName.c_str(), newName.c_str(),
+                        flags, nullptr);
+  }
+#endif
+
   cmsys::Status status;
   if (err) {
 #if defined(_WIN32)
@@ -3411,5 +3427,14 @@ cm::string_view cmSystemTools::GetSystemName()
     return systemName;
   }
   return "";
+#endif
+}
+
+char cmSystemTools::GetSystemPathlistSeparator()
+{
+#if defined(_WIN32)
+  return ';';
+#else
+  return ':';
 #endif
 }

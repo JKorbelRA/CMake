@@ -38,6 +38,7 @@ dnf install --setopt=install_weak_deps=False -y \
 
 # Packages needed to test CTest.
 dnf install --setopt=install_weak_deps=False -y \
+    breezy \
     subversion \
     mercurial
 
@@ -68,10 +69,12 @@ dnf install --setopt=install_weak_deps=False -y \
     gsl-devel \
     gtest-devel \
     gtk2-devel \
+    java-11-openjdk-devel \
     jsoncpp-devel \
     lapack-devel \
     libarchive-devel \
     libcurl-devel \
+    libicu-devel \
     libinput-devel systemd-devel \
     libjpeg-turbo-devel \
     libpng-devel \
@@ -106,3 +109,8 @@ curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
 python2 get-pip.py
 rm get-pip.py
 pip2.7 install numpy
+
+# Perforce
+curl -L -O https://www.perforce.com/downloads/perforce/r21.2/bin.linux26x86_64/helix-core-server.tgz
+tar -C /usr/local/bin -xvzf helix-core-server.tgz -- p4 p4d
+rm helix-core-server.tgz

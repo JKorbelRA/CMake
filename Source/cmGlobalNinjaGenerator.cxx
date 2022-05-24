@@ -2495,8 +2495,7 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
     snapshot.GetDirectory().SetCurrentBinary(dir_cur_bld);
     auto mfd = cm::make_unique<cmMakefile>(this, snapshot);
     auto lgd = this->CreateLocalGenerator(mfd.get());
-    lgd->SetRelativePathTopSource(dir_top_src);
-    lgd->SetRelativePathTopBinary(dir_top_bld);
+    lgd->SetRelativePathTop(dir_top_src, dir_top_bld);
     this->Makefiles.push_back(std::move(mfd));
     this->LocalGenerators.push_back(std::move(lgd));
   }
@@ -2535,6 +2534,11 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
     }
   }
 
+  const char* module_ext = "";
+  if (arg_modmapfmt == "gcc") {
+    module_ext = ".gcm";
+  }
+
   // Extend the module map with those provided by this target.
   // We do this after loading the modules provided by linked targets
   // in case we have one of the same name that must be preferred.
@@ -2551,7 +2555,9 @@ bool cmGlobalNinjaGenerator::WriteDyndepFile(
         }
       } else {
         // Assume the module file path matches the logical module name.
-        mod = cmStrCat(module_dir, p.LogicalName);
+        std::string safe_logical_name = p.LogicalName;
+        cmSystemTools::ReplaceString(safe_logical_name, ":", "-");
+        mod = cmStrCat(module_dir, safe_logical_name, module_ext);
       }
       mod_files[p.LogicalName] = mod;
       tm[p.LogicalName] = mod;

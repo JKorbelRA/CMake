@@ -241,14 +241,14 @@ cmListFileBacktrace cmMakefile::GetBacktrace() const
   return this->Backtrace;
 }
 
-void cmMakefile::PrintCommandTrace(
-  cmListFileFunction const& lff,
-  cm::optional<std::string> const& deferId) const
+void cmMakefile::PrintCommandTrace(cmListFileFunction const& lff,
+                                   cmListFileBacktrace const& bt,
+                                   CommandMissingFromStack missing) const
 {
   // Check if current file in the list of requested to trace...
   std::vector<std::string> const& trace_only_this_files =
     this->GetCMakeInstance()->GetTraceSources();
-  std::string const& full_path = this->GetBacktrace().Top().FilePath;
+  std::string const& full_path = bt.Top().FilePath;
   std::string const& only_filename = cmSystemTools::GetFilenameName(full_path);
   bool trace = trace_only_this_files.empty();
   if (!trace) {
@@ -282,6 +282,7 @@ void cmMakefile::PrintCommandTrace(
       args.push_back(arg.Value);
     }
   }
+  cm::optional<std::string> const& deferId = bt.Top().DeferId;
 
   switch (this->GetCMakeInstance()->GetTraceFormat()) {
     case cmake::TraceFormat::TRACE_JSON_V1: {
@@ -291,6 +292,9 @@ void cmMakefile::PrintCommandTrace(
       builder["indentation"] = "";
       val["file"] = full_path;
       val["line"] = static_cast<Json::Value::Int64>(lff.Line());
+      if (lff.Line() != lff.LineEnd()) {
+        val["line_end"] = static_cast<Json::Value::Int64>(lff.LineEnd());
+      }
       if (deferId) {
         val["defer"] = *deferId;
       }
@@ -300,8 +304,10 @@ void cmMakefile::PrintCommandTrace(
         val["args"].append(arg);
       }
       val["time"] = cmSystemTools::GetTime();
-      val["frame"] =
+      val["frame"] = (missing == CommandMissingFromStack::Yes ? 1 : 0) +
         static_cast<Json::Value::UInt64>(this->ExecutionStatusStack.size());
+      val["global_frame"] = (missing == CommandMissingFromStack::Yes ? 1 : 0) +
+        static_cast<Json::Value::UInt64>(this->RecursionDepth);
       msg << Json::writeString(builder, val);
 #endif
       break;
@@ -422,7 +428,7 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
     if (!cmSystemTools::GetFatalErrorOccured()) {
       // if trace is enabled, print out invoke information
       if (this->GetCMakeInstance()->GetTrace()) {
-        this->PrintCommandTrace(lff, this->Backtrace.Top().DeferId);
+        this->PrintCommandTrace(lff, this->Backtrace);
       }
       // Try invoking the command.
       bool invokeSucceeded = command(lff.Arguments(), status);
@@ -453,6 +459,11 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
   return result;
 }
 
+bool cmMakefile::IsImportedTargetGlobalScope() const
+{
+  return this->CurrentImportedTargetScope == ImportedTargetScope::Global;
+}
+
 class cmMakefile::IncludeScope
 {
 public:
@@ -480,7 +491,8 @@ cmMakefile::IncludeScope::IncludeScope(cmMakefile* mf,
   , CheckCMP0011(false)
   , ReportError(true)
 {
-  this->Makefile->Backtrace = this->Makefile->Backtrace.Push(filenametoread);
+  this->Makefile->Backtrace = this->Makefile->Backtrace.Push(
+    cmListFileContext::FromListFilePath(filenametoread));
 
   this->Makefile->PushFunctionBlockerBarrier();
 
@@ -613,7 +625,8 @@ public:
     : Makefile(mf)
     , ReportError(true)
   {
-    this->Makefile->Backtrace = this->Makefile->Backtrace.Push(filenametoread);
+    this->Makefile->Backtrace = this->Makefile->Backtrace.Push(
+      cmListFileContext::FromListFilePath(filenametoread));
 
     this->Makefile->StateSnapshot =
       this->Makefile->GetState()->CreateInlineListFileSnapshot(
@@ -1576,7 +1589,8 @@ void cmMakefile::Configure()
   // Add the bottom of all backtraces within this directory.
   // We will never pop this scope because it should be available
   // for messages during the generate step too.
-  this->Backtrace = this->Backtrace.Push(currentStart);
+  this->Backtrace =
+    this->Backtrace.Push(cmListFileContext::FromListFilePath(currentStart));
 
   BuildsystemFileScope scope(this);
 
@@ -1662,6 +1676,7 @@ void cmMakefile::Configure()
         "the first line.",
         this->Backtrace);
       cmListFileFunction project{ "project",
+                                  0,
                                   0,
                                   { { "Project", cmListFileArgument::Unquoted,
                                       0 },
@@ -3976,6 +3991,31 @@ std::vector<std::string> cmMakefile::GetPropertyKeys() const
   return this->StateSnapshot.GetDirectory().GetPropertyKeys();
 }
 
+void cmMakefile::CheckProperty(const std::string& prop) const
+{
+  // Certain properties need checking.
+  if (prop == "LINK_LIBRARIES") {
+    if (cmValue value = this->GetProperty(prop)) {
+      // Look for <LINK_LIBRARY:> internal pattern
+      static cmsys::RegularExpression linkPattern(
+        "(^|;)(</?LINK_(LIBRARY|GROUP):[^;>]*>)(;|$)");
+      if (!linkPattern.find(value)) {
+        return;
+      }
+
+      // Report an error.
+      this->IssueMessage(
+        MessageType::FATAL_ERROR,
+        cmStrCat("Property ", prop, " contains the invalid item \"",
+                 linkPattern.match(2), "\". The ", prop,
+                 " property may contain the generator-expression \"$<LINK_",
+                 linkPattern.match(3),
+                 ":...>\" which may be used to specify how the libraries are "
+                 "linked."));
+    }
+  }
+}
+
 cmTarget* cmMakefile::FindLocalNonAliasTarget(const std::string& name) const
 {
   auto i = this->Targets.find(name);
@@ -4395,12 +4435,14 @@ bool cmMakefile::SetPolicy(cmPolicies::PolicyID id,
   }
 
   // Deprecate old policies.
-  if (status == cmPolicies::OLD && id <= cmPolicies::CMP0094 &&
+  if (status == cmPolicies::OLD && id <= cmPolicies::CMP0097 &&
       !(this->GetCMakeInstance()->GetIsInTryCompile() &&
         (
           // Policies set by cmCoreTryCompile::TryCompileCode.
           id == cmPolicies::CMP0065 || id == cmPolicies::CMP0083 ||
-          id == cmPolicies::CMP0091))) {
+          id == cmPolicies::CMP0091)) &&
+      (!this->IsSet("CMAKE_WARN_DEPRECATED") ||
+       this->IsOn("CMAKE_WARN_DEPRECATED"))) {
     this->IssueMessage(MessageType::DEPRECATION_WARNING,
                        cmPolicies::GetPolicyDeprecatedWarning(id));
   }

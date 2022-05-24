@@ -171,18 +171,20 @@ void cmVisualStudioGeneratorOptions::FixCudaCodeGeneration()
     code.clear();
   }
 
-  if (arch.empty() && gencode.empty()) {
-    return;
-  }
-
   // Create a CodeGeneration field with [arch],[code] syntax in each entry.
   // CUDA will convert it to `-gencode=arch=[arch],code="[code],[arch]"`.
   FlagValue& result = this->FlagMap["CodeGeneration"];
 
+  // If there are no flags, leave the CodeGeneration field empty.
+  if (arch.empty() && gencode.empty()) {
+    return;
+  }
+
   // First entries for the -arch=<arch> [-code=<code>,...] pair.
   if (!arch.empty()) {
     std::string arch_name = arch[0];
-    if (arch_name == "all" || arch_name == "all-major") {
+    if (arch_name == "all" || arch_name == "all-major" ||
+        arch_name == "native") {
       AppendFlagString("AdditionalOptions", "-arch=" + arch_name);
       return;
     }

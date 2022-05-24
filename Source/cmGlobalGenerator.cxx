@@ -19,6 +19,7 @@
 
 #include "cmsys/Directory.hxx"
 #include "cmsys/FStream.hxx"
+#include "cmsys/RegularExpression.hxx"
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #  include <windows.h>
@@ -687,6 +688,33 @@ void cmGlobalGenerator::EnableLanguage(
     if (!this->FindMakeProgram(mf)) {
       return;
     }
+
+    // One-time includes of user-provided project setup files
+    std::string includes =
+      mf->GetSafeDefinition("CMAKE_PROJECT_TOP_LEVEL_INCLUDES");
+    std::vector<std::string> includesList = cmExpandedList(includes);
+    for (std::string const& setupFile : includesList) {
+      std::string absSetupFile = cmSystemTools::CollapseFullPath(
+        setupFile, mf->GetCurrentSourceDirectory());
+      if (!cmSystemTools::FileExists(absSetupFile)) {
+        cmSystemTools::Error(
+          "CMAKE_PROJECT_TOP_LEVEL_INCLUDES file does not exist: " +
+          setupFile);
+        return;
+      }
+      if (cmSystemTools::FileIsDirectory(absSetupFile)) {
+        cmSystemTools::Error(
+          "CMAKE_PROJECT_TOP_LEVEL_INCLUDES file is a directory: " +
+          setupFile);
+        return;
+      }
+      if (!mf->ReadListFile(absSetupFile)) {
+        cmSystemTools::Error(
+          "Failed reading CMAKE_PROJECT_TOP_LEVEL_INCLUDES file: " +
+          setupFile);
+        return;
+      }
+    }
   }
 
   // Check that the languages are supported by the generator and its
@@ -758,7 +786,9 @@ void cmGlobalGenerator::EnableLanguage(
       needTestLanguage[lang] = true;
       // Some generators like visual studio should not use the env variables
       // So the global generator can specify that in this variable
-      if (!mf->GetDefinition("CMAKE_GENERATOR_NO_COMPILER_ENV")) {
+      if ((mf->GetPolicyStatus(cmPolicies::CMP0132) == cmPolicies::OLD ||
+           mf->GetPolicyStatus(cmPolicies::CMP0132) == cmPolicies::WARN) &&
+          !mf->GetDefinition("CMAKE_GENERATOR_NO_COMPILER_ENV")) {
         // put ${CMake_(LANG)_COMPILER_ENV_VAR}=${CMAKE_(LANG)_COMPILER
         // into the environment, in case user scripts want to run
         // configure, or sub cmakes
@@ -1498,6 +1528,11 @@ bool cmGlobalGenerator::Compute()
     return false;
   }
 
+  // Iterate through all targets and add verification targets for header sets
+  if (!this->AddHeaderSetVerification()) {
+    return false;
+  }
+
   // Iterate through all targets and set up AUTOMOC, AUTOUIC and AUTORCC
   if (!this->QtAutoGen()) {
     return false;
@@ -1719,6 +1754,27 @@ bool cmGlobalGenerator::QtAutoGen()
 #endif
 }
 
+bool cmGlobalGenerator::AddHeaderSetVerification()
+{
+  for (auto const& gen : this->LocalGenerators) {
+    // Because AddHeaderSetVerification() adds generator targets, we need to
+    // cache the existing list of generator targets before starting.
+    std::vector<cmGeneratorTarget*> genTargets;
+    genTargets.reserve(gen->GetGeneratorTargets().size());
+    for (auto const& tgt : gen->GetGeneratorTargets()) {
+      genTargets.push_back(tgt.get());
+    }
+
+    for (auto* tgt : genTargets) {
+      if (!tgt->AddHeaderSetVerification()) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 bool cmGlobalGenerator::AddAutomaticSources()
 {
   for (const auto& lg : this->LocalGenerators) {
@@ -1735,6 +1791,7 @@ bool cmGlobalGenerator::AddAutomaticSources()
       if (!gt->GetProperty("PRECOMPILE_HEADERS_REUSE_FROM")) {
         lg->AddPchDependencies(gt.get());
       }
+      lg->AddXCConfigSources(gt.get());
     }
   }
   for (const auto& lg : this->LocalGenerators) {
@@ -2520,6 +2577,47 @@ bool cmGlobalGenerator::NameResolvesToFramework(
   }
 
   return false;
+}
+
+// If the file has no extension it's either a raw executable or might
+// be a direct reference to a binary within a framework (bad practice!).
+// This is where we change the path to point to the framework directory.
+// .tbd files also can be located in SDK frameworks (they are
+// placeholders for actual libraries shipped with the OS)
+cm::optional<std::pair<std::string, std::string>>
+cmGlobalGenerator::SplitFrameworkPath(const std::string& path,
+                                      bool extendedFormat) const
+{
+  // Check for framework structure:
+  //    (/path/to/)?FwName.framework
+  // or (/path/to/)?FwName.framework/FwName(.tbd)?
+  // or (/path/to/)?FwName.framework/Versions/*/FwName(.tbd)?
+  static cmsys::RegularExpression frameworkPath(
+    "((.+)/)?(.+)\\.framework(/Versions/[^/]+)?(/(.+))?$");
+
+  auto ext = cmSystemTools::GetFilenameLastExtension(path);
+  if ((ext.empty() || ext == ".tbd" || ext == ".framework") &&
+      frameworkPath.find(path)) {
+    auto name = frameworkPath.match(3);
+    auto libname =
+      cmSystemTools::GetFilenameWithoutExtension(frameworkPath.match(6));
+    if (!libname.empty() && name != libname) {
+      return cm::nullopt;
+    }
+    return std::pair<std::string, std::string>{ frameworkPath.match(2), name };
+  }
+
+  if (extendedFormat) {
+    // path format can be more flexible: (/path/to/)?fwName(.framework)?
+    auto fwDir = cmSystemTools::GetParentDirectory(path);
+    auto name = cmSystemTools::GetFilenameLastExtension(path) == ".framework"
+      ? cmSystemTools::GetFilenameWithoutExtension(path)
+      : cmSystemTools::GetFilenameName(path);
+
+    return std::pair<std::string, std::string>{ fwDir, name };
+  }
+
+  return cm::nullopt;
 }
 
 bool cmGlobalGenerator::CheckCMP0037(std::string const& targetName,

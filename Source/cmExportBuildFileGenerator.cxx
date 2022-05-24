@@ -2,6 +2,7 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmExportBuildFileGenerator.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <set>
@@ -15,7 +16,6 @@
 #include "cmGeneratorExpression.h"
 #include "cmGeneratorTarget.h"
 #include "cmGlobalGenerator.h"
-#include "cmListFileCache.h"
 #include "cmLocalGenerator.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
@@ -76,8 +76,6 @@ bool cmExportBuildFileGenerator::GenerateMainFile(std::ostream& os)
     this->GenerateExpectedTargetsCode(os, expectedTargets);
   }
 
-  std::vector<std::string> missingTargets;
-
   // Create all the imported targets.
   for (cmGeneratorTarget* gte : this->Exports) {
     this->GenerateImportTargetCode(os, gte, this->GetExportTargetType(gte));
@@ -88,34 +86,34 @@ bool cmExportBuildFileGenerator::GenerateMainFile(std::ostream& os)
 
     this->PopulateInterfaceProperty("INTERFACE_INCLUDE_DIRECTORIES", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_SOURCES", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_COMPILE_DEFINITIONS", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_COMPILE_OPTIONS", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_PRECOMPILE_HEADERS", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_AUTOUIC_OPTIONS", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_COMPILE_FEATURES", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_LINK_OPTIONS", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_LINK_DIRECTORIES", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_LINK_DEPENDS", gte,
                                     cmGeneratorExpression::BuildInterface,
-                                    properties, missingTargets);
+                                    properties);
     this->PopulateInterfaceProperty("INTERFACE_POSITION_INDEPENDENT_CODE", gte,
                                     properties);
 
@@ -132,8 +130,7 @@ bool cmExportBuildFileGenerator::GenerateMainFile(std::ostream& os)
       gte->GetPolicyStatusCMP0022() != cmPolicies::OLD;
     if (newCMP0022Behavior) {
       this->PopulateInterfaceLinkLibrariesProperty(
-        gte, cmGeneratorExpression::BuildInterface, properties,
-        missingTargets);
+        gte, cmGeneratorExpression::BuildInterface, properties);
     }
     this->PopulateCompatibleInterfaceProperties(gte, properties);
 
@@ -144,17 +141,16 @@ bool cmExportBuildFileGenerator::GenerateMainFile(std::ostream& os)
 
   // Generate import file content for each configuration.
   for (std::string const& c : this->Configurations) {
-    this->GenerateImportConfig(os, c, missingTargets);
+    this->GenerateImportConfig(os, c);
   }
 
-  this->GenerateMissingTargetsCheckCode(os, missingTargets);
+  this->GenerateMissingTargetsCheckCode(os);
 
   return true;
 }
 
 void cmExportBuildFileGenerator::GenerateImportTargetsConfig(
-  std::ostream& os, const std::string& config, std::string const& suffix,
-  std::vector<std::string>& missingTargets)
+  std::ostream& os, const std::string& config, std::string const& suffix)
 {
   for (cmGeneratorTarget* target : this->Exports) {
     // Collect import properties for this target.
@@ -167,11 +163,10 @@ void cmExportBuildFileGenerator::GenerateImportTargetsConfig(
       // Get the rest of the target details.
       if (this->GetExportTargetType(target) !=
           cmStateEnums::INTERFACE_LIBRARY) {
-        this->SetImportDetailProperties(config, suffix, target, properties,
-                                        missingTargets);
+        this->SetImportDetailProperties(config, suffix, target, properties);
         this->SetImportLinkInterface(config, suffix,
                                      cmGeneratorExpression::BuildInterface,
-                                     target, properties, missingTargets);
+                                     target, properties);
       }
 
       // TODO: PUBLIC_HEADER_LOCATION
@@ -195,7 +190,7 @@ cmStateEnums::TargetType cmExportBuildFileGenerator::GetExportTargetType(
   // to support transitive usage requirements on other targets that
   // use the object library.
   if (targetType == cmStateEnums::OBJECT_LIBRARY &&
-      !this->LG->GetGlobalGenerator()->HasKnownObjectFileLocation(nullptr)) {
+      !target->Target->HasKnownObjectFileLocation(nullptr)) {
     targetType = cmStateEnums::INTERFACE_LIBRARY;
   }
   return targetType;
@@ -259,8 +254,8 @@ void cmExportBuildFileGenerator::SetImportLocationProperty(
 }
 
 void cmExportBuildFileGenerator::HandleMissingTarget(
-  std::string& link_libs, std::vector<std::string>& missingTargets,
-  cmGeneratorTarget const* depender, cmGeneratorTarget* dependee)
+  std::string& link_libs, cmGeneratorTarget const* depender,
+  cmGeneratorTarget* dependee)
 {
   // The target is not in the export.
   if (!this->AppendMode) {
@@ -275,7 +270,7 @@ void cmExportBuildFileGenerator::HandleMissingTarget(
 
       missingTarget += dependee->GetExportName();
       link_libs += missingTarget;
-      missingTargets.push_back(std::move(missingTarget));
+      this->MissingTargets.emplace_back(std::move(missingTarget));
       return;
     }
     // We are not appending, so all exported targets should be
@@ -362,16 +357,93 @@ std::string cmExportBuildFileGenerator::InstallNameDir(
   return install_name_dir;
 }
 
-std::string cmExportBuildFileGenerator::GetFileSetDirectories(
-  cmGeneratorTarget* /*gte*/, cmFileSet* fileSet, cmTargetExport* /*te*/)
+namespace {
+bool EntryIsContextSensitive(
+  const std::unique_ptr<cmCompiledGeneratorExpression>& cge)
 {
-  return cmOutputConverter::EscapeForCMake(
-    cmJoin(fileSet->GetDirectoryEntries(), ";"));
+  return cge->GetHadContextSensitiveCondition();
+}
 }
 
-std::string cmExportBuildFileGenerator::GetFileSetFiles(
-  cmGeneratorTarget* /*gte*/, cmFileSet* fileSet, cmTargetExport* /*te*/)
+std::string cmExportBuildFileGenerator::GetFileSetDirectories(
+  cmGeneratorTarget* gte, cmFileSet* fileSet, cmTargetExport* /*te*/)
 {
-  return cmOutputConverter::EscapeForCMake(
-    cmJoin(fileSet->GetFileEntries(), ";"));
+  std::vector<std::string> resultVector;
+
+  auto configs =
+    gte->Makefile->GetGeneratorConfigs(cmMakefile::IncludeEmptyConfig);
+  auto directoryEntries = fileSet->CompileDirectoryEntries();
+
+  for (auto const& config : configs) {
+    auto directories = fileSet->EvaluateDirectoryEntries(
+      directoryEntries, gte->LocalGenerator, config, gte);
+
+    bool const contextSensitive =
+      std::any_of(directoryEntries.begin(), directoryEntries.end(),
+                  EntryIsContextSensitive);
+
+    for (auto const& directory : directories) {
+      auto dest = cmOutputConverter::EscapeForCMake(
+        directory, cmOutputConverter::WrapQuotes::NoWrap);
+
+      if (contextSensitive && configs.size() != 1) {
+        resultVector.push_back(
+          cmStrCat("\"$<$<CONFIG:", config, ">:", dest, ">\""));
+      } else {
+        resultVector.push_back(cmStrCat('"', dest, '"'));
+        break;
+      }
+    }
+  }
+
+  return cmJoin(resultVector, " ");
+}
+
+std::string cmExportBuildFileGenerator::GetFileSetFiles(cmGeneratorTarget* gte,
+                                                        cmFileSet* fileSet,
+                                                        cmTargetExport* /*te*/)
+{
+  std::vector<std::string> resultVector;
+
+  auto configs =
+    gte->Makefile->GetGeneratorConfigs(cmMakefile::IncludeEmptyConfig);
+
+  auto fileEntries = fileSet->CompileFileEntries();
+  auto directoryEntries = fileSet->CompileDirectoryEntries();
+
+  for (auto const& config : configs) {
+    auto directories = fileSet->EvaluateDirectoryEntries(
+      directoryEntries, gte->LocalGenerator, config, gte);
+
+    std::map<std::string, std::vector<std::string>> files;
+    for (auto const& entry : fileEntries) {
+      fileSet->EvaluateFileEntry(directories, files, entry,
+                                 gte->LocalGenerator, config, gte);
+    }
+
+    bool const contextSensitive =
+      std::any_of(directoryEntries.begin(), directoryEntries.end(),
+                  EntryIsContextSensitive) ||
+      std::any_of(fileEntries.begin(), fileEntries.end(),
+                  EntryIsContextSensitive);
+
+    for (auto const& it : files) {
+      for (auto const& filename : it.second) {
+        auto escapedFile = cmOutputConverter::EscapeForCMake(
+          filename, cmOutputConverter::WrapQuotes::NoWrap);
+        if (contextSensitive && configs.size() != 1) {
+          resultVector.push_back(
+            cmStrCat("\"$<$<CONFIG:", config, ">:", escapedFile, ">\""));
+        } else {
+          resultVector.push_back(cmStrCat('"', escapedFile, '"'));
+        }
+      }
+    }
+
+    if (!(contextSensitive && configs.size() != 1)) {
+      break;
+    }
+  }
+
+  return cmJoin(resultVector, " ");
 }

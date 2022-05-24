@@ -16,6 +16,7 @@ stages:
     - build
     - test
     - test-ext
+    - package
     - upload
 
 ################################################################################
@@ -36,6 +37,7 @@ stages:
 
 # Job prefixes:
 #   - `b:` build
+#   - `k:` package
 #   - `l:` lint
 #   - `p:` prep
 #   - `t:` test
@@ -275,6 +277,17 @@ b:fedora35-ninja:
         - .cmake_build_artifacts
         - .linux_builder_tags_qt
         - .run_manually
+    variables:
+        CMAKE_CI_JOB_CONTINUOUS: "true"
+
+b:debian10-makefiles-inplace:
+    extends:
+        - .debian10_makefiles_inplace
+        - .cmake_build_linux_standalone
+        - .linux_builder_tags
+        - .run_manually
+    variables:
+        CMAKE_CI_JOB_NIGHTLY: "true"
 
 t:fedora35-ninja:
     extends:
@@ -287,6 +300,8 @@ t:fedora35-ninja:
         - b:fedora35-ninja
     needs:
         - b:fedora35-ninja
+    variables:
+        CMAKE_CI_JOB_CONTINUOUS: "true"
 
 t:fedora35-ninja-multi:
     extends:
@@ -496,6 +511,34 @@ t:intel2021.2.0-makefiles:
         CMAKE_CI_BUILD_NAME: intel2021.2.0_makefiles
         CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2021.2.0-el8
 
+t:intel2021.3.0-makefiles:
+    extends:
+        - .cmake_test_linux_intelclassic_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: intel2021.3.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2021.3.0-el8
+
+t:intel2021.4.0-makefiles:
+    extends:
+        - .cmake_test_linux_intelclassic_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: intel2021.4.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2021.4.0-el8
+
+t:intel2021.5.0-makefiles:
+    extends:
+        - .cmake_test_linux_intelclassic_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: intel2021.5.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2022.0.2-el8
+
+t:intel2021.6.0-makefiles:
+    extends:
+        - .cmake_test_linux_intelclassic_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: intel2021.6.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2022.1.0-el8
+
 t:oneapi2021.1.1-makefiles:
     extends:
         - .cmake_test_linux_inteloneapi_makefiles
@@ -516,6 +559,34 @@ t:oneapi2021.2.0-makefiles:
     variables:
         CMAKE_CI_BUILD_NAME: oneapi2021.2.0_makefiles
         CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2021.2.0-el8
+
+t:oneapi2021.3.0-makefiles:
+    extends:
+        - .cmake_test_linux_inteloneapi_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: oneapi2021.3.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2021.3.0-el8
+
+t:oneapi2021.4.0-makefiles:
+    extends:
+        - .cmake_test_linux_inteloneapi_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: oneapi2021.4.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2021.4.0-el8
+
+t:oneapi2022.0.2-makefiles:
+    extends:
+        - .cmake_test_linux_inteloneapi_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: oneapi2022.0.2_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2022.0.2-el8
+
+t:oneapi2022.1.0-makefiles:
+    extends:
+        - .cmake_test_linux_inteloneapi_makefiles
+    variables:
+        CMAKE_CI_BUILD_NAME: oneapi2022.1.0_makefiles
+        CMAKE_CI_INTELCOMPILER_IMAGE_TAG: 2022.1.0-el8
 
 b:linux-x86_64-package:
     extends:
@@ -827,6 +898,66 @@ t:windows-borland5.8:
     variables:
         CMAKE_CI_JOB_NIGHTLY: "true"
 
+t:windows-clang13.0-cl-ninja:
+    extends:
+        - .windows_clang_ninja
+        - .cmake_test_windows_clang
+        - .windows_tags_concurrent
+        - .cmake_junit_artifacts
+        - .run_dependent
+    dependencies:
+        - t:windows-vs2022-x64-ninja
+    needs:
+        - t:windows-vs2022-x64-ninja
+    variables:
+        CMAKE_CI_BUILD_NAME: windows_clang13.0_cl_ninja
+        CMAKE_CI_JOB_NIGHTLY: "true"
+
+t:windows-clang13.0-cl-nmake:
+    extends:
+        - .windows_clang_nmake
+        - .cmake_test_windows_clang
+        - .windows_tags_concurrent
+        - .cmake_junit_artifacts
+        - .run_dependent
+    dependencies:
+        - t:windows-vs2022-x64-ninja
+    needs:
+        - t:windows-vs2022-x64-ninja
+    variables:
+        CMAKE_CI_BUILD_NAME: windows_clang13.0_cl_nmake
+        CMAKE_CI_JOB_NIGHTLY: "true"
+
+t:windows-clang13.0-gnu-ninja:
+    extends:
+        - .windows_clang_ninja
+        - .cmake_test_windows_clang
+        - .windows_tags_concurrent
+        - .cmake_junit_artifacts
+        - .run_dependent
+    dependencies:
+        - t:windows-vs2022-x64-ninja
+    needs:
+        - t:windows-vs2022-x64-ninja
+    variables:
+        CMAKE_CI_BUILD_NAME: windows_clang13.0_gnu_ninja
+        CMAKE_CI_JOB_NIGHTLY: "true"
+
+t:windows-clang13.0-gnu-nmake:
+    extends:
+        - .windows_clang_nmake
+        - .cmake_test_windows_clang
+        - .windows_tags_concurrent
+        - .cmake_junit_artifacts
+        - .run_dependent
+    dependencies:
+        - t:windows-vs2022-x64-ninja
+    needs:
+        - t:windows-vs2022-x64-ninja
+    variables:
+        CMAKE_CI_BUILD_NAME: windows_clang13.0_gnu_nmake
+        CMAKE_CI_JOB_NIGHTLY: "true"
+
 t:windows-msvc-v71-nmake:
     extends:
         - .windows_msvc_v71_nmake
@@ -854,3 +985,69 @@ t:windows-openwatcom1.9:
         - t:windows-vs2022-x64-ninja
     variables:
         CMAKE_CI_JOB_NIGHTLY: "true"
+
+b:windows-x86_64-package:
+    extends:
+        - .windows_x86_64_package
+        - .cmake_build_windows
+        - .cmake_build_package_artifacts
+        - .windows_tags_nonconcurrent_vs2022
+        - .run_only_for_package
+    dependencies:
+        - p:doc-package
+    needs:
+        - p:doc-package
+
+k:windows-x86_64-package:
+    extends:
+        - .windows_x86_64_package
+        - .cmake_package_windows
+        - .cmake_release_artifacts
+        - .windows_tags_nonconcurrent_vs2022
+        - .run_only_for_package
+    dependencies:
+        - b:windows-x86_64-package
+    needs:
+        - b:windows-x86_64-package
+
+u:windows-x86_64-package:
+    extends:
+        - .rsync_upload_package
+        - .run_only_for_package
+    dependencies:
+        - k:windows-x86_64-package
+    needs:
+        - k:windows-x86_64-package
+
+b:windows-i386-package:
+    extends:
+        - .windows_i386_package
+        - .cmake_build_windows
+        - .cmake_build_package_artifacts
+        - .windows_tags_nonconcurrent_vs2022
+        - .run_only_for_package
+    dependencies:
+        - p:doc-package
+    needs:
+        - p:doc-package
+
+k:windows-i386-package:
+    extends:
+        - .windows_i386_package
+        - .cmake_package_windows
+        - .cmake_release_artifacts
+        - .windows_tags_nonconcurrent_vs2022
+        - .run_only_for_package
+    dependencies:
+        - b:windows-i386-package
+    needs:
+        - b:windows-i386-package
+
+u:windows-i386-package:
+    extends:
+        - .rsync_upload_package
+        - .run_only_for_package
+    dependencies:
+        - k:windows-i386-package
+    needs:
+        - k:windows-i386-package
