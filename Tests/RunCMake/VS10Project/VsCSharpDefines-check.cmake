@@ -17,9 +17,9 @@ set(releaseOK FALSE)
 file(STRINGS "${csProjectFile}" lines)
 foreach(line IN LISTS lines)
   #message(STATUS ${line})
-  if(line MATCHES "^ *<PropertyGroup .*Debug\\|(Win32|x64).*")
+  if(line MATCHES "^ *<PropertyGroup .*Debug\\|(Win32|x64|ARM64).*")
     set(inDebug TRUE)
-  elseif(line MATCHES "^ *<PropertyGroup .*Release\\|(Win32|x64).*")
+  elseif(line MATCHES "^ *<PropertyGroup .*Release\\|(Win32|x64|ARM64).*")
     set(inRelease TRUE)
   elseif(line MATCHES "^ *</PropertyGroup> *$")
     set(inRelease FALSE)
@@ -27,15 +27,15 @@ foreach(line IN LISTS lines)
   elseif(inDebug AND
      (line MATCHES "^ *<DefineConstants>.*MY_FOO_DEFINE.*</DefineConstants> *$") AND
      (line MATCHES "^ *<DefineConstants>.*DEFINE_ONLY_FOR_DEBUG.*</DefineConstants> *$") AND
-     (line MATCHES "^ *<DefineConstants>.*MY_BAR_ASSIGNMENT=bar.*</DefineConstants> *$") AND
-     (NOT (line MATCHES "^ *<DefineConstants>.*DEFINE_ONLY_FOR_RELEASE.*</DefineConstants> *$"))
+     (NOT (line MATCHES "^ *<DefineConstants>.*DEFINE_ONLY_FOR_RELEASE.*</DefineConstants> *$")) AND
+     (NOT (line MATCHES "^ *<DefineConstants>.*MY_BAR_ASSIGNMENT=bar.*</DefineConstants> *$"))
     )
     set(debugOK TRUE)
   elseif(inRelease AND
      (line MATCHES "^ *<DefineConstants>.*MY_FOO_DEFINE.*</DefineConstants> *$") AND
      (line MATCHES "^ *<DefineConstants>.*DEFINE_ONLY_FOR_RELEASE.*</DefineConstants> *$") AND
-     (line MATCHES "^ *<DefineConstants>.*MY_BAR_ASSIGNMENT=bar.*</DefineConstants> *$") AND
-     (NOT (line MATCHES "^ *<DefineConstants>.*DEFINE_ONLY_FOR_DEBUG.*</DefineConstants> *$"))
+     (NOT (line MATCHES "^ *<DefineConstants>.*DEFINE_ONLY_FOR_DEBUG.*</DefineConstants> *$")) AND
+     (NOT (line MATCHES "^ *<DefineConstants>.*MY_BAR_ASSIGNMENT=bar.*</DefineConstants> *$"))
     )
     set(releaseOK TRUE)
   endif()

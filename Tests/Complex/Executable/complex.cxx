@@ -1,20 +1,22 @@
-#include "Aout.h"
-#include "ExtraSources/file1.h"
 #include "cmTestConfigure.h"
 #include "cmTestConfigureEscape.h"
 #include "cmTestGeneratedHeader.h"
 #include "cmVersion.h"
+
+#include "Aout.h"
+#include "ExtraSources/file1.h"
 #include "file2.h"
 #include "sharedFile.h"
 extern "C" {
 #include "testConly.h"
 }
 #include <iostream>
-#include <string.h>
 #include <string>
 #include <vector>
 
 #include <stdio.h>
+#include <string.h>
+
 #include <sys/stat.h>
 #if !defined(S_ISDIR)
 #  define S_ISDIR(mode) ((mode)&_S_IFDIR)
@@ -60,7 +62,7 @@ void cmPassed(const char* Message, const char* m2 = "")
 #  error This is a problem. Looks like ADD_DEFINITIONS and REMOVE_DEFINITIONS does not work
 #endif
 
-#if defined(NDEBUG) && !defined(CMAKE_IS_FUN_IN_RELEASE_MODE)
+#if defined(COMPLEX_NDEBUG) && !defined(CMAKE_IS_FUN_IN_RELEASE_MODE)
 #  error Per-configuration directory-level definition not inherited.
 #endif
 

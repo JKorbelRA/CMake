@@ -8,7 +8,8 @@
 
 macro (CHECK_COMPILER_FLAG_COMMON_PATTERNS _VAR)
   set(${_VAR}
-    FAIL_REGEX "[Uu]nrecogni[sz]ed .*option"               # GNU, NAG
+    FAIL_REGEX "[Uu]nrecogni[sz]ed .*option"               # GNU, NAG, Fujitsu
+    FAIL_REGEX "switch .* is no longer supported"          # GNU
     FAIL_REGEX "unknown .*option"                          # Clang
     FAIL_REGEX "optimization flag .* not supported"        # Clang
     FAIL_REGEX "unknown argument ignored"                  # Clang (cl)
@@ -31,5 +32,6 @@ macro (CHECK_COMPILER_FLAG_COMMON_PATTERNS _VAR)
     FAIL_REGEX "Warning: illegal option"                   # SunStudio 12
     FAIL_REGEX "[Ww]arning: Invalid suboption"             # Fujitsu
     FAIL_REGEX "An invalid option .* appears on the command line" # Cray
+    FAIL_REGEX "WARNING: invalid compiler option"          # TI armcl
   )
 endmacro ()

@@ -69,6 +69,16 @@
  * either Windows or Posix APIs. */
 #if (defined(__WIN32__) || defined(_WIN32) || defined(__WIN32)) && !defined(__CYGWIN__)
 #include "archive_windows.h"
+/* The C library on Windows specifies a calling convention for callback
+ * functions and exports; when we interact with them (capture pointers,
+ * call and pass function pointers) we need to match their calling
+ * convention.
+ * This only matters when libarchive is built with /Gr, /Gz or /Gv
+ * (which change the default calling convention.) */
+#define __LA_LIBC_CC __cdecl
+#else
+#define la_stat(path,stref)		stat(path,stref)
+#define __LA_LIBC_CC
 #endif
 
 /*
@@ -105,58 +115,68 @@
 
 /* Borland warns about its own constants!  */
 #if defined(__BORLANDC__)
-# if HAVE_DECL_UINT64_MAX
-#  undef	UINT64_MAX
-#  undef	HAVE_DECL_UINT64_MAX
-# endif
-# if HAVE_DECL_UINT64_MIN
-#  undef	UINT64_MIN
-#  undef	HAVE_DECL_UINT64_MIN
-# endif
-# if HAVE_DECL_INT64_MAX
-#  undef	INT64_MAX
-#  undef	HAVE_DECL_INT64_MAX
-# endif
-# if HAVE_DECL_INT64_MIN
-#  undef	INT64_MIN
-#  undef	HAVE_DECL_INT64_MIN
-# endif
+# undef	UINT64_MAX
+# undef	UINT64_MIN
+# undef	INT64_MAX
+# undef	INT64_MIN
 #endif
 
 /* Some platforms lack the standard *_MAX definitions. */
-#if !HAVE_DECL_SIZE_MAX
+#ifndef SIZE_MAX
 #define	SIZE_MAX (~(size_t)0)
 #endif
-#if !HAVE_DECL_SSIZE_MAX
+#ifndef SSIZE_MAX
 #define	SSIZE_MAX ((ssize_t)(SIZE_MAX >> 1))
 #endif
-#if !HAVE_DECL_UINT32_MAX
+#ifndef UINT32_MAX
 #define	UINT32_MAX (~(uint32_t)0)
 #endif
-#if !HAVE_DECL_INT32_MAX
+#ifndef INT32_MAX
 #define	INT32_MAX ((int32_t)(UINT32_MAX >> 1))
 #endif
-#if !HAVE_DECL_INT32_MIN
+#ifndef INT32_MIN
 #define	INT32_MIN ((int32_t)(~INT32_MAX))
 #endif
-#if !HAVE_DECL_UINT64_MAX
+#ifndef UINT64_MAX
 #define	UINT64_MAX (~(uint64_t)0)
 #endif
-#if !HAVE_DECL_INT64_MAX
+#ifndef INT64_MAX
 #define	INT64_MAX ((int64_t)(UINT64_MAX >> 1))
 #endif
-#if !HAVE_DECL_INT64_MIN
+#ifndef INT64_MIN
 #define	INT64_MIN ((int64_t)(~INT64_MAX))
 #endif
-#if !HAVE_DECL_UINTMAX_MAX
+#ifndef UINTMAX_MAX
 #define	UINTMAX_MAX (~(uintmax_t)0)
 #endif
-#if !HAVE_DECL_INTMAX_MAX
+#ifndef INTMAX_MAX
 #define	INTMAX_MAX ((intmax_t)(UINTMAX_MAX >> 1))
 #endif
-#if !HAVE_DECL_INTMAX_MIN
+#ifndef INTMAX_MIN
 #define	INTMAX_MIN ((intmax_t)(~INTMAX_MAX))
 #endif
+
+/* Some platforms lack the standard PRIxN/PRIdN definitions. */
+#if !HAVE_INTTYPES_H || !defined(PRIx32) || !defined(PRId32)
+#ifndef PRIx32
+#if SIZEOF_INT == 4
+#define PRIx32 "x"
+#elif SIZEOF_LONG == 4
+#define PRIx32 "lx"
+#else
+#error No suitable 32-bit unsigned integer type found for this platform
+#endif
+#endif // PRIx32
+#ifndef PRId32
+#if SIZEOF_INT == 4
+#define PRId32 "d"
+#elif SIZEOF_LONG == 4
+#define PRId32 "ld"
+#else
+#error No suitable 32-bit signed integer type found for this platform
+#endif
+#endif // PRId32
+#endif // !HAVE_INTTYPES_H || !defined(PRIx32) || !defined(PRId32)
 
 /*
  * If we can't restore metadata using a file descriptor, then

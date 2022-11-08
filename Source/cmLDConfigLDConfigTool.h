@@ -1,13 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
-#ifndef cmLDConfigLDConfigTool_h
-#define cmLDConfigLDConfigTool_h
-
-#include "cmLDConfigTool.h"
+#pragma once
 
 #include <string>
 #include <vector>
+
+#include "cmLDConfigTool.h"
 
 class cmRuntimeDependencyArchive;
 
@@ -18,5 +17,3 @@ public:
 
   bool GetLDConfigPaths(std::vector<std::string>& paths) override;
 };
-
-#endif

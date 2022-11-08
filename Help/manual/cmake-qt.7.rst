@@ -14,7 +14,7 @@ CMake can find and use Qt 4 and Qt 5 libraries.  The Qt 4 libraries are found
 by the :module:`FindQt4` find-module shipped with CMake, whereas the
 Qt 5 libraries are found using "Config-file Packages" shipped with Qt 5. See
 :manual:`cmake-packages(7)` for more information about CMake packages, and
-see `the Qt cmake manual <http://qt-project.org/doc/qt-5/cmake-manual.html>`_
+see `the Qt cmake manual <https://contribute.qt-project.org/doc/qt-5/cmake-manual.html>`_
 for your Qt version.
 
 Qt 4 and Qt 5 may be used together in the same
@@ -48,6 +48,8 @@ and ``rcc`` for virtual file system content generation.  These tools may be
 automatically invoked by :manual:`cmake(1)` if the appropriate conditions
 are met.  The automatic tool invocation may be used with both Qt 4 and Qt 5.
 
+.. _`Qt AUTOMOC`:
+
 AUTOMOC
 ^^^^^^^
 
@@ -77,8 +79,9 @@ automatically added to the target's :prop_tgt:`INCLUDE_DIRECTORIES`.
 
 Not included ``moc_<basename>.cpp`` files will be generated in custom
 folders to avoid name collisions and included in a separate
-``<AUTOGEN_BUILD_DIR>/mocs_compilation.cpp`` file which is compiled
-into the target.
+file which is compiled into the target, named either
+``<AUTOGEN_BUILD_DIR>/mocs_compilation.cpp`` or
+``<AUTOGEN_BUILD_DIR>/mocs_compilation_$<CONFIG>.cpp``.
 
 * See :prop_tgt:`AUTOGEN_BUILD_DIR`.
 

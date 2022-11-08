@@ -2,44 +2,47 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmDocumentation.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <utility>
+
+#include "cmsys/FStream.hxx"
+#include "cmsys/Glob.hxx"
+
 #include "cmDocumentationEntry.h"
 #include "cmDocumentationSection.h"
 #include "cmRST.h"
 #include "cmSystemTools.h"
 #include "cmVersion.h"
 
-#include "cmsys/FStream.hxx"
-#include "cmsys/Glob.hxx"
-#include <algorithm>
-#include <ctype.h>
-#include <string.h>
-#include <utility>
-
 static const char* cmDocumentationStandardOptions[][2] = {
-  { "--help,-help,-usage,-h,-H,/?", "Print usage information and exit." },
-  { "--version,-version,/V [<f>]", "Print version number and exit." },
-  { "--help-full [<f>]", "Print all help manuals and exit." },
-  { "--help-manual <man> [<f>]", "Print one help manual and exit." },
-  { "--help-manual-list [<f>]", "List help manuals available and exit." },
-  { "--help-command <cmd> [<f>]", "Print help for one command and exit." },
-  { "--help-command-list [<f>]",
+  { "-h,-H,--help,-help,-usage,/?", "Print usage information and exit." },
+  { "--version,-version,/V [<file>]", "Print version number and exit." },
+  { "--help-full [<file>]", "Print all help manuals and exit." },
+  { "--help-manual <man> [<file>]", "Print one help manual and exit." },
+  { "--help-manual-list [<file>]", "List help manuals available and exit." },
+  { "--help-command <cmd> [<file>]", "Print help for one command and exit." },
+  { "--help-command-list [<file>]",
     "List commands with help available and exit." },
-  { "--help-commands [<f>]", "Print cmake-commands manual and exit." },
-  { "--help-module <mod> [<f>]", "Print help for one module and exit." },
-  { "--help-module-list [<f>]", "List modules with help available and exit." },
-  { "--help-modules [<f>]", "Print cmake-modules manual and exit." },
-  { "--help-policy <cmp> [<f>]", "Print help for one policy and exit." },
-  { "--help-policy-list [<f>]",
+  { "--help-commands [<file>]", "Print cmake-commands manual and exit." },
+  { "--help-module <mod> [<file>]", "Print help for one module and exit." },
+  { "--help-module-list [<file>]",
+    "List modules with help available and exit." },
+  { "--help-modules [<file>]", "Print cmake-modules manual and exit." },
+  { "--help-policy <cmp> [<file>]", "Print help for one policy and exit." },
+  { "--help-policy-list [<file>]",
     "List policies with help available and exit." },
-  { "--help-policies [<f>]", "Print cmake-policies manual and exit." },
-  { "--help-property <prop> [<f>]", "Print help for one property and exit." },
-  { "--help-property-list [<f>]",
+  { "--help-policies [<file>]", "Print cmake-policies manual and exit." },
+  { "--help-property <prop> [<file>]",
+    "Print help for one property and exit." },
+  { "--help-property-list [<file>]",
     "List properties with help available and exit." },
-  { "--help-properties [<f>]", "Print cmake-properties manual and exit." },
-  { "--help-variable var [<f>]", "Print help for one variable and exit." },
-  { "--help-variable-list [<f>]",
+  { "--help-properties [<file>]", "Print cmake-properties manual and exit." },
+  { "--help-variable var [<file>]", "Print help for one variable and exit." },
+  { "--help-variable-list [<file>]",
     "List variables with help available and exit." },
-  { "--help-variables [<f>]", "Print cmake-variables manual and exit." },
+  { "--help-variables [<file>]", "Print cmake-variables manual and exit." },
   { nullptr, nullptr }
 };
 
@@ -193,7 +196,7 @@ void cmDocumentation::addCTestStandardDocSections()
 {
   // This is currently done for backward compatibility reason
   // We may suppress some of these.
-  addCMakeStandardDocSections();
+  this->addCMakeStandardDocSections();
 }
 
 void cmDocumentation::addCPackStandardDocSections()

@@ -2,16 +2,18 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
 #include "cmLDConfigLDConfigTool.h"
-#include "cmMakefile.h"
-#include "cmRuntimeDependencyArchive.h"
-#include "cmSystemTools.h"
-#include "cmUVProcessChain.h"
-
-#include "cmsys/RegularExpression.hxx"
 
 #include <istream>
 #include <string>
 #include <vector>
+
+#include "cmsys/RegularExpression.hxx"
+
+#include "cmMakefile.h"
+#include "cmRuntimeDependencyArchive.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmUVProcessChain.h"
 
 cmLDConfigLDConfigTool::cmLDConfigLDConfigTool(
   cmRuntimeDependencyArchive* archive)
@@ -32,8 +34,7 @@ bool cmLDConfigLDConfigTool::GetLDConfigPaths(std::vector<std::string>& paths)
     }
   }
 
-  std::vector<std::string> ldConfigCommand;
-  cmSystemTools::ExpandListArgument(ldConfigPath, ldConfigCommand);
+  std::vector<std::string> ldConfigCommand = cmExpandedList(ldConfigPath);
   ldConfigCommand.emplace_back("-v");
   ldConfigCommand.emplace_back("-N"); // Don't rebuild the cache.
   ldConfigCommand.emplace_back("-X"); // Don't update links.

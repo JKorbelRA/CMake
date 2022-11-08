@@ -88,12 +88,14 @@ if(CPackGen MATCHES "DragNDrop")
     set(expected_file_mask "${CPackComponentsForAll_BINARY_DIR}/MyLib-*.dmg")
     if(${CPackComponentWay} STREQUAL "default")
         set(expected_count 1)
+        set(expect_dmg_sla 1)
     elseif(${CPackComponentWay} STREQUAL "OnePackPerGroup")
         set(expected_count 3)
     elseif(${CPackComponentWay} STREQUAL "IgnoreGroup")
         set(expected_count 4)
     elseif(${CPackComponentWay} STREQUAL "AllInOne")
         set(expected_count 1)
+        set(expect_dmg_sla 1)
     endif()
 endif()
 
@@ -113,8 +115,17 @@ execute_process(COMMAND ${CMAKE_CPACK_COMMAND} ${config_verbose} -G ${CPackGen} 
     ERROR_VARIABLE CPack_error
     WORKING_DIRECTORY ${CPackComponentsForAll_BINARY_DIR})
 
+string(REPLACE "\n" "\n cpack-out> " cpack_out "\n${CPack_output}")
+string(REPLACE "\n" "\n cpack-err> " cpack_err "\n${CPack_error}")
+string(REPLACE "\n" "\n cpack-res> " cpack_res "\n${CPack_result}")
+string(CONCAT output_error_message
+  "CPack output:${cpack_out}\n"
+  "CPack error:${cpack_err}\n"
+  "CPack result:${cpack_res}\n"
+  )
+
 if(CPack_result)
-  message(FATAL_ERROR "error: CPack execution went wrong!, CPack_output=${CPack_output}, CPack_error=${CPack_error}")
+  message(FATAL_ERROR "error: CPack execution went wrong!,\n${output_error_message}")
 else ()
   message(STATUS "CPack_output=${CPack_output}")
 endif()
@@ -130,13 +141,43 @@ if(expected_file_mask)
   message(STATUS "expected_file_mask='${expected_file_mask}'")
 
   if(NOT expected_file)
-    message(FATAL_ERROR "error: expected_file does not exist: CPackComponentsForAll test fails. (CPack_output=${CPack_output}, CPack_error=${CPack_error}")
+    message(FATAL_ERROR "error: expected_file does not exist: CPackComponentsForAll test fails.\n${output_error_message}")
   endif()
 
   list(LENGTH expected_file actual_count)
   message(STATUS "actual_count='${actual_count}'")
   if(NOT actual_count EQUAL expected_count)
-    message(FATAL_ERROR "error: expected_count=${expected_count} does not match actual_count=${actual_count}: CPackComponents test fails. (CPack_output=${CPack_output}, CPack_error=${CPack_error})")
+    message(FATAL_ERROR "error: expected_count=${expected_count} does not match actual_count=${actual_count}: CPackComponents test fails.\n${output_error_message}")
+  endif()
+
+  if(expect_dmg_sla)
+    execute_process(COMMAND hdiutil udifderez -xml "${expected_file}" OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE res)
+    if(NOT res EQUAL 0)
+      string(REPLACE "\n" "\n  " err "  ${err}")
+      message(FATAL_ERROR "error: running 'hdiutil udifderez -xml' on\n  ${expected_file}\nfailed with:\n${err}")
+    endif()
+    foreach(key "LPic" "STR#" "TEXT")
+      if(NOT out MATCHES "<key>${key}</key>")
+        string(REPLACE "\n" "\n  " out "  ${out}")
+        message(FATAL_ERROR "error: running 'hdiutil udifderez -xml' on\n  ${expected_file}\ndid not show '${key}' key:\n${out}")
+      endif()
+    endforeach()
+    foreach(line
+        # LPic first and last base64 lines
+        "\tAAIAEQADAAEAAAAAAAIAAAAIAAMAAAABAAQAAAAEAAUAAAAOAAYA\n"
+        "\tAA0AAABbAAQAAAAzAA8AAQAMABAAAAALAA4AAA==\n"
+        # STR# first and last base64 lines
+        "\tAAkHRW5nbGlzaAVBZ3JlZQhEaXNhZ3JlZQVQcmludAdTYXZlLi4u\n"
+        "\tdGVkIGEgcHJpbnRlci4=\n"
+        # TEXT first and last base64 lines
+        "\tTElDRU5TRQ0tLS0tLS0tDVRoaXMgaXMgYW4gaW5zdGFsbGVyIGNy\n"
+        "\tTm8gbGljZW5zZSBwcm92aWRlZC4NDQ==\n"
+        )
+      if(NOT out MATCHES "${line}")
+        string(REPLACE "\n" "\n  " out "  ${out}")
+        message(FATAL_ERROR "error: running 'hdiutil udifderez -xml' on\n  ${expected_file}\ndid not show '${line}':\n${out}")
+      endif()
+    endforeach()
   endif()
 endif()
 
@@ -229,7 +270,7 @@ if(CPackGen MATCHES "RPM")
         set(check_file_match_expected_summary ".*${CPACK_RPM_PACKAGE_SUMMARY}.*")
         set(check_file_match_expected_description ".*${CPACK_COMPONENT_APPLICATIONS_DESCRIPTION}.*")
         set(check_file_match_expected_relocation_path "Relocations${whitespaces}:${whitespaces}${CPACK_PACKAGING_INSTALL_PREFIX}${whitespaces}${CPACK_PACKAGING_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}")
-        set(check_file_match_expected_architecture "armv7hf")
+        set(check_file_match_expected_architecture "armv7hl")
         set(spec_regex "*applications*")
         set(check_content_list "^/usr/foo/bar
 /usr/foo/bar/bin
@@ -372,7 +413,7 @@ if(CPackGen MATCHES "RPM")
       elseif("${symlink_name}" STREQUAL "symlink_other_relocatable_path"
           OR "${symlink_name}" STREQUAL "symlink_from_non_relocatable_path"
           OR "${symlink_name}" STREQUAL "symlink_relocatable_subpath")
-        # these links were not canged - post install script only - ignore them
+        # these links were not changed - post install script only - ignore them
       else()
         message(FATAL_ERROR "error: unexpected rpm symbolic link '${check_symlink}'")
       endif()

@@ -1,6 +1,8 @@
 VS_CSHARP_<tagname>
 -------------------
 
+.. versionadded:: 3.8
+
 Visual Studio and CSharp source-file-specific configuration.
 
 Tell the :manual:`Visual Studio generators <cmake-generators(7)>`
@@ -14,7 +16,7 @@ Example usage:
 
 .. code-block:: cmake
 
-  set_source_files_property(<filename>
+  set_source_files_properties(<filename>
            PROPERTIES
            VS_CSHARP_DependentUpon <other file>
            VS_CSHARP_SubType "Form")

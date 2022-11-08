@@ -2,20 +2,22 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGeneratedFileStream.h"
 
-#include <stdio.h>
+#include <cstdio>
 
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
+#  include <cm3p/zlib.h>
+
 #  include "cm_codecvt.hxx"
-#  include "cm_zlib.h"
 #endif
 
 cmGeneratedFileStream::cmGeneratedFileStream(Encoding encoding)
 {
-#ifdef CMAKE_BUILD_WITH_CMAKE
+#ifndef CMAKE_BOOTSTRAP
   if (encoding != codecvt::None) {
-    imbue(std::locale(getloc(), new codecvt(encoding)));
+    this->imbue(std::locale(this->getloc(), new codecvt(encoding)));
   }
 #else
   static_cast<void>(encoding);
@@ -25,20 +27,26 @@ cmGeneratedFileStream::cmGeneratedFileStream(Encoding encoding)
 cmGeneratedFileStream::cmGeneratedFileStream(std::string const& name,
                                              bool quiet, Encoding encoding)
   : cmGeneratedFileStreamBase(name)
-  , Stream(TempName.c_str())
+  , Stream(this->TempName.c_str()) // NOLINT(cmake-use-cmsys-fstream)
 {
   // Check if the file opened.
   if (!*this && !quiet) {
     cmSystemTools::Error("Cannot open file for write: " + this->TempName);
     cmSystemTools::ReportLastSystemError("");
   }
-#ifdef CMAKE_BUILD_WITH_CMAKE
+#ifndef CMAKE_BOOTSTRAP
   if (encoding != codecvt::None) {
-    imbue(std::locale(getloc(), new codecvt(encoding)));
+    this->imbue(std::locale(this->getloc(), new codecvt(encoding)));
   }
 #else
   static_cast<void>(encoding);
 #endif
+  if (encoding == codecvt::UTF8_WITH_BOM) {
+    // Write the BOM encoding header into the file
+    char magic[] = { static_cast<char>(0xEF), static_cast<char>(0xBB),
+                     static_cast<char>(0xBF) };
+    this->write(magic, 3);
+  }
 }
 
 cmGeneratedFileStream::~cmGeneratedFileStream()
@@ -59,10 +67,11 @@ cmGeneratedFileStream& cmGeneratedFileStream::Open(std::string const& name,
 
   // Open the temporary output file.
   if (binaryFlag) {
-    this->Stream::open(this->TempName.c_str(),
-                       std::ios::out | std::ios::binary);
+    this->Stream::open( // NOLINT(cmake-use-cmsys-fstream)
+      this->TempName.c_str(), std::ios::out | std::ios::binary);
   } else {
-    this->Stream::open(this->TempName.c_str());
+    this->Stream::open( // NOLINT(cmake-use-cmsys-fstream)
+      this->TempName.c_str());
   }
 
   // Check if the file opened.
@@ -79,7 +88,7 @@ bool cmGeneratedFileStream::Close()
   this->Okay = !this->fail();
 
   // Close the temporary output file.
-  this->Stream::close();
+  this->Stream::close(); // NOLINT(cmake-use-cmsys-fstream)
 
   // Remove the temporary file (possibly by renaming to the real file).
   return this->cmGeneratedFileStreamBase::Close();
@@ -115,15 +124,23 @@ cmGeneratedFileStreamBase::~cmGeneratedFileStreamBase()
 void cmGeneratedFileStreamBase::Open(std::string const& name)
 {
   // Save the original name of the file.
-  this->Name = name;
+  this->Name = cmSystemTools::CollapseFullPath(name);
 
   // Create the name of the temporary file.
-  this->TempName = name;
+  this->TempName = this->Name;
 #if defined(__VMS)
-  this->TempName += "_tmp";
+  this->TempName += "_";
 #else
-  this->TempName += ".tmp";
+  this->TempName += ".";
 #endif
+  if (!this->TempExt.empty()) {
+    this->TempName += this->TempExt;
+  } else {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "tmp%05x",
+             cmSystemTools::RandomSeed() & 0xFFFFF);
+    this->TempName += buf;
+  }
 
   // Make sure the temporary file that will be used is not present.
   cmSystemTools::RemoveFile(this->TempName);
@@ -149,7 +166,7 @@ bool cmGeneratedFileStreamBase::Close()
     // The destination is to be replaced.  Rename the temporary to the
     // destination atomically.
     if (this->Compress) {
-      std::string gzname = this->TempName + ".temp.gz";
+      std::string gzname = cmStrCat(this->TempName, ".temp.gz");
       if (this->CompressFile(this->TempName, gzname)) {
         this->RenameFile(gzname, resname);
       }
@@ -164,12 +181,14 @@ bool cmGeneratedFileStreamBase::Close()
   // Else, the destination was not replaced.
   //
   // Always delete the temporary file. We never want it to stay around.
-  cmSystemTools::RemoveFile(this->TempName);
+  if (!this->TempName.empty()) {
+    cmSystemTools::RemoveFile(this->TempName);
+  }
 
   return replaced;
 }
 
-#ifdef CMAKE_BUILD_WITH_CMAKE
+#ifndef CMAKE_BOOTSTRAP
 int cmGeneratedFileStreamBase::CompressFile(std::string const& oldname,
                                             std::string const& newname)
 {
@@ -179,6 +198,7 @@ int cmGeneratedFileStreamBase::CompressFile(std::string const& oldname,
   }
   FILE* ifs = cmsys::SystemTools::Fopen(oldname, "r");
   if (!ifs) {
+    gzclose(gf);
     return 0;
   }
   size_t res;
@@ -211,5 +231,24 @@ int cmGeneratedFileStreamBase::RenameFile(std::string const& oldname,
 
 void cmGeneratedFileStream::SetName(const std::string& fname)
 {
-  this->Name = fname;
+  this->Name = cmSystemTools::CollapseFullPath(fname);
+}
+
+void cmGeneratedFileStream::SetTempExt(std::string const& ext)
+{
+  this->TempExt = ext;
+}
+
+void cmGeneratedFileStream::WriteAltEncoding(std::string const& data,
+                                             Encoding encoding)
+{
+#ifndef CMAKE_BOOTSTRAP
+  std::locale prevLocale =
+    this->imbue(std::locale(this->getloc(), new codecvt(encoding)));
+  this->write(data.data(), data.size());
+  this->imbue(prevLocale);
+#else
+  static_cast<void>(encoding);
+  this->write(data.data(), data.size());
+#endif
 }

@@ -1,17 +1,18 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmGlobVerificationManager_h
-#define cmGlobVerificationManager_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-
-#include "cmListFileCache.h"
 
 #include <iosfwd>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "cmListFileCache.h"
+
+class cmMessenger;
 
 /** \class cmGlobVerificationManager
  * \brief Class for expressing build-time dependencies on glob expressions.
@@ -24,7 +25,7 @@ class cmGlobVerificationManager
 protected:
   //! Save verification script for given makefile.
   //! Saves to output <path>/<CMakeFilesDirectory>/VerifyGlobs.cmake
-  bool SaveVerificationScript(const std::string& path);
+  bool SaveVerificationScript(const std::string& path, cmMessenger* messenger);
 
   //! Add an entry into the glob cache
   void AddCacheEntry(bool recurse, bool listDirectories, bool followSymlinks,
@@ -32,7 +33,7 @@ protected:
                      const std::string& expression,
                      const std::vector<std::string>& files,
                      const std::string& variable,
-                     const cmListFileBacktrace& bt);
+                     const cmListFileBacktrace& bt, cmMessenger* messenger);
 
   //! Clear the glob cache for state reset.
   void Reset();
@@ -72,7 +73,7 @@ private:
     std::vector<std::pair<std::string, cmListFileBacktrace>> Backtraces;
   };
 
-  typedef std::map<CacheEntryKey, CacheEntryValue> CacheEntryMap;
+  using CacheEntryMap = std::map<CacheEntryKey, CacheEntryValue>;
   CacheEntryMap Cache;
   std::string VerifyScript;
   std::string VerifyStamp;
@@ -81,5 +82,3 @@ private:
   // cmGlobVerificationManager should never be used directly.
   friend class cmState; // allow access to add cache values
 };
-
-#endif

@@ -1,6 +1,8 @@
 STATIC_LIBRARY_OPTIONS
 ----------------------
 
+.. versionadded:: 3.13
+
 Archiver (or MSVC librarian) flags for a static library target.
 Targets that are shared libraries, modules, or executables need to use
 the :prop_tgt:`LINK_OPTIONS` target property.
@@ -18,3 +20,5 @@ for more on defining buildsystem properties.
 
   This property must be used in preference to :prop_tgt:`STATIC_LIBRARY_FLAGS`
   property.
+
+.. include:: ../command/OPTIONS_SHELL.txt

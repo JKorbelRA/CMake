@@ -1,11 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmTargetDepend_h
-#define cmTargetDepend_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <set>
+
+#include "cmListFileCache.h"
 
 class cmGeneratorTarget;
 
@@ -17,21 +18,20 @@ class cmTargetDepend
 
   // The set order depends only on the Target, so we use
   // mutable members to achieve a map with set syntax.
-  mutable bool Link;
-  mutable bool Util;
+  mutable bool Link = false;
+  mutable bool Util = false;
+  mutable bool Cross = false;
   mutable cmListFileBacktrace Backtrace;
 
 public:
   cmTargetDepend(cmGeneratorTarget const* t)
     : Target(t)
-    , Link(false)
-    , Util(false)
   {
   }
   operator cmGeneratorTarget const*() const { return this->Target; }
   cmGeneratorTarget const* operator->() const { return this->Target; }
   cmGeneratorTarget const& operator*() const { return *this->Target; }
-  friend bool operator<(cmTargetDepend l, cmTargetDepend r)
+  friend bool operator<(cmTargetDepend const& l, cmTargetDepend const& r)
   {
     return l.Target < r.Target;
   }
@@ -43,12 +43,14 @@ public:
       this->Link = true;
     }
   }
+  void SetCross(bool cross) const { this->Cross = cross; }
   void SetBacktrace(cmListFileBacktrace const& bt) const
   {
     this->Backtrace = bt;
   }
   bool IsLink() const { return this->Link; }
   bool IsUtil() const { return this->Util; }
+  bool IsCross() const { return this->Cross; }
   cmListFileBacktrace const& GetBacktrace() const { return this->Backtrace; }
 };
 
@@ -56,5 +58,3 @@ public:
 class cmTargetDependSet : public std::set<cmTargetDepend>
 {
 };
-
-#endif

@@ -2,11 +2,15 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmMachO.h"
 
-#include "cmAlgorithms.h"
-#include "cmsys/FStream.hxx"
 #include <cstddef>
 #include <string>
 #include <vector>
+
+#include <cm/memory>
+
+#include "cmsys/FStream.hxx"
+
+#include "cmAlgorithms.h"
 
 // Include the Mach-O format information system header.
 #include <mach-o/fat.h>
@@ -52,7 +56,7 @@ bool peek(cmsys::ifstream& fin, T& v)
 template <typename T>
 bool read(cmsys::ifstream& fin, T& v)
 {
-  return !!fin.read(reinterpret_cast<char*>(&v), sizeof(T));
+  return static_cast<bool>(fin.read(reinterpret_cast<char*>(&v), sizeof(T)));
 }
 
 // read from the file and fill multiple data structures where
@@ -64,7 +68,8 @@ bool read(cmsys::ifstream& fin, std::vector<T>& v)
   if (v.empty()) {
     return true;
   }
-  return !!fin.read(reinterpret_cast<char*>(&v[0]), sizeof(T) * v.size());
+  return static_cast<bool>(
+    fin.read(reinterpret_cast<char*>(&v[0]), sizeof(T) * v.size()));
 }
 }
 
@@ -75,14 +80,14 @@ public:
   // A load_command and its associated data
   struct RawLoadCommand
   {
-    uint32_t type(const cmMachOHeaderAndLoadCommands* m) const
+    uint32_t type(const cmMachOHeaderAndLoadCommands& m) const
     {
       if (this->LoadCommand.size() < sizeof(load_command)) {
         return 0;
       }
       const load_command* cmd =
         reinterpret_cast<const load_command*>(&this->LoadCommand[0]);
-      return m->swap(cmd->cmd);
+      return m.swap(cmd->cmd);
     }
     std::vector<char> LoadCommand;
   };
@@ -182,7 +187,10 @@ class cmMachOInternal
 {
 public:
   cmMachOInternal(const char* fname);
+  cmMachOInternal(const cmMachOInternal&) = delete;
   ~cmMachOInternal();
+
+  cmMachOInternal& operator=(const cmMachOInternal&) = delete;
 
   // read a Mach-O file
   bool read_mach_o(uint32_t file_offset);
@@ -198,7 +206,7 @@ public:
   std::string ErrorMessage;
 
   // the list of Mach-O's
-  std::vector<cmMachOHeaderAndLoadCommands*> MachOList;
+  std::vector<std::unique_ptr<cmMachOHeaderAndLoadCommands>> MachOList;
 };
 
 cmMachOInternal::cmMachOInternal(const char* fname)
@@ -256,12 +264,7 @@ cmMachOInternal::cmMachOInternal(const char* fname)
   }
 }
 
-cmMachOInternal::~cmMachOInternal()
-{
-  for (auto& i : this->MachOList) {
-    delete i;
-  }
-}
+cmMachOInternal::~cmMachOInternal() = default;
 
 bool cmMachOInternal::read_mach_o(uint32_t file_offset)
 {
@@ -276,25 +279,25 @@ bool cmMachOInternal::read_mach_o(uint32_t file_offset)
     return false;
   }
 
-  cmMachOHeaderAndLoadCommands* f = nullptr;
+  std::unique_ptr<cmMachOHeaderAndLoadCommands> f;
   if (magic == MH_CIGAM || magic == MH_MAGIC) {
     bool swap = false;
     if (magic == MH_CIGAM) {
       swap = true;
     }
-    f = new cmMachOHeaderAndLoadCommandsImpl<mach_header>(swap);
+    f = cm::make_unique<cmMachOHeaderAndLoadCommandsImpl<mach_header>>(swap);
   } else if (magic == MH_CIGAM_64 || magic == MH_MAGIC_64) {
     bool swap = false;
     if (magic == MH_CIGAM_64) {
       swap = true;
     }
-    f = new cmMachOHeaderAndLoadCommandsImpl<mach_header_64>(swap);
+    f =
+      cm::make_unique<cmMachOHeaderAndLoadCommandsImpl<mach_header_64>>(swap);
   }
 
   if (f && f->read_mach_o(this->Fin)) {
-    this->MachOList.push_back(f);
+    this->MachOList.push_back(std::move(f));
   } else {
-    delete f;
     this->ErrorMessage = "Failed to read Mach-O header.";
     return false;
   }
@@ -329,15 +332,17 @@ bool cmMachO::GetInstallName(std::string& install_name)
   }
 
   // grab the first Mach-O and get the install name from that one
-  cmMachOHeaderAndLoadCommands* macho = this->Internal->MachOList[0];
+  std::unique_ptr<cmMachOHeaderAndLoadCommands>& macho =
+    this->Internal->MachOList[0];
   for (size_t i = 0; i < macho->load_commands().size(); i++) {
     const cmMachOHeaderAndLoadCommands::RawLoadCommand& cmd =
       macho->load_commands()[i];
-    uint32_t lc_cmd = cmd.type(macho);
+    uint32_t lc_cmd = cmd.type(*macho);
     if (lc_cmd == LC_ID_DYLIB || lc_cmd == LC_LOAD_WEAK_DYLIB ||
         lc_cmd == LC_LOAD_DYLIB) {
       if (sizeof(dylib_command) < cmd.LoadCommand.size()) {
-        uint32_t namelen = cmd.LoadCommand.size() - sizeof(dylib_command);
+        uint32_t namelen = static_cast<uint32_t>(cmd.LoadCommand.size() -
+                                                 sizeof(dylib_command));
         install_name.assign(&cmd.LoadCommand[sizeof(dylib_command)], namelen);
         return true;
       }

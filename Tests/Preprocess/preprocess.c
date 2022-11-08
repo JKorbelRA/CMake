@@ -15,25 +15,25 @@ int check_defines_C(void)
     result = 0;
   }
   if (strcmp(TARGET_STRING, STRING_VALUE) != 0) {
-    fprintf(stderr, "TARGET_STRING has wrong value in C [%s]\n",
-            TARGET_STRING);
+    fprintf(stderr, "TARGET_STRING has wrong value in C [%s] vs [%s]\n",
+            TARGET_STRING, STRING_VALUE);
     result = 0;
   }
   {
     int x = 2;
     int y = 3;
     if ((FILE_EXPR) != (EXPR)) {
-      fprintf(stderr, "FILE_EXPR did not work in C [%s]\n",
-              TO_STRING(FILE_EXPR));
+      fprintf(stderr, "FILE_EXPR did not work in C [%s] vs [%s]\n",
+              TO_STRING(FILE_EXPR), TO_STRING(EXPR));
       result = 0;
     }
     if ((TARGET_EXPR) != (EXPR)) {
-      fprintf(stderr, "TARGET_EXPR did not work in C [%s]\n",
-              TO_STRING(FILE_EXPR));
+      fprintf(stderr, "TARGET_EXPR did not work in C [%s] vs [%s]\n",
+              TO_STRING(TARGET_EXPR), TO_STRING(EXPR));
       result = 0;
     }
   }
-#ifdef NDEBUG
+#ifdef PREPROCESS_NDEBUG
 #  ifdef FILE_DEF_DEBUG
   {
     fprintf(stderr, "FILE_DEF_DEBUG should not be defined in C\n");

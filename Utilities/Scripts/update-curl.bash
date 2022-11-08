@@ -5,10 +5,10 @@ set -x
 shopt -s dotglob
 
 readonly name="curl"
-readonly ownership="Curl Upstream <curl-library@cool.haxx.se>"
+readonly ownership="Curl Upstream <curl-library@lists.haxx.se>"
 readonly subtree="Utilities/cmcurl"
 readonly repo="https://github.com/curl/curl.git"
-readonly tag="curl-7_65_0"
+readonly tag="curl-7_86_0"
 readonly shortlog=false
 readonly paths="
   CMake/*
@@ -23,6 +23,10 @@ readonly paths="
   lib/libcurl.rc
   lib/vauth/*.c
   lib/vauth/*.h
+  lib/vquic/*.c
+  lib/vquic/*.h
+  lib/vssh/*.c
+  lib/vssh/*.h
   lib/vtls/*.c
   lib/vtls/*.h
 "

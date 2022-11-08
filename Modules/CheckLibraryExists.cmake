@@ -26,13 +26,18 @@ Check if the function exists.
 The following variables may be set before calling this macro to modify
 the way the check is run:
 
-::
-
-  CMAKE_REQUIRED_FLAGS = string of compile command line flags
-  CMAKE_REQUIRED_DEFINITIONS = list of macros to define (-DFOO=bar)
-  CMAKE_REQUIRED_LINK_OPTIONS = list of options to pass to link command
-  CMAKE_REQUIRED_LIBRARIES = list of libraries to link
-  CMAKE_REQUIRED_QUIET = execute quietly without messages
+``CMAKE_REQUIRED_FLAGS``
+  string of compile command line flags.
+``CMAKE_REQUIRED_DEFINITIONS``
+  list of macros to define (-DFOO=bar).
+``CMAKE_REQUIRED_LINK_OPTIONS``
+  .. versionadded:: 3.14
+    list of options to pass to link command.
+``CMAKE_REQUIRED_LIBRARIES``
+  list of libraries to link.
+``CMAKE_REQUIRED_QUIET``
+  .. versionadded:: 3.1
+    execute quietly without messages.
 #]=======================================================================]
 
 include_guard(GLOBAL)
@@ -42,7 +47,7 @@ macro(CHECK_LIBRARY_EXISTS LIBRARY FUNCTION LOCATION VARIABLE)
     set(MACRO_CHECK_LIBRARY_EXISTS_DEFINITION
       "-DCHECK_FUNCTION_EXISTS=${FUNCTION} ${CMAKE_REQUIRED_FLAGS}")
     if(NOT CMAKE_REQUIRED_QUIET)
-      message(STATUS "Looking for ${FUNCTION} in ${LIBRARY}")
+      message(CHECK_START "Looking for ${FUNCTION} in ${LIBRARY}")
     endif()
     set(CHECK_LIBRARY_EXISTS_LINK_OPTIONS)
     if(CMAKE_REQUIRED_LINK_OPTIONS)
@@ -56,17 +61,15 @@ macro(CHECK_LIBRARY_EXISTS LIBRARY FUNCTION LOCATION VARIABLE)
     endif()
 
     if(CMAKE_C_COMPILER_LOADED)
-      set(_cle_source ${CMAKE_ROOT}/Modules/CheckFunctionExists.c)
+      set(_cle_source CheckFunctionExists.c)
     elseif(CMAKE_CXX_COMPILER_LOADED)
-      set(_cle_source ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CheckLibraryExists/CheckFunctionExists.cxx)
-      configure_file(${CMAKE_ROOT}/Modules/CheckFunctionExists.c "${_cle_source}" COPYONLY)
+      set(_cle_source CheckFunctionExists.cxx)
     else()
       message(FATAL_ERROR "CHECK_FUNCTION_EXISTS needs either C or CXX language enabled")
     endif()
 
     try_compile(${VARIABLE}
-      ${CMAKE_BINARY_DIR}
-      ${_cle_source}
+      SOURCE_FROM_FILE "${_cle_source}" "${CMAKE_ROOT}/Modules/CheckFunctionExists.c"
       COMPILE_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS}
       ${CHECK_LIBRARY_EXISTS_LINK_OPTIONS}
       LINK_LIBRARIES ${CHECK_LIBRARY_EXISTS_LIBRARIES}
@@ -78,7 +81,7 @@ macro(CHECK_LIBRARY_EXISTS LIBRARY FUNCTION LOCATION VARIABLE)
 
     if(${VARIABLE})
       if(NOT CMAKE_REQUIRED_QUIET)
-        message(STATUS "Looking for ${FUNCTION} in ${LIBRARY} - found")
+        message(CHECK_PASS "found")
       endif()
       set(${VARIABLE} 1 CACHE INTERNAL "Have library ${LIBRARY}")
       file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
@@ -87,7 +90,7 @@ macro(CHECK_LIBRARY_EXISTS LIBRARY FUNCTION LOCATION VARIABLE)
         "${OUTPUT}\n\n")
     else()
       if(NOT CMAKE_REQUIRED_QUIET)
-        message(STATUS "Looking for ${FUNCTION} in ${LIBRARY} - not found")
+        message(CHECK_FAIL "not found")
       endif()
       set(${VARIABLE} "" CACHE INTERNAL "Have library ${LIBRARY}")
       file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log

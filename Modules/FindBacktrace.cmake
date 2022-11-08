@@ -5,7 +5,7 @@
 FindBacktrace
 -------------
 
-Find provider for `backtrace(3) <http://man7.org/linux/man-pages/man3/backtrace.3.html>`__.
+Find provider for `backtrace(3) <https://man7.org/linux/man-pages/man3/backtrace.3.html>`__.
 
 Checks if OS supports ``backtrace(3)`` via either ``libc`` or custom library.
 This module defines the following variables:
@@ -74,7 +74,7 @@ else()
   if(Backtrace_INCLUDE_DIR)
     # OpenBSD has libbacktrace renamed to libexecinfo
     find_library(Backtrace_LIBRARY "execinfo")
-  elseif()     # respect user wishes
+  else()     # respect user wishes
     set(_Backtrace_HEADER_TRY "backtrace.h")
     find_path(Backtrace_INCLUDE_DIR ${_Backtrace_HEADER_TRY})
     find_library(Backtrace_LIBRARY "backtrace")

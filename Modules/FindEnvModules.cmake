@@ -5,6 +5,8 @@
 FindEnvModules
 --------------
 
+.. versionadded:: 3.15
+
 Locate an environment module implementation and make commands available to
 CMake scripts to use them.  This is compatible with both Lua-based Lmod
 and TCL-based EnvironmentModules.
@@ -257,7 +259,7 @@ function(env_module_swap out_mod in_mod)
   )
 
   if(MOD_ARGS_OUTPUT_VARIABLE)
-    set(${MOD_ARGS_OUTPUT_VARIABLE} "${err_var}" PARENT_SCOPE)
+    set(${MOD_ARGS_OUTPUT_VARIABLE} "${tmp_out}" PARENT_SCOPE)
   endif()
   if(MOD_ARGS_RESULT_VARIABLE)
     set(${MOD_ARGS_RESULT_VARIABLE} ${tmp_ret} PARENT_SCOPE)

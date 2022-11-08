@@ -352,6 +352,13 @@
   },
   {
     "name": "TargetMachine",
+    "switch": "MACHINE:ARM64EC",
+    "comment": "MachineARM64EC",
+    "value": "MachineARM64EC",
+    "flags": []
+  },
+  {
+    "name": "TargetMachine",
     "switch": "MACHINE:EBC",
     "comment": "MachineEBC",
     "value": "MachineEBC",
@@ -1270,15 +1277,6 @@
     "name": "ImportLibrary",
     "switch": "IMPLIB:",
     "comment": "Import Library",
-    "value": "",
-    "flags": [
-      "UserValue"
-    ]
-  },
-  {
-    "name": "MergeSections",
-    "switch": "MERGE:",
-    "comment": "Merge Sections",
     "value": "",
     "flags": [
       "UserValue"

@@ -13,6 +13,11 @@ include(Compiler/CMakeCommonCompilerMacros)
 if(CMAKE_HOST_WIN32)
   # MSVC-like
   macro(__compiler_intel lang)
+    if("x${lang}" STREQUAL "xFortran")
+      set(CMAKE_${lang}_COMPILE_OPTIONS_WARNING_AS_ERROR "-warn:errors")
+    else()
+      set(CMAKE_${lang}_COMPILE_OPTIONS_WARNING_AS_ERROR "-Werror-all")
+    endif()
   endmacro()
 else()
   # GNU-like
@@ -32,5 +37,20 @@ else()
       unset(_COMPILER_ARGS)
     endif()
     list(APPEND CMAKE_${lang}_COMPILER_PREDEFINES_COMMAND "-QdM" "-P" "-Za" "${CMAKE_ROOT}/Modules/CMakeCXXCompilerABI.cpp")
+
+    if("x${lang}" STREQUAL "xFortran")
+      set(CMAKE_${lang}_COMPILE_OPTIONS_WARNING_AS_ERROR "-warn" "errors")
+    else()
+      # Precompile Headers
+      set(CMAKE_PCH_EXTENSION .pchi)
+      set(CMAKE_LINK_PCH ON)
+      set(CMAKE_PCH_EPILOGUE "#pragma hdrstop")
+      set(CMAKE_${lang}_COMPILE_OPTIONS_INVALID_PCH -Winvalid-pch)
+      set(CMAKE_${lang}_COMPILE_OPTIONS_USE_PCH -Wno-pch-messages -pch-use <PCH_FILE> -include <PCH_HEADER>)
+      set(CMAKE_${lang}_COMPILE_OPTIONS_CREATE_PCH -Wno-pch-messages -pch-create <PCH_FILE> -include <PCH_HEADER>)
+
+      # COMPILE_WARNING_AS_ERROR
+      set(CMAKE_${lang}_COMPILE_OPTIONS_WARNING_AS_ERROR "-Werror-all")
+    endif()
   endmacro()
 endif()

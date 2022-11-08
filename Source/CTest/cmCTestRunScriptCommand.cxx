@@ -5,8 +5,6 @@
 #include "cmCTestScriptHandler.h"
 #include "cmMakefile.h"
 
-#include <sstream>
-
 class cmExecutionStatus;
 
 bool cmCTestRunScriptCommand::InitialPass(std::vector<std::string> const& args,
@@ -39,11 +37,9 @@ bool cmCTestRunScriptCommand::InitialPass(std::vector<std::string> const& args,
       ++i;
     } else {
       int ret;
-      cmCTestScriptHandler::RunScript(this->CTest, this->Makefile,
-                                      args[i].c_str(), !np, &ret);
-      std::ostringstream str;
-      str << ret;
-      this->Makefile->AddDefinition(returnVariable, str.str().c_str());
+      cmCTestScriptHandler::RunScript(this->CTest, this->Makefile, args[i],
+                                      !np, &ret);
+      this->Makefile->AddDefinition(returnVariable, std::to_string(ret));
     }
   }
   return true;

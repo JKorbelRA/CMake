@@ -2,15 +2,17 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestVC.h"
 
-#include "cmCTest.h"
-#include "cmSystemTools.h"
-#include "cmXMLWriter.h"
+#include <cstdio>
+#include <ctime>
+#include <sstream>
+#include <vector>
 
 #include "cmsys/Process.h"
-#include <sstream>
-#include <stdio.h>
-#include <time.h>
-#include <vector>
+
+#include "cmCTest.h"
+#include "cmSystemTools.h"
+#include "cmValue.h"
+#include "cmXMLWriter.h"
 
 cmCTestVC::cmCTestVC(cmCTest* ct, std::ostream& log)
   : CTest(ct)
@@ -36,7 +38,7 @@ void cmCTestVC::SetSourceDirectory(std::string const& dir)
   this->SourceDirectory = dir;
 }
 
-bool cmCTestVC::InitialCheckout(const char* command)
+bool cmCTestVC::InitialCheckout(const std::string& command)
 {
   cmCTestLog(this->CTest, HANDLER_OUTPUT,
              "   First perform the initial checkout: " << command << "\n");
@@ -64,7 +66,7 @@ bool cmCTestVC::InitialCheckout(const char* command)
   this->Log << "--- Begin Initial Checkout ---\n";
   OutputLogger out(this->Log, "co-out> ");
   OutputLogger err(this->Log, "co-err> ");
-  bool result = this->RunChild(&vc_co[0], &out, &err, parent.c_str());
+  bool result = this->RunChild(vc_co.data(), &out, &err, parent.c_str());
   this->Log << "--- End Initial Checkout ---\n";
   if (!result) {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
@@ -121,9 +123,10 @@ std::string cmCTestVC::GetNightlyTime()
     this->CTest->GetCTestConfiguration("NightlyStartTime"),
     this->CTest->GetTomorrowTag());
   char current_time[1024];
-  sprintf(current_time, "%04d-%02d-%02d %02d:%02d:%02d", t->tm_year + 1900,
-          t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
-  return std::string(current_time);
+  snprintf(current_time, sizeof(current_time), "%04d-%02d-%02d %02d:%02d:%02d",
+           t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min,
+           t->tm_sec);
+  return { current_time };
 }
 
 void cmCTestVC::Cleanup()
@@ -152,8 +155,7 @@ bool cmCTestVC::Update()
 
   // if update version only is on then do not actually update,
   // just note the current version and finish
-  if (!cmSystemTools::IsOn(
-        this->CTest->GetCTestConfiguration("UpdateVersionOnly"))) {
+  if (!cmIsOn(this->CTest->GetCTestConfiguration("UpdateVersionOnly"))) {
     result = this->NoteOldRevision() && result;
     this->Log << "--- Begin Update ---\n";
     result = this->UpdateImpl() && result;

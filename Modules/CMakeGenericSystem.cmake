@@ -24,9 +24,18 @@ set(CMAKE_DL_LIBS "dl")
 set(CMAKE_FIND_LIBRARY_PREFIXES "lib")
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".so" ".a")
 
+# Define feature "DEFAULT" as supported. This special feature generates the
+# default option to link a library
+# This feature is intended to be used in LINK_LIBRARY_OVERRIDE and
+# LINK_LIBRARY_OVERRIDE_<LIBRARY> target properties
+set(CMAKE_LINK_LIBRARY_USING_DEFAULT_SUPPORTED TRUE)
+
 set(CMAKE_AUTOGEN_ORIGIN_DEPENDS ON)
 set(CMAKE_AUTOMOC_COMPILER_PREDEFINES ON)
-set(CMAKE_AUTOMOC_MACRO_NAMES "Q_OBJECT" "Q_GADGET" "Q_NAMESPACE")
+if(NOT DEFINED CMAKE_AUTOMOC_PATH_PREFIX)
+  set(CMAKE_AUTOMOC_PATH_PREFIX OFF)
+endif()
+set(CMAKE_AUTOMOC_MACRO_NAMES "Q_OBJECT" "Q_GADGET" "Q_NAMESPACE" "Q_NAMESPACE_EXPORT")
 
 # basically all general purpose OSs support shared libs
 set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
@@ -38,28 +47,27 @@ set (CMAKE_SKIP_INSTALL_RPATH "NO" CACHE BOOL
 
 set(CMAKE_VERBOSE_MAKEFILE FALSE CACHE BOOL "If this value is on, makefiles will be generated without the .SILENT directive, and all commands will be echoed to the console during the make.  This is useful for debugging only. With Visual Studio IDE projects all commands are done without /nologo.")
 
+if(DEFINED ENV{CMAKE_COLOR_DIAGNOSTICS} AND NOT DEFINED CACHE{CMAKE_COLOR_DIAGNOSTICS})
+  set(CMAKE_COLOR_DIAGNOSTICS $ENV{CMAKE_COLOR_DIAGNOSTICS} CACHE BOOL "Enable colored diagnostics throughout.")
+endif()
+
 if(CMAKE_GENERATOR MATCHES "Make")
-  set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL
-    "Enable/Disable color output during build."
-    )
+  if(NOT DEFINED CMAKE_COLOR_DIAGNOSTICS)
+    set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Enable/Disable color output during build.")
+  endif()
   mark_as_advanced(CMAKE_COLOR_MAKEFILE)
+
   if(DEFINED CMAKE_RULE_MESSAGES)
     set_property(GLOBAL PROPERTY RULE_MESSAGES ${CMAKE_RULE_MESSAGES})
   endif()
   if(DEFINED CMAKE_TARGET_MESSAGES)
     set_property(GLOBAL PROPERTY TARGET_MESSAGES ${CMAKE_TARGET_MESSAGES})
   endif()
-  if(CMAKE_GENERATOR MATCHES "Unix Makefiles")
-    set(CMAKE_EXPORT_COMPILE_COMMANDS OFF CACHE BOOL
-      "Enable/Disable output of compile commands during generation."
-      )
-    mark_as_advanced(CMAKE_EXPORT_COMPILE_COMMANDS)
-  endif()
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  set(CMAKE_EXPORT_COMPILE_COMMANDS OFF CACHE BOOL
-    "Enable/Disable output of compile commands during generation."
+if(NOT DEFINED CMAKE_EXPORT_COMPILE_COMMANDS AND CMAKE_GENERATOR MATCHES "Ninja|Unix Makefiles")
+  set(CMAKE_EXPORT_COMPILE_COMMANDS "$ENV{CMAKE_EXPORT_COMPILE_COMMANDS}"
+    CACHE BOOL "Enable/Disable output of compile commands during generation."
     )
   mark_as_advanced(CMAKE_EXPORT_COMPILE_COMMANDS)
 endif()
@@ -80,9 +88,13 @@ function(GetDefaultWindowsPrefixBase var)
   #
   if("${CMAKE_GENERATOR}" MATCHES "(Win64|IA64)")
     set(arch_hint "x64")
+  elseif("${CMAKE_GENERATOR_PLATFORM}" MATCHES "x64")
+    set(arch_hint "x64")
   elseif("${CMAKE_GENERATOR_PLATFORM}" MATCHES "ARM64")
     set(arch_hint "ARM64")
   elseif("${CMAKE_GENERATOR}" MATCHES "ARM")
+    set(arch_hint "ARM")
+  elseif("${CMAKE_GENERATOR_PLATFORM}" MATCHES "ARM")
     set(arch_hint "ARM")
   elseif("${CMAKE_SIZEOF_VOID_P}" STREQUAL "8")
     set(arch_hint "x64")

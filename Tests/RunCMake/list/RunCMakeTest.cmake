@@ -30,6 +30,7 @@ run_cmake(FILTER-NotList)
 run_cmake(REMOVE_AT-NotList)
 run_cmake(REMOVE_DUPLICATES-NotList)
 run_cmake(REMOVE_ITEM-NotList)
+run_cmake(REMOVE_ITEM-NoItemArg)
 run_cmake(REVERSE-NotList)
 run_cmake(SORT-NotList)
 
@@ -76,6 +77,9 @@ run_cmake(TRANSFORM-Selector-FOR-NoEnoughArguments)
 run_cmake(TRANSFORM-Selector-FOR-TooManyArguments)
 run_cmake(TRANSFORM-Selector-FOR-BadArgument)
 run_cmake(TRANSFORM-Selector-FOR-InvalidIndex)
+run_cmake(TRANSFORM-Selector-FOR-ZeroStepArgument)
+run_cmake(TRANSFORM-Selector-FOR-NegativeStepArgument)
+run_cmake(TRANSFORM-Selector-FOR-BackwardsRange)
 # 'output' oriented tests
 run_cmake(TRANSFORM-Output-OUTPUT_VARIABLE-NoArguments)
 run_cmake(TRANSFORM-Output-OUTPUT_VARIABLE-TooManyArguments)
@@ -112,3 +116,6 @@ run_cmake(POP_FRONT-NoArgs)
 # Successful tests
 run_cmake(POP_BACK)
 run_cmake(POP_FRONT)
+
+# Nonexistent variables treated as empty
+run_cmake(LIST-nonexistent)

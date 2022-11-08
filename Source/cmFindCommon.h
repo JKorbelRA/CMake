@@ -1,7 +1,6 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmFindCommon_h
-#define cmFindCommon_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
@@ -10,9 +9,12 @@
 #include <string>
 #include <vector>
 
-#include "cmCommand.h"
 #include "cmPathLabel.h"
 #include "cmSearchPath.h"
+#include "cmWindowsRegistry.h"
+
+class cmExecutionStatus;
+class cmMakefile;
 
 /** \class cmFindCommon
  * \brief Base class for FIND_XXX implementations.
@@ -21,14 +23,18 @@
  * cmFindProgramCommand, cmFindPathCommand, cmFindLibraryCommand,
  * cmFindFileCommand, and cmFindPackageCommand.
  */
-class cmFindCommon : public cmCommand
+class cmFindCommon
 {
 public:
-  cmFindCommon();
-  ~cmFindCommon() override;
+  cmFindCommon(cmExecutionStatus& status);
+
+  void SetError(std::string const& e);
+
+  bool DebugModeEnabled() const { return this->DebugMode; }
 
 protected:
   friend class cmSearchPath;
+  friend class cmFindBaseDebugState;
 
   /** Used to define groups of path labels */
   class PathGroup : public cmPathLabel
@@ -77,12 +83,21 @@ protected:
   /** Place a set of search paths under the search roots.  */
   void RerootPaths(std::vector<std::string>& paths);
 
-  /** Get ignored paths from CMAKE_[SYSTEM_]IGNORE_path variables.  */
+  /** Get ignored paths from CMAKE_[SYSTEM_]IGNORE_PATH variables.  */
   void GetIgnoredPaths(std::vector<std::string>& ignore);
   void GetIgnoredPaths(std::set<std::string>& ignore);
 
+  /** Get ignored paths from CMAKE_[SYSTEM_]IGNORE_PREFIX_PATH variables.  */
+  void GetIgnoredPrefixPaths(std::vector<std::string>& ignore);
+  void GetIgnoredPrefixPaths(std::set<std::string>& ignore);
+
   /** Compute final search path list (reroot + trailing slash).  */
-  void ComputeFinalPaths();
+  enum class IgnorePaths
+  {
+    No,
+    Yes,
+  };
+  void ComputeFinalPaths(IgnorePaths ignorePaths);
 
   /** Compute the current default root path mode.  */
   void SelectDefaultRootPathMode();
@@ -92,6 +107,11 @@ protected:
 
   /** Compute the current default search modes based on global variables.  */
   void SelectDefaultSearchModes();
+
+  /** The `InitialPass` functions of the child classes should set
+      this->DebugMode to the result of these.  */
+  bool ComputeIfDebugModeWanted();
+  bool ComputeIfDebugModeWanted(std::string const& var);
 
   // Path arguments prior to path manipulation routines
   std::vector<std::string> UserHintsArgs;
@@ -103,12 +123,16 @@ protected:
   bool CheckCommonArgument(std::string const& arg);
   void AddPathSuffix(std::string const& arg);
 
+  void DebugMessage(std::string const& msg) const;
+  bool DebugMode;
   bool NoDefaultPath;
   bool NoPackageRootPath;
   bool NoCMakePath;
   bool NoCMakeEnvironmentPath;
   bool NoSystemEnvironmentPath;
   bool NoCMakeSystemPath;
+  bool NoCMakeInstallPath;
+  cmWindowsRegistry::View RegistryView = cmWindowsRegistry::View::Target;
 
   std::vector<std::string> SearchPathSuffixes;
 
@@ -118,7 +142,7 @@ protected:
   std::map<PathLabel, cmSearchPath> LabeledPaths;
 
   std::vector<std::string> SearchPaths;
-  std::set<std::string> SearchPathsEmitted;
+  std::set<cmSearchPath::PathWithPrefix> SearchPathsEmitted;
 
   bool SearchFrameworkFirst;
   bool SearchFrameworkOnly;
@@ -127,6 +151,7 @@ protected:
   bool SearchAppBundleFirst;
   bool SearchAppBundleOnly;
   bool SearchAppBundleLast;
-};
 
-#endif
+  cmMakefile* Makefile;
+  cmExecutionStatus& Status;
+};

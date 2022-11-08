@@ -38,7 +38,7 @@
 #include <string.h>
 #endif
 #ifdef HAVE_ZLIB_H
-#include <cm_zlib.h>
+#include <cm3p/zlib.h>
 #endif
 
 #include "archive.h"
@@ -1172,7 +1172,7 @@ cab_checksum_finish(struct archive_read *a)
 	    cfdata->memimage + CFDATA_cbData, l, cfdata->sum_calculated);
 	if (cfdata->sum_calculated != cfdata->sum) {
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-		    "Checksum error CFDATA[%d] %x:%x in %d bytes",
+		    "Checksum error CFDATA[%d] %" PRIx32 ":%" PRIx32 " in %d bytes",
 		    cab->entry_cffolder->cfdata_index -1,
 		    cfdata->sum, cfdata->sum_calculated,
 		    cfdata->compressed_size);
@@ -1509,8 +1509,8 @@ cab_read_ahead_cfdata_deflate(struct archive_read *a, ssize_t *avail)
 			}
 			if (mszip == 1 && cab->stream.next_in[0] != 0x4b)
 				goto nomszip;
-			else if (cab->stream.next_in[0] != 0x43 ||
-			    cab->stream.next_in[1] != 0x4b)
+			else if (mszip == 2 && (cab->stream.next_in[0] != 0x43 ||
+			    cab->stream.next_in[1] != 0x4b))
 				goto nomszip;
 			cab->stream.next_in += mszip;
 			cab->stream.avail_in -= mszip;
@@ -2110,7 +2110,6 @@ lzx_decode_init(struct lzx_stream *strm, int w_bits)
 		ds->pos_tbl = malloc(sizeof(ds->pos_tbl[0]) * w_slot);
 		if (ds->pos_tbl == NULL)
 			return (ARCHIVE_FATAL);
-		lzx_huffman_free(&(ds->mt));
 	}
 
 	for (footer = 0; footer < 18; footer++)

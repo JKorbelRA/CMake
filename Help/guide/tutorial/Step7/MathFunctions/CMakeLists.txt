@@ -1,30 +1,36 @@
-# first we add the executable that generates the table
-add_executable(MakeTable MakeTable.cxx)
-
-# add the command to generate the source code
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/Table.h
-  COMMAND MakeTable ${CMAKE_CURRENT_BINARY_DIR}/Table.h
-  DEPENDS MakeTable
-  )
-
-# add the main library
-add_library(MathFunctions
-            mysqrt.cxx
-            ${CMAKE_CURRENT_BINARY_DIR}/Table.h
-            )
+add_library(MathFunctions mysqrt.cxx)
 
 # state that anybody linking to us needs to include the current source dir
 # to find MathFunctions.h, while we don't.
-# state that we depend on Tutorial_BINARY_DIR but consumers don't, as the
-# TutorialConfig.h include is an implementation detail
-# state that we depend on our binary dir to find Table.h
 target_include_directories(MathFunctions
           INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}
-          PRIVATE ${Tutorial_BINARY_DIR}
-                  ${CMAKE_CURRENT_BINARY_DIR}
           )
 
-# install rules
-install(TARGETS MathFunctions DESTINATION lib)
+# link our compiler flags interface library
+target_link_libraries(MathFunctions tutorial_compiler_flags)
+
+# TODO 1: Include CheckCXXSourceCompiles
+
+# TODO 2: Use check_cxx_source_compiles with simple C++ code to verify
+# availability of:
+# * std::log
+# * std::exp
+# Store the results in HAVE_LOG and HAVE_EXP respectively.
+
+# Hint: Sample C++ code which uses log:
+# #include <cmath>
+# int main() {
+#   std::log(1.0);
+#   return 0;
+# }
+
+# TODO 3: Conditionally on HAVE_LOG and HAVE_EXP, add private compile
+# definitions "HAVE_LOG" and "HAVE_EXP" to the MathFunctions target.
+
+#Hint: Use target_compile_definitions()
+
+# install libs
+set(installable_libs MathFunctions tutorial_compiler_flags)
+install(TARGETS ${installable_libs} DESTINATION lib)
+# install include headers
 install(FILES MathFunctions.h DESTINATION include)

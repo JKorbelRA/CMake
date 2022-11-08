@@ -8,6 +8,8 @@ find_path
 .. |prefix_XXX_SUBDIR| replace:: ``<prefix>/include``
 .. |entry_XXX_SUBDIR| replace:: ``<entry>/include``
 
+.. |FIND_XXX_REGISTRY_VIEW_DEFAULT| replace:: ``TARGET``
+
 .. |FIND_PACKAGE_ROOT_PREFIX_PATH_XXX| replace::
    ``<prefix>/include/<arch>`` if :variable:`CMAKE_LIBRARY_ARCHITECTURE`
    is set, and |FIND_PACKAGE_ROOT_PREFIX_PATH_XXX_SUBDIR|
@@ -17,7 +19,8 @@ find_path
 .. |CMAKE_XXX_PATH| replace:: :variable:`CMAKE_INCLUDE_PATH`
 .. |CMAKE_XXX_MAC_PATH| replace:: :variable:`CMAKE_FRAMEWORK_PATH`
 
-.. |SYSTEM_ENVIRONMENT_PATH_XXX| replace:: The directories in ``PATH`` and ``INCLUDE``.
+.. |SYSTEM_ENVIRONMENT_PATH_XXX| replace:: The directories in ``INCLUDE``
+   and ``PATH``.
 .. |SYSTEM_ENVIRONMENT_PATH_WINDOWS_XXX| replace:: On Windows hosts:
       ``<prefix>/include/<arch>`` if :variable:`CMAKE_LIBRARY_ARCHITECTURE`
       is set, and |SYSTEM_ENVIRONMENT_PREFIX_PATH_XXX_SUBDIR|.

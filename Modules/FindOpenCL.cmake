@@ -5,10 +5,17 @@
 FindOpenCL
 ----------
 
+.. versionadded:: 3.1
+
 Finds Open Computing Language (OpenCL)
+
+.. versionadded:: 3.10
+  Detection of OpenCL 2.1 and 2.2.
 
 IMPORTED Targets
 ^^^^^^^^^^^^^^^^
+
+.. versionadded:: 3.7
 
 This module defines :prop_tgt:`IMPORTED` target ``OpenCL::OpenCL``, if
 OpenCL has been found.
@@ -38,7 +45,7 @@ function(_FIND_OPENCL_VERSION)
   set(CMAKE_REQUIRED_QUIET ${OpenCL_FIND_QUIETLY})
 
   CMAKE_PUSH_CHECK_STATE()
-  foreach(VERSION "2_2" "2_1" "2_0" "1_2" "1_1" "1_0")
+  foreach(VERSION "3_0" "2_2" "2_1" "2_0" "1_2" "1_1" "1_0")
     set(CMAKE_REQUIRED_INCLUDES "${OpenCL_INCLUDE_DIR}")
 
     if(APPLE)
@@ -78,6 +85,8 @@ find_path(OpenCL_INCLUDE_DIR
     ENV CUDA_PATH
     ENV ATISTREAMSDKROOT
     ENV OCL_ROOT
+    /usr/local/cuda
+    /opt/cuda
   PATH_SUFFIXES
     include
     OpenCL/common/inc
@@ -126,6 +135,8 @@ else()
       PATHS
         ENV AMDAPPSDKROOT
         ENV CUDA_PATH
+        /usr/local/cuda
+        /opt/cuda
       PATH_SUFFIXES
         lib/x86
         lib)
@@ -135,6 +146,8 @@ else()
       PATHS
         ENV AMDAPPSDKROOT
         ENV CUDA_PATH
+        /usr/local/cuda
+        /opt/cuda
       PATH_SUFFIXES
         lib/x86_64
         lib/x64

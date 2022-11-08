@@ -5,15 +5,34 @@
 FindOpenACC
 -----------
 
+.. versionadded:: 3.10
+
 Detect OpenACC support by the compiler.
 
 This module can be used to detect OpenACC support in a compiler.
 If the compiler supports OpenACC, the flags required to compile with
 OpenACC support are returned in variables for the different languages.
-Currently, only PGI, GNU and Cray compilers are supported.
+Currently, only NVHPC, PGI, GNU and Cray compilers are supported.
+
+Imported Targets
+^^^^^^^^^^^^^^^^
+
+.. versionadded:: 3.16
+
+The module provides :prop_tgt:`IMPORTED` targets:
+
+``OpenACC::OpenACC_<lang>``
+  Target for using OpenACC from ``<lang>``.
 
 Variables
 ^^^^^^^^^
+
+The module defines the following variables:
+
+``OpenACC_FOUND``
+  .. versionadded:: 3.25
+
+  Variable indicating that OpenACC flags for at least one languages have been found.
 
 This module will set the following variables per language in your
 project, where ``<lang>`` is one of C, CXX, or Fortran:
@@ -22,6 +41,11 @@ project, where ``<lang>`` is one of C, CXX, or Fortran:
   Variable indicating if OpenACC support for ``<lang>`` was detected.
 ``OpenACC_<lang>_FLAGS``
   OpenACC compiler flags for ``<lang>``, separated by spaces.
+``OpenACC_<lang>_OPTIONS``
+  .. versionadded:: 3.16
+
+  OpenACC compiler flags for ``<lang>``, as a list. Suitable for usage
+  with target_compile_options or target_link_options.
 
 The module will also try to provide the OpenACC version variables:
 
@@ -60,9 +84,7 @@ int main(){
 set(OpenACC_Fortran_TEST_SOURCE
 "
 program test
-#ifdef _OPENACC
-  return 0;
-#else
+#ifndef _OPENACC
   breaks_on_purpose
 #endif
 endprogram test
@@ -106,24 +128,22 @@ set(OpenACC_Fortran_CHECK_VERSION_SOURCE
 )
 
 
-function(_OPENACC_WRITE_SOURCE_FILE LANG SRC_FILE_CONTENT_VAR SRC_FILE_NAME SRC_FILE_FULLPATH)
-  set(WORK_DIR ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/FindOpenACC)
+macro(_OPENACC_PREPARE_SOURCE LANG CONTENT_ID NAME_PREFIX FULLNAME_VAR CONTENT_VAR)
   if("${LANG}" STREQUAL "C")
-    set(SRC_FILE "${WORK_DIR}/${SRC_FILE_NAME}.c")
-    file(WRITE "${SRC_FILE}" "${OpenACC_C_CXX_${SRC_FILE_CONTENT_VAR}}")
+    set(${FULLNAME_VAR} "${NAME_PREFIX}.c")
+    set(${CONTENT_VAR} "${OpenACC_C_CXX_${CONTENT_ID}}")
   elseif("${LANG}" STREQUAL "CXX")
-    set(SRC_FILE "${WORK_DIR}/${SRC_FILE_NAME}.cpp")
-    file(WRITE "${SRC_FILE}" "${OpenACC_C_CXX_${SRC_FILE_CONTENT_VAR}}")
+    set(${FULLNAME_VAR} "${NAME_PREFIX}.cpp")
+    set(${CONTENT_VAR} "${OpenACC_C_CXX_${CONTENT_ID}}")
   elseif("${LANG}" STREQUAL "Fortran")
-    set(SRC_FILE "${WORK_DIR}/${SRC_FILE_NAME}.F90")
-    file(WRITE "${SRC_FILE}_in" "${OpenACC_Fortran_${SRC_FILE_CONTENT_VAR}}")
-    configure_file("${SRC_FILE}_in" "${SRC_FILE}" @ONLY)
+    set(${FULLNAME_VAR} "${NAME_PREFIX}.F90")
+    set(${CONTENT_VAR} "${OpenACC_Fortran_${CONTENT_ID}}")
   endif()
-  set(${SRC_FILE_FULLPATH} "${SRC_FILE}" PARENT_SCOPE)
-endfunction()
+endmacro()
 
 
 function(_OPENACC_GET_FLAGS_CANDIDATE LANG FLAG_VAR)
+  set(ACC_FLAG_NVHPC "-acc")
   set(ACC_FLAG_PGI "-acc")
   set(ACC_FLAG_GNU "-fopenacc")
   set(ACC_FLAG_Cray "-h acc")
@@ -140,6 +160,7 @@ endfunction()
 
 function(_OPENACC_GET_ACCEL_TARGET_FLAG LANG TARGET FLAG_VAR)
   # Find target accelerator flags.
+  set(ACC_TARGET_FLAG_NVHPC "-ta")
   set(ACC_TARGET_FLAG_PGI "-ta")
   if(DEFINED ACC_TARGET_FLAG_${CMAKE_${LANG}_COMPILER_ID})
     set("${FLAG_VAR}" "${ACC_TARGET_FLAG_${CMAKE_${LANG}_COMPILER_ID}}=${TARGET}" PARENT_SCOPE)
@@ -149,6 +170,7 @@ endfunction()
 
 function(_OPENACC_GET_VERBOSE_FLAG LANG FLAG_VAR)
   # Find compiler's verbose flag for OpenACC.
+  set(ACC_VERBOSE_FLAG_NVHPC "-Minfo=accel")
   set(ACC_VERBOSE_FLAG_PGI "-Minfo=accel")
   if(DEFINED ACC_VERBOSE_FLAG_${CMAKE_${LANG}_COMPILER_ID})
     set("${FLAG_VAR}" "${ACC_VERBOSE_FLAG_${CMAKE_${LANG}_COMPILER_ID}}" PARENT_SCOPE)
@@ -159,10 +181,12 @@ endfunction()
 function(_OPENACC_GET_FLAGS LANG FLAG_VAR)
   set(FLAG_CANDIDATES "")
   _OPENACC_GET_FLAGS_CANDIDATE("${LANG}" FLAG_CANDIDATES)
-  _OPENACC_WRITE_SOURCE_FILE("${LANG}" "TEST_SOURCE" OpenACCTryFlag _OPENACC_TEST_SRC)
+  _OPENACC_PREPARE_SOURCE("${LANG}" TEST_SOURCE OpenACCTryFlag
+    _OPENACC_TEST_SRC_NAME _OPENACC_TEST_SRC_CONTENT)
 
   foreach(FLAG IN LISTS FLAG_CANDIDATES)
-    try_compile(OpenACC_FLAG_TEST_RESULT ${CMAKE_BINARY_DIR} ${_OPENACC_TEST_SRC}
+    try_compile(OpenACC_FLAG_TEST_RESULT
+      SOURCE_FROM_VAR "${_OPENACC_TEST_SRC_NAME}" _OPENACC_TEST_SRC_CONTENT
       CMAKE_FLAGS "-DCOMPILE_DEFINITIONS:STRING=${FLAG}"
       OUTPUT_VARIABLE OpenACC_TRY_COMPILE_OUTPUT
     )
@@ -187,13 +211,15 @@ endfunction()
 
 
 function(_OPENACC_GET_SPEC_DATE LANG SPEC_DATE)
-  _OPENACC_WRITE_SOURCE_FILE("${LANG}" "CHECK_VERSION_SOURCE" OpenACCCheckVersion _OPENACC_TEST_SRC)
+  _OPENACC_PREPARE_SOURCE(${LANG} CHECK_VERSION_SOURCE OpenACCCheckVersion
+    _OPENACC_TEST_SRC_NAME _OPENACC_TEST_SRC_CONTENT)
 
   set(BIN_FILE "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/FindOpenACC/accver_${LANG}.bin")
-  try_compile(OpenACC_SPECTEST_${LANG} "${CMAKE_BINARY_DIR}" "${_OPENACC_TEST_SRC}"
-              CMAKE_FLAGS "-DCOMPILE_DEFINITIONS:STRING=${OpenACC_${LANG}_FLAGS}"
-              COPY_FILE ${BIN_FILE}
-              OUTPUT_VARIABLE OUTPUT)
+  try_compile(OpenACC_SPECTEST_${LANG}
+    SOURCE_FROM_VAR "${_OPENACC_TEST_SRC_NAME}" _OPENACC_TEST_SRC_CONTENT
+    CMAKE_FLAGS "-DCOMPILE_DEFINITIONS:STRING=${OpenACC_${LANG}_FLAGS}"
+    COPY_FILE "${BIN_FILE}"
+    OUTPUT_VARIABLE OUTPUT)
 
   if(${OpenACC_SPECTEST_${LANG}})
     file(STRINGS ${BIN_FILE} specstr LIMIT_COUNT 1 REGEX "INFO:OpenACC-date")
@@ -241,13 +267,37 @@ foreach (LANG IN ITEMS C CXX Fortran)
     if(NOT DEFINED OpenACC_${LANG}_FLAGS)
       _OPENACC_GET_FLAGS("${LANG}" OpenACC_${LANG}_FLAGS)
     endif()
+    if(NOT DEFINED OpenACC_${LANG}_OPTIONS)
+      separate_arguments(OpenACC_${LANG}_OPTIONS NATIVE_COMMAND "${OpenACC_${LANG}_FLAGS}")
+    endif()
     _OPENACC_GET_SPEC_DATE("${LANG}" OpenACC_${LANG}_SPEC_DATE)
     _OPENACC_SET_VERSION_BY_SPEC_DATE("${LANG}")
 
     find_package_handle_standard_args(OpenACC_${LANG}
+      NAME_MISMATCHED
       REQUIRED_VARS OpenACC_${LANG}_FLAGS
       VERSION_VAR OpenACC_${LANG}_VERSION
     )
+    if(OpenACC_${LANG}_FOUND)
+      set(OpenACC_FOUND TRUE)
+    endif()
+  endif()
+endforeach()
+
+foreach (LANG IN ITEMS C CXX Fortran)
+  if(OpenACC_${LANG}_FOUND AND NOT TARGET OpenACC::OpenACC_${LANG})
+    add_library(OpenACC::OpenACC_${LANG} INTERFACE IMPORTED)
+  endif()
+  if(OpenACC_${LANG}_LIBRARIES)
+    set_property(TARGET OpenACC::OpenACC_${LANG} PROPERTY
+      INTERFACE_LINK_LIBRARIES "${OpenACC_${LANG}_LIBRARIES}")
+  endif()
+  if(OpenACC_${LANG}_FLAGS)
+    set_property(TARGET OpenACC::OpenACC_${LANG} PROPERTY
+      INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:${LANG}>:${OpenACC_${LANG}_OPTIONS}>")
+    set_property(TARGET OpenACC::OpenACC_${LANG} PROPERTY
+      INTERFACE_LINK_OPTIONS "$<$<COMPILE_LANGUAGE:${LANG}>:${OpenACC_${LANG}_OPTIONS}>")
+    unset(_OpenACC_${LANG}_OPTIONS)
   endif()
 endforeach()
 

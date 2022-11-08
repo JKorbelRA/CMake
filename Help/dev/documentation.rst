@@ -92,6 +92,11 @@ literal block after ``::``
  the referenced documents inline as part of the referencing
  document.
 
+``versionadded``, ``versionchanged`` directives
+ Specify that something was added or changed by a named CMake version.
+ The command-line help processor prints the block content as if the lines
+ were normal paragraph text with interpretation.
+
 Inline markup constructs not listed above are printed literally in the
 command-line help output.  We prefer to use inline markup constructs that
 look correct in source form, so avoid use of \\-escapes in favor of inline
@@ -123,9 +128,22 @@ documentation:
 ``command``
  A CMake language command.
 
+``cpack_gen``
+ A CPack package generator.
+ See the `cpack(1)`_ command-line tool's ``-G`` option.
+
+``envvar``
+ An environment variable.
+ See the `cmake-env-variables(7)`_ manual
+ and the `set()`_ command.
+
 ``generator``
  A CMake native build system generator.
  See the `cmake(1)`_ command-line tool's ``-G`` option.
+
+``genex``
+ A CMake generator expression.
+ See the `cmake-generator-expressions(7)`_ manual.
 
 ``manual``
  A CMake manual page, like the `cmake(1)`_ manual.
@@ -160,10 +178,12 @@ which is expected to be of the form::
  -------------
 
 and to appear at or near the top of the ``.rst`` file before any other
-lines starting in a letter, digit, or ``<``.  If no such title appears
+lines starting in a letter, digit, ``<``, or ``$``.  If no such title appears
 literally in the ``.rst`` file, the object name is the ``<file-name>``.
 If a title does appear, it is expected that ``<file-name>`` is equal
-to ``<object-name>`` with any ``<`` and ``>`` characters removed.
+to ``<object-name>`` with any ``<`` and ``>`` characters removed,
+or in the case of a ``$<genex-name>`` or ``$<genex-name:...>``, the
+``genex-name``.
 
 Second, the CMake Domain provides directives to define objects inside
 other documents:
@@ -174,6 +194,14 @@ other documents:
 
   This indented block documents <command-name>.
 
+ .. envvar:: <envvar-name>
+
+  This indented block documents <envvar-name>.
+
+ .. genex:: <genex-name>
+
+  This indented block documents <genex-name>.
+
  .. variable:: <variable-name>
 
   This indented block documents <variable-name>.
@@ -183,11 +211,14 @@ the first approach above.
 
 .. _`Sphinx Domain`: http://sphinx-doc.org/domains.html
 .. _`cmake(1)`: https://cmake.org/cmake/help/latest/manual/cmake.1.html
+.. _`cmake-env-variables(7)`: https://cmake.org/cmake/help/latest/manual/cmake-env-variables.7.html
+.. _`cmake-generator-expressions(7)`: https://cmake.org/cmake/help/latest/manual/cmake-generator-expressions.7.html
 .. _`cmake-modules(7)`: https://cmake.org/cmake/help/latest/manual/cmake-modules.7.html
 .. _`cmake-policies(7)`: https://cmake.org/cmake/help/latest/manual/cmake-policies.7.html
 .. _`cmake-properties(7)`: https://cmake.org/cmake/help/latest/manual/cmake-properties.7.html
 .. _`cmake-variables(7)`: https://cmake.org/cmake/help/latest/manual/cmake-variables.7.html
 .. _`cmake_policy()`: https://cmake.org/cmake/help/latest/command/cmake_policy.html
+.. _`cpack(1)`: https://cmake.org/cmake/help/latest/manual/cpack.1.html
 .. _`include()`: https://cmake.org/cmake/help/latest/command/include.html
 .. _`set()`: https://cmake.org/cmake/help/latest/command/set.html
 .. _`set_property()`: https://cmake.org/cmake/help/latest/command/set_property.html
@@ -482,7 +513,7 @@ bracket is excluded if and only if the line starts in ``#``.
 Additional such ``.rst:`` comments may appear anywhere in the module file.
 All such comments must start with ``#`` in the first column.
 
-For example, a ``Findxxx.cmake`` module may contain:
+For example, a ``FindXxx.cmake`` module may contain:
 
 ::
 
@@ -509,13 +540,13 @@ For example, a ``Findxxx.cmake`` module may contain:
   <code>
 
   #[=======================================================================[.rst:
-  .. command:: xxx_do_something
+  .. command:: Xxx_do_something
 
    This command does something for Xxx::
 
-    xxx_do_something(some arguments)
+    Xxx_do_something(some arguments)
   #]=======================================================================]
-  macro(xxx_do_something)
+  macro(Xxx_do_something)
     <code>
   endmacro()
 
@@ -528,3 +559,56 @@ documentation, simply leave out the ``Help/module/<module-name>.rst``
 file and the ``Help/manual/cmake-modules.7.rst`` toctree entry.
 
 .. _`Bracket Comment`: https://cmake.org/cmake/help/latest/manual/cmake-language.7.html#bracket-comment
+
+Module Functions and Macros
+---------------------------
+
+Modules may provide CMake functions and macros defined by the `function()`_
+and `macro()`_ commands.  To avoid conflicts across modules, name the
+functions and macros using the prefix ``<ModuleName>_`` followed by the
+rest of the name, where ``<ModuleName>`` is the exact-case spelling of
+the module name.  We have no convention for the portion of names after
+the ``<ModuleName>_`` prefix.
+
+For historical reasons, some modules that come with CMake do not follow
+this prefix convention.  When adding new functions to these modules,
+discussion during review can decide whether to follow their existing
+convention or to use the module name prefix.
+
+Documentation of public functions and macros should be provided in
+the module, typically in the main `module documentation`_ at the top.
+For example, a ``MyModule`` module may document a function like this::
+
+  #[=======================================================================[.rst:
+  MyModule
+  --------
+
+  This is my module.  It provides some functions.
+
+  .. command:: MyModule_Some_Function
+
+    This is some function:
+
+    .. code-block:: cmake
+
+      MyModule_Some_Function(...)
+  #]=======================================================================]
+
+Documentation may alternatively be placed just before each definition.
+For example, a ``MyModule`` module may document another function like this::
+
+  #[=======================================================================[.rst:
+  .. command:: MyModule_Other_Function
+
+    This is another function:
+
+    .. code-block:: cmake
+
+      MyModule_Other_Function(...)
+  #]=======================================================================]
+  function(MyModule_Other_Function ...)
+    # ...
+  endfunction()
+
+.. _`function()`: https://cmake.org/cmake/help/latest/command/function.html
+.. _`macro()`: https://cmake.org/cmake/help/latest/command/macro.html

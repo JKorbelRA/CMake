@@ -1,10 +1,12 @@
-cmake_minimum_required(VERSION 3.1...3.13)
+cmake_minimum_required(VERSION 3.1...3.20)
 
 project(TestBasicPerl CXX)
 
 include(CTest)
 
-set(language "perl")
+if(NOT DEFINED language)
+  set(language "perl")
+endif()
 
 include (../BasicConfiguration.cmake)
 

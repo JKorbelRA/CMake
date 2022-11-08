@@ -1,16 +1,16 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmLocalVisualStudioGenerator_h
-#define cmLocalVisualStudioGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <string>
 
 #include "cmGlobalVisualStudioGenerator.h"
 #include "cmLocalGenerator.h"
+#include "cmVsProjectType.h"
 
 class cmCustomCommand;
 class cmCustomCommandGenerator;
@@ -31,9 +31,10 @@ public:
   cmLocalVisualStudioGenerator(cmGlobalGenerator* gg, cmMakefile* mf);
   virtual ~cmLocalVisualStudioGenerator();
 
-  /** Construct a script from the given list of command lines.  */
   std::string ConstructScript(cmCustomCommandGenerator const& ccg,
                               const std::string& newline = "\n");
+  std::string FinishConstructScript(VsProjectType projectType,
+                                    const std::string& newline = "\n");
 
   /** Label to which to jump in a batch file after a failed step in a
       sequence of custom commands. */
@@ -56,5 +57,3 @@ protected:
   std::unique_ptr<cmCustomCommand> MaybeCreateImplibDir(
     cmGeneratorTarget* target, const std::string& config, bool isFortran);
 };
-
-#endif

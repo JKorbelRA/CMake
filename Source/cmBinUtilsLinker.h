@@ -1,12 +1,11 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
-#ifndef cmBinUtilsLinker_h
-#define cmBinUtilsLinker_h
-
-#include "cmStateTypes.h"
+#pragma once
 
 #include <string>
+
+#include "cmStateTypes.h"
 
 class cmRuntimeDependencyArchive;
 
@@ -26,5 +25,3 @@ protected:
 
   void SetError(const std::string& e);
 };
-
-#endif // cmBinUtilsLinker_h

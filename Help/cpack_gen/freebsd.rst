@@ -1,7 +1,15 @@
 CPack FreeBSD Generator
 -----------------------
 
+.. versionadded:: 3.10
+
 The built in (binary) CPack FreeBSD (pkg) generator (Unix only)
+
+Variables affecting the CPack FreeBSD (pkg) generator
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- .. versionadded:: 3.18
+    :variable:`CPACK_ARCHIVE_THREADS`
 
 Variables specific to CPack FreeBSD (pkg) generator
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -54,8 +62,6 @@ the RPM information (e.g. package license).
 
     - :variable:`CPACK_PACKAGE_DESCRIPTION_SUMMARY` (this is always set
       by CPack itself, if nothing else sets it explicitly).
-    - :variable:`PROJECT_DESCRIPTION` (this can be set with the DESCRIPTION
-      parameter for :command:`project`).
 
 .. variable:: CPACK_FREEBSD_PACKAGE_DESCRIPTION
 
@@ -66,7 +72,11 @@ the RPM information (e.g. package license).
   * Default:
 
     - :variable:`CPACK_DEBIAN_PACKAGE_DESCRIPTION` (this may be set already
-      for Debian packaging, so we may as well re-use it).
+      for Debian packaging, so it is used as a fallback).
+    - :variable:`CPACK_PACKAGE_DESCRIPTION_SUMMARY` (this is always set
+      by CPack itself, if nothing else sets it explicitly).
+    - :variable:`PROJECT_DESCRIPTION` (this can be set with the DESCRIPTION
+      parameter for :command:`project`).
 
 .. variable:: CPACK_FREEBSD_PACKAGE_WWW
 
@@ -77,9 +87,12 @@ the RPM information (e.g. package license).
   * Mandatory: YES
   * Default:
 
-   - :variable:`CMAKE_PROJECT_HOMEPAGE_URL`, or if that is not set,
-     :variable:`CPACK_DEBIAN_PACKAGE_HOMEPAGE` (this may be set already
-     for Debian packaging, so we may as well re-use it).
+   - :variable:`CPACK_PACKAGE_HOMEPAGE_URL`, or if that is not set,
+   - :variable:`CPACK_DEBIAN_PACKAGE_HOMEPAGE` (this may be set already
+     for Debian packaging, so it is used as a fallback).
+
+  .. versionadded:: 3.12
+    The ``CPACK_PACKAGE_HOMEPAGE_URL`` variable.
 
 .. variable:: CPACK_FREEBSD_PACKAGE_LICENSE
 

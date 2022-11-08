@@ -1,12 +1,11 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmVisualStudioWCEPlatformParser_h
-#define cmVisualStudioWCEPlatformParser_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <map>
-#include <stddef.h>
 #include <string>
 #include <vector>
 
@@ -66,5 +65,3 @@ private:
   std::string VcInstallDir;
   std::string VsInstallDir;
 };
-
-#endif

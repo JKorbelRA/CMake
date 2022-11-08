@@ -1,25 +1,82 @@
 Test project .*
-    Start  9: TEST:basic\.case_foo!2
-1/8 Test  #9: TEST:basic\.case_foo!2 \.+ +Passed +[0-9.]+ sec
-    Start 10: TEST:basic\.case_bar!2
-2/8 Test #10: TEST:basic\.case_bar!2 \.+ +Passed +[0-9.]+ sec
-    Start 11: TEST:basic\.disabled_case!2
-3/8 Test #11: TEST:basic\.disabled_case!2 \.+\*+Not Run \(Disabled\) +[0-9.]+ sec
-    Start 12: TEST:disabled\.case!2
-4/8 Test #12: TEST:disabled\.case!2 \.+\*+Not Run \(Disabled\) +[0-9.]+ sec
-    Start 13: TEST:typed/short\.case!2
-5/8 Test #13: TEST:typed/short\.case!2 \.+ +Passed +[0-9.]+ sec
-    Start 14: TEST:typed/float\.case!2
-6/8 Test #14: TEST:typed/float\.case!2 \.+ +Passed +[0-9.]+ sec
-    Start 15: TEST:value/test\.case/1!2
-7/8 Test #15: TEST:value/test\.case/1!2 \.+ +Passed +[0-9.]+ sec
-    Start 16: TEST:value/test\.case/"foo"!2
-8/8 Test #16: TEST:value/test\.case/"foo"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:basic\.case_foo!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:basic\.case_foo!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:basic\.case_bar!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:basic\.case_bar!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:basic\.disabled_case!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:basic\.disabled_case!2 \.+\*+Not Run \(Disabled\) +[0-9.]+ sec
+ *Start +[0-9]+: TEST:basic\.DISABLEDnot_really_case!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:basic\.DISABLEDnot_really_case!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.basic\.case_foo!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.basic\.case_foo!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.basic\.case_bar!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.basic\.case_bar!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.basic\.disabled_case!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.basic\.disabled_case!2 \.+\*+Not Run \(Disabled\) +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.basic\.DISABLEDnot_really_case!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.basic\.DISABLEDnot_really_case!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:disabled\.case!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:disabled\.case!2 \.+\*+Not Run \(Disabled\) +[0-9.]+ sec
+ *Start +[0-9]+: TEST:DISABLEDnotreally\.case!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:DISABLEDnotreally\.case!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:typed\.case<short>!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:typed\.case<short>!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:typed\.case<float>!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:typed\.case<float>!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:typed\.case<char>!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:typed\.case<char>!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.typed\.case<short>!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.typed\.case<short>!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.typed\.case<float>!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.typed\.case<float>!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.typed\.case<char>!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.typed\.case<char>!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:value/test\.case/1!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:value/test\.case/1!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:value/test\.case/"foo"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:value/test\.case/"foo"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.value/test\.case/1!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.value/test\.case/1!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.value/test\.case/"foo"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.value/test\.case/"foo"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"semicolon;"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"semicolon;"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"backslash\\"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"backslash\\"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"\${var}"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"\${var}"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/'\['!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/'\['!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"\]\]=\]"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"\]\]=\]"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"__osbtext"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"__osbtext"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"__csb___text"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"__csb___text"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:param/special\.case/"S o m  e   "!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:param/special\.case/"S o m  e   "!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"semicolon;"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"semicolon;"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"backslash\\"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"backslash\\"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"\${var}"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"\${var}"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/'\['!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/'\['!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"\]\]=\]"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"\]\]=\]"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"__osbtext"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"__osbtext"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"__csb___text"!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"__csb___text"!2 \.+ +Passed +[0-9.]+ sec
+ *Start +[0-9]+: TEST:ns\.param/special\.case/"S o m  e   "!2
+ *[0-9]+/[0-9]+ +Test +#[0-9]+: TEST:ns\.param/special\.case/"S o m  e   "!2 \.+ +Passed +[0-9.]+ sec
 
-100% tests passed, 0 tests failed out of 6
+100% tests passed, 0 tests failed out of [0-9]+
 
 Total Test time \(real\) = +[0-9.]+ sec
 
 The following tests did not run:
-.*11 - TEST:basic\.disabled_case!2 \(Disabled\)
-.*12 - TEST:disabled\.case!2 \(Disabled\)
+[ 	0-9]+- TEST:basic\.disabled_case!2 \(Disabled\)
+[ 	0-9]+- TEST:ns\.basic\.disabled_case!2 \(Disabled\)
+[ 	0-9]+- TEST:disabled\.case!2 \(Disabled\)

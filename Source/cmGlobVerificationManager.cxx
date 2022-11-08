@@ -2,22 +2,26 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGlobVerificationManager.h"
 
-#include "cmsys/FStream.hxx"
 #include <sstream>
+
+#include "cmsys/FStream.hxx"
 
 #include "cmGeneratedFileStream.h"
 #include "cmListFileCache.h"
+#include "cmMessageType.h"
+#include "cmMessenger.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmVersion.h"
 
-bool cmGlobVerificationManager::SaveVerificationScript(const std::string& path)
+bool cmGlobVerificationManager::SaveVerificationScript(const std::string& path,
+                                                       cmMessenger* messenger)
 {
   if (this->Cache.empty()) {
     return true;
   }
 
-  std::string scriptFile = path;
-  scriptFile += "/CMakeFiles";
+  std::string scriptFile = cmStrCat(path, "/CMakeFiles");
   std::string stampFile = scriptFile;
   cmSystemTools::MakeDirectory(scriptFile);
   scriptFile += "/VerifyGlobs.cmake";
@@ -37,6 +41,8 @@ bool cmGlobVerificationManager::SaveVerificationScript(const std::string& path)
                    << cmVersion::GetMajorVersion() << "."
                    << cmVersion::GetMinorVersion() << "\n";
 
+  verifyScriptFile << "cmake_policy(SET CMP0009 NEW)\n";
+
   for (auto const& i : this->Cache) {
     CacheEntryKey k = std::get<0>(i);
     CacheEntryValue v = std::get<1>(i);
@@ -49,7 +55,7 @@ bool cmGlobVerificationManager::SaveVerificationScript(const std::string& path)
 
     for (auto const& bt : v.Backtraces) {
       verifyScriptFile << "# " << std::get<0>(bt);
-      std::get<1>(bt).PrintTitle(verifyScriptFile);
+      messenger->PrintBacktraceTitle(verifyScriptFile, std::get<1>(bt));
       verifyScriptFile << "\n";
     }
 
@@ -142,7 +148,7 @@ void cmGlobVerificationManager::AddCacheEntry(
   const bool recurse, const bool listDirectories, const bool followSymlinks,
   const std::string& relative, const std::string& expression,
   const std::vector<std::string>& files, const std::string& variable,
-  const cmListFileBacktrace& backtrace)
+  const cmListFileBacktrace& backtrace, cmMessenger* messenger)
 {
   CacheEntryKey key = CacheEntryKey(recurse, listDirectories, followSymlinks,
                                     relative, expression);
@@ -154,17 +160,17 @@ void cmGlobVerificationManager::AddCacheEntry(
   } else if (value.Initialized && value.Files != files) {
     std::ostringstream message;
     message << std::boolalpha;
-    message << "The glob expression\n";
+    message << "The glob expression\n ";
     key.PrintGlobCommand(message, variable);
-    backtrace.PrintTitle(message);
-    message << "\nwas already present in the glob cache but the directory\n"
+    message << "\nwas already present in the glob cache but the directory "
                "contents have changed during the configuration run.\n";
     message << "Matching glob expressions:";
     for (auto const& bt : value.Backtraces) {
       message << "\n  " << std::get<0>(bt);
-      std::get<1>(bt).PrintTitle(message);
+      messenger->PrintBacktraceTitle(message, std::get<1>(bt));
     }
-    cmSystemTools::Error(message.str());
+    messenger->IssueMessage(MessageType::FATAL_ERROR, message.str(),
+                            backtrace);
   } else {
     value.Backtraces.emplace_back(variable, backtrace);
   }

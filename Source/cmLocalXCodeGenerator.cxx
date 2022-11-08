@@ -2,13 +2,19 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmLocalXCodeGenerator.h"
 
+#include <memory>
+#include <ostream>
+#include <utility>
+
+#include "cmGeneratorExpression.h"
 #include "cmGeneratorTarget.h"
 #include "cmGlobalXCodeGenerator.h"
+#include "cmMakefile.h"
 #include "cmSourceFile.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
 
-class cmGeneratorTarget;
 class cmGlobalGenerator;
-class cmMakefile;
 
 cmLocalXCodeGenerator::cmLocalXCodeGenerator(cmGlobalGenerator* gg,
                                              cmMakefile* mf)
@@ -40,17 +46,70 @@ void cmLocalXCodeGenerator::Generate()
 {
   cmLocalGenerator::Generate();
 
-  for (auto target : this->GetGeneratorTargets()) {
+  for (const auto& target : this->GetGeneratorTargets()) {
     target->HasMacOSXRpathInstallNameDir("");
   }
 }
 
-void cmLocalXCodeGenerator::GenerateInstallRules()
+void cmLocalXCodeGenerator::AddGeneratorSpecificInstallSetup(std::ostream& os)
 {
-  cmLocalGenerator::GenerateInstallRules();
-
-  for (auto target : this->GetGeneratorTargets()) {
+  // First check if we need to warn about incompatible settings
+  for (const auto& target : this->GetGeneratorTargets()) {
     target->HasMacOSXRpathInstallNameDir("");
+  }
+
+  // CMakeIOSInstallCombined.cmake needs to know the location of the top of
+  // the build directory
+  os << "set(CMAKE_BINARY_DIR \"" << this->GetBinaryDirectory() << "\")\n\n";
+
+  if (this->Makefile->PlatformIsAppleEmbedded()) {
+    std::string platformName;
+    switch (this->Makefile->GetAppleSDKType()) {
+      case cmMakefile::AppleSDK::IPhoneOS:
+        platformName = "iphoneos";
+        break;
+      case cmMakefile::AppleSDK::IPhoneSimulator:
+        platformName = "iphonesimulator";
+        break;
+      case cmMakefile::AppleSDK::AppleTVOS:
+        platformName = "appletvos";
+        break;
+      case cmMakefile::AppleSDK::AppleTVSimulator:
+        platformName = "appletvsimulator";
+        break;
+      case cmMakefile::AppleSDK::WatchOS:
+        platformName = "watchos";
+        break;
+      case cmMakefile::AppleSDK::WatchSimulator:
+        platformName = "watchsimulator";
+        break;
+      case cmMakefile::AppleSDK::MacOS:
+        break;
+    }
+    if (!platformName.empty()) {
+      // The effective platform name is just the platform name with a hyphen
+      // prepended. We can get the SUPPORTED_PLATFORMS from the project file
+      // at runtime, so we don't need to compute that here.
+      /* clang-format off */
+      os <<
+        "if(NOT PLATFORM_NAME)\n"
+        "  if(NOT \"$ENV{PLATFORM_NAME}\" STREQUAL \"\")\n"
+        "    set(PLATFORM_NAME \"$ENV{PLATFORM_NAME}\")\n"
+        "  endif()\n"
+        "  if(NOT PLATFORM_NAME)\n"
+        "    set(PLATFORM_NAME " << platformName << ")\n"
+        "  endif()\n"
+        "endif()\n\n"
+        "if(NOT EFFECTIVE_PLATFORM_NAME)\n"
+        "  if(NOT \"$ENV{EFFECTIVE_PLATFORM_NAME}\" STREQUAL \"\")\n"
+        "    set(EFFECTIVE_PLATFORM_NAME \"$ENV{EFFECTIVE_PLATFORM_NAME}\")\n"
+        "  endif()\n"
+        "  if(NOT EFFECTIVE_PLATFORM_NAME)\n"
+        "    set(EFFECTIVE_PLATFORM_NAME -" << platformName << ")\n"
+        "  endif()\n"
+        "endif()\n\n";
+      /* clang-format off */
+    }
   }
 }
 
@@ -65,9 +124,8 @@ void cmLocalXCodeGenerator::ComputeObjectFilenames(
   std::map<std::string, int> counts;
   for (auto& si : mapping) {
     cmSourceFile const* sf = si.first;
-    std::string objectName =
-      cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath());
-    objectName += ".o";
+    std::string objectName = cmStrCat(
+      cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath()), ".o");
 
     std::string objectNameLower = cmSystemTools::LowerCase(objectName);
     counts[objectNameLower] += 1;
@@ -75,5 +133,24 @@ void cmLocalXCodeGenerator::ComputeObjectFilenames(
       // TODO: emit warning about duplicate name?
     }
     si.second = objectName;
+  }
+}
+
+void cmLocalXCodeGenerator::AddXCConfigSources(cmGeneratorTarget* target)
+{
+  auto xcconfig = target->GetProperty("XCODE_XCCONFIG");
+  if (!xcconfig) {
+    return;
+  }
+  auto configs = target->Makefile->GetGeneratorConfigs(
+                          cmMakefile::IncludeEmptyConfig);
+
+  for (auto& config : configs) {
+    auto file = cmGeneratorExpression::Evaluate(
+      xcconfig,
+      this, config);
+    if (!file.empty()) {
+      target->AddSource(file);
+    }
   }
 }

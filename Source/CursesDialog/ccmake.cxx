@@ -1,21 +1,27 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include "cmsys/Encoding.hxx"
+
+#include "cmCursesColor.h"
 #include "cmCursesForm.h"
 #include "cmCursesMainForm.h"
 #include "cmCursesStandardIncludes.h"
 #include "cmDocumentation.h"
 #include "cmDocumentationEntry.h" // IWYU pragma: keep
+#include "cmMessageMetadata.h"
 #include "cmState.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmake.h"
-
-#include "cmsys/Encoding.hxx"
-#include <iostream>
-#include <signal.h>
-#include <string.h>
-#include <string>
-#include <vector>
 
 static const char* cmDocumentationName[][2] = {
   { nullptr, "  ccmake - Curses Interface for CMake." },
@@ -45,25 +51,18 @@ static const char* cmDocumentationOptions[][2] = {
 
 cmCursesForm* cmCursesForm::CurrentForm = nullptr;
 
+#ifndef _WIN32
 extern "C" {
 
-void onsig(int /*unused*/)
+static void onsig(int /*unused*/)
 {
   if (cmCursesForm::CurrentForm) {
-    endwin();
-    initscr();            /* Initialization */
-    noecho();             /* Echo off */
-    cbreak();             /* nl- or cr not needed */
-    keypad(stdscr, true); /* Use key symbols as KEY_DOWN */
-    refresh();
-    int x, y;
-    getmaxyx(stdscr, y, x);
-    cmCursesForm::CurrentForm->Render(1, 1, x, y);
-    cmCursesForm::CurrentForm->UpdateStatusBar();
+    cmCursesForm::CurrentForm->HandleResize();
   }
   signal(SIGWINCH, onsig);
 }
 }
+#endif // _WIN32
 
 int main(int argc, char const* const* argv)
 {
@@ -78,7 +77,7 @@ int main(int argc, char const* const* argv)
   cmDocumentation doc;
   doc.addCMakeStandardDocSections();
   if (doc.CheckOptions(argc, argv)) {
-    cmake hcm(cmake::RoleInternal, cmState::Unknown);
+    cmake hcm(cmake::RoleInternal, cmState::Help);
     hcm.SetHomeDirectory("");
     hcm.SetHomeOutputDirectory("");
     hcm.AddCMakePaths();
@@ -108,8 +107,8 @@ int main(int argc, char const* const* argv)
 
   std::string cacheDir = cmSystemTools::GetCurrentWorkingDirectory();
   for (i = 1; i < args.size(); ++i) {
-    std::string arg = args[i];
-    if (arg.find("-B", 0) == 0) {
+    std::string const& arg = args[i];
+    if (cmHasPrefix(arg, "-B")) {
       cacheDir = arg.substr(2);
     }
   }
@@ -120,14 +119,21 @@ int main(int argc, char const* const* argv)
     cmCursesForm::DebugStart();
   }
 
-  initscr();            /* Initialization */
+  if (initscr() == nullptr) {
+    fprintf(stderr, "Error: ncurses initialization failed\n");
+    exit(1);
+  }
   noecho();             /* Echo off */
   cbreak();             /* nl- or cr not needed */
   keypad(stdscr, true); /* Use key symbols as KEY_DOWN */
+  cmCursesColor::InitColors();
 
+#ifndef _WIN32
   signal(SIGWINCH, onsig);
+#endif // _WIN32
 
-  int x, y;
+  int x;
+  int y;
   getmaxyx(stdscr, y, x);
   if (x < cmCursesMainForm::MIN_WIDTH || y < cmCursesMainForm::MIN_HEIGHT) {
     endwin();
@@ -150,10 +156,28 @@ int main(int argc, char const* const* argv)
     return 1;
   }
 
+  /*
+   * The message is stored in a list by the form which will be
+   * joined by '\n' before display.
+   * Removing any trailing '\n' avoid extra empty lines in the final results
+   */
+  auto cleanMessage = [](const std::string& message) -> std::string {
+    auto msg = message;
+    if (!msg.empty() && msg.back() == '\n') {
+      msg.pop_back();
+    }
+    return msg;
+  };
   cmSystemTools::SetMessageCallback(
-    [myform](const std::string& message, const char* title) {
-      myform->AddError(message, title);
+    [&](const std::string& message, const cmMessageMetadata& md) {
+      myform->AddError(cleanMessage(message), md.title);
     });
+  cmSystemTools::SetStderrCallback([&](const std::string& message) {
+    myform->AddError(cleanMessage(message), "");
+  });
+  cmSystemTools::SetStdoutCallback([&](const std::string& message) {
+    myform->UpdateProgress(cleanMessage(message), -1);
+  });
 
   cmCursesForm::CurrentForm = myform;
 

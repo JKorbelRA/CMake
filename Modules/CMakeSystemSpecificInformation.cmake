@@ -14,8 +14,27 @@
 set(APPLE  )
 set(UNIX   )
 set(CYGWIN )
+set(MSYS )
 set(WIN32  )
+set(BSD )
+set(LINUX )
 
+function(_cmake_record_install_prefix )
+  set(_CMAKE_SYSTEM_PREFIX_PATH_INSTALL_PREFIX_VALUE "${CMAKE_INSTALL_PREFIX}" PARENT_SCOPE)
+  set(_CMAKE_SYSTEM_PREFIX_PATH_STAGING_PREFIX_VALUE "${CMAKE_STAGING_PREFIX}" PARENT_SCOPE)
+  set(icount 0)
+  set(scount 0)
+  foreach(value IN LISTS CMAKE_SYSTEM_PREFIX_PATH)
+    if(value STREQUAL CMAKE_INSTALL_PREFIX)
+      math(EXPR icount "${icount}+1")
+    endif()
+    if(value STREQUAL CMAKE_STAGING_PREFIX)
+      math(EXPR scount "${scount}+1")
+    endif()
+  endforeach()
+  set(_CMAKE_SYSTEM_PREFIX_PATH_INSTALL_PREFIX_COUNT "${icount}" PARENT_SCOPE)
+  set(_CMAKE_SYSTEM_PREFIX_PATH_STAGING_PREFIX_COUNT "${scount}" PARENT_SCOPE)
+endfunction()
 
 # include Generic system information
 include(CMakeGenericSystem)
@@ -27,13 +46,13 @@ include(${CMAKE_SYSTEM_INFO_FILE} OPTIONAL RESULT_VARIABLE _INCLUDED_SYSTEM_INFO
 
 if(NOT _INCLUDED_SYSTEM_INFO_FILE)
   message("System is unknown to cmake, create:\n${CMAKE_SYSTEM_INFO_FILE}"
-          " to use this system, please send your config file to "
-          "cmake@www.cmake.org so it can be added to cmake")
+          " to use this system, please post your config file on "
+          "discourse.cmake.org so it can be added to cmake")
   if(EXISTS ${CMAKE_BINARY_DIR}/CMakeCache.txt)
     configure_file(${CMAKE_BINARY_DIR}/CMakeCache.txt
                    ${CMAKE_BINARY_DIR}/CopyOfCMakeCache.txt COPYONLY)
     message("Your CMakeCache.txt file was copied to CopyOfCMakeCache.txt. "
-            "Please send that file to cmake@www.cmake.org.")
+            "Please post that file on discourse.cmake.org.")
   endif()
 endif()
 

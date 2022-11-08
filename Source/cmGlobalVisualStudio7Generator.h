@@ -1,14 +1,27 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmGlobalVisualStudio7Generator_h
-#define cmGlobalVisualStudio7Generator_h
+#pragma once
+
+#include <iosfwd>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <cm3p/json/value.h>
 
 #include "cmGlobalVisualStudioGenerator.h"
+#include "cmValue.h"
 
-#include "cmGlobalGeneratorFactory.h"
-
-class cmTarget;
+class cmGeneratorTarget;
 struct cmIDEFlagTable;
+class cmLocalGenerator;
+class cmMakefile;
+class cmake;
+template <typename T>
+class BT;
 
 /** \class cmGlobalVisualStudio7Generator
  * \brief Write a Unix makefiles.
@@ -21,9 +34,10 @@ public:
   ~cmGlobalVisualStudio7Generator();
 
   //! Create a local generator appropriate to this Global Generator
-  cmLocalGenerator* CreateLocalGenerator(cmMakefile* mf) override;
+  std::unique_ptr<cmLocalGenerator> CreateLocalGenerator(
+    cmMakefile* mf) override;
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   Json::Value GetJson() const override;
 #endif
 
@@ -55,7 +69,8 @@ public:
   std::vector<GeneratedMakeCommand> GenerateBuildCommand(
     const std::string& makeProgram, const std::string& projectName,
     const std::string& projectDir, std::vector<std::string> const& targetNames,
-    const std::string& config, bool fast, int jobs, bool verbose,
+    const std::string& config, int jobs, bool verbose,
+    const cmBuildOptions& buildOptions = cmBuildOptions(),
     std::vector<std::string> const& makeOptions =
       std::vector<std::string>()) override;
 
@@ -108,16 +123,17 @@ protected:
   std::string const& GetDevEnvCommand();
   virtual std::string FindDevEnvCommand();
 
-  static const char* ExternalProjectType(const char* location);
+  static const char* ExternalProjectType(const std::string& location);
 
   virtual void OutputSLNFile(cmLocalGenerator* root,
                              std::vector<cmLocalGenerator*>& generators);
   virtual void WriteSLNFile(std::ostream& fout, cmLocalGenerator* root,
                             std::vector<cmLocalGenerator*>& generators) = 0;
   virtual void WriteProject(std::ostream& fout, const std::string& name,
-                            const char* path, const cmGeneratorTarget* t) = 0;
+                            const std::string& path,
+                            const cmGeneratorTarget* t) = 0;
   virtual void WriteProjectDepends(std::ostream& fout, const std::string& name,
-                                   const char* path,
+                                   const std::string& path,
                                    cmGeneratorTarget const* t) = 0;
   virtual void WriteProjectConfigurations(
     std::ostream& fout, const std::string& name,
@@ -132,17 +148,18 @@ protected:
   virtual void WriteTargetsToSolution(
     std::ostream& fout, cmLocalGenerator* root,
     OrderedTargetDependSet const& projectTargets);
-  virtual void WriteTargetDepends(
-    std::ostream& fout, OrderedTargetDependSet const& projectTargets);
   virtual void WriteTargetConfigurations(
     std::ostream& fout, std::vector<std::string> const& configs,
     OrderedTargetDependSet const& projectTargets);
 
   virtual void WriteExternalProject(
-    std::ostream& fout, const std::string& name, const char* path,
-    const char* typeGuid, const std::set<BT<std::string>>& dependencies) = 0;
+    std::ostream& fout, const std::string& name, const std::string& path,
+    cmValue typeGuid,
+    const std::set<BT<std::pair<std::string, bool>>>& dependencies) = 0;
 
-  std::string ConvertToSolutionPath(const char* path);
+  virtual bool SupportsCxxModuleDyndep() const { return false; }
+
+  std::string ConvertToSolutionPath(const std::string& path);
 
   std::set<std::string> IsPartOfDefaultBuild(
     std::vector<std::string> const& configs,
@@ -170,5 +187,3 @@ private:
 };
 
 #define CMAKE_CHECK_BUILD_SYSTEM_TARGET "ZERO_CHECK"
-
-#endif

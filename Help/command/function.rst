@@ -44,10 +44,15 @@ can be invoked through any of
   foo()
   Foo()
   FOO()
+  cmake_language(CALL foo)
 
 and so on. However, it is strongly recommended to stay with the
 case chosen in the function definition. Typically functions use
 all-lowercase names.
+
+.. versionadded:: 3.18
+  The :command:`cmake_language(CALL ...)` command can also be used to
+  invoke the function.
 
 Arguments
 ^^^^^^^^^
@@ -68,3 +73,9 @@ argument.  Referencing to ``ARGV#`` arguments beyond ``ARGC`` have
 undefined behavior.  Checking that ``ARGC`` is greater than ``#`` is
 the only way to ensure that ``ARGV#`` was passed to the function as an
 extra argument.
+
+See Also
+^^^^^^^^
+
+* :command:`endfunction`
+* :command:`return`

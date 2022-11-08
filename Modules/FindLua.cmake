@@ -5,23 +5,27 @@
 FindLua
 -------
 
-
-
 Locate Lua library.
 
-This module defines::
+.. versionadded:: 3.18
+  Support for Lua 5.4.
 
-::
+This module defines:
 
-  LUA_FOUND          - if false, do not try to link to Lua
-  LUA_LIBRARIES      - both lua and lualib
-  LUA_INCLUDE_DIR    - where to find lua.h
-  LUA_VERSION_STRING - the version of Lua found
-  LUA_VERSION_MAJOR  - the major version of Lua
-  LUA_VERSION_MINOR  - the minor version of Lua
-  LUA_VERSION_PATCH  - the patch version of Lua
-
-
+``LUA_FOUND``
+  if false, do not try to link to Lua
+``LUA_LIBRARIES``
+  both lua and lualib
+``LUA_INCLUDE_DIR``
+  where to find lua.h
+``LUA_VERSION_STRING``
+  the version of Lua found
+``LUA_VERSION_MAJOR``
+  the major version of Lua
+``LUA_VERSION_MINOR``
+  the minor version of Lua
+``LUA_VERSION_PATCH``
+  the patch version of Lua
 
 Note that the expected include convention is
 
@@ -48,7 +52,7 @@ unset(_lua_append_versions)
 
 # this is a function only to have all the variables inside go away automatically
 function(_lua_get_versions)
-    set(LUA_VERSIONS5 5.3 5.2 5.1 5.0)
+    set(LUA_VERSIONS5 5.4 5.3 5.2 5.1 5.0)
 
     if (Lua_FIND_VERSION_EXACT)
         if (Lua_FIND_VERSION_COUNT GREATER 1)
@@ -211,6 +215,7 @@ if (LUA_LIBRARY)
   # include the math library for Unix
   if (UNIX AND NOT APPLE AND NOT BEOS)
     find_library(LUA_MATH_LIBRARY m)
+    mark_as_advanced(LUA_MATH_LIBRARY)
     set(LUA_LIBRARIES "${LUA_LIBRARY};${LUA_MATH_LIBRARY}")
 
     # include dl library for statically-linked Lua library
@@ -232,6 +237,6 @@ FIND_PACKAGE_HANDLE_STANDARD_ARGS(Lua
                                   REQUIRED_VARS LUA_LIBRARIES LUA_INCLUDE_DIR
                                   VERSION_VAR LUA_VERSION_STRING)
 
-mark_as_advanced(LUA_INCLUDE_DIR LUA_LIBRARY LUA_MATH_LIBRARY)
+mark_as_advanced(LUA_INCLUDE_DIR LUA_LIBRARY)
 
 cmake_policy(POP)

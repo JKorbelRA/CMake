@@ -1,7 +1,6 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmCPackGenerator_h
-#define cmCPackGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
@@ -10,9 +9,11 @@
 #include <string>
 #include <vector>
 
+#include "cm_sys_stat.h"
+
 #include "cmCPackComponentGroup.h"
 #include "cmSystemTools.h"
-#include "cm_sys_stat.h"
+#include "cmValue.h"
 
 class cmCPackLog;
 class cmGlobalGenerator;
@@ -84,8 +85,18 @@ public:
 
   //! Set and get the options
   void SetOption(const std::string& op, const char* value);
+  void SetOption(const std::string& op, const std::string& value)
+  {
+    this->SetOption(op, cmValue(value));
+  }
+  void SetOption(const std::string& op, cmValue value);
   void SetOptionIfNotSet(const std::string& op, const char* value);
-  const char* GetOption(const std::string& op) const;
+  void SetOptionIfNotSet(const std::string& op, const std::string& value)
+  {
+    this->SetOptionIfNotSet(op, cmValue(value));
+  }
+  void SetOptionIfNotSet(const std::string& op, cmValue value);
+  cmValue GetOption(const std::string& op) const;
   std::vector<std::string> GetOptions() const;
   bool IsSet(const std::string& name) const;
   bool IsOn(const std::string& name) const;
@@ -323,10 +334,16 @@ protected:
   bool TraceExpand;
 
   cmMakefile* MakefileMap;
+
+private:
+  template <typename ValueType>
+  void StoreOption(const std::string& op, ValueType value);
+  template <typename ValueType>
+  void StoreOptionIfNotSet(const std::string& op, ValueType value);
 };
 
 #define cmCPackTypeMacro(klass, superclass)                                   \
-  typedef superclass Superclass;                                              \
+  using Superclass = superclass;                                              \
   const char* GetNameOfClass() override { return #klass; }                    \
   static cmCPackGenerator* CreateGenerator() { return new klass; }            \
   class cmCPackTypeMacro_UseTrailingSemicolon
@@ -338,5 +355,3 @@ protected:
     this->Logger->Log(logType, __FILE__, __LINE__,                            \
                       cmCPackLog_msg.str().c_str());                          \
   } while (false)
-
-#endif

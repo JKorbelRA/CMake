@@ -2,10 +2,16 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGlobalBorlandMakefileGenerator.h"
 
+#include <ostream>
+#include <utility>
+
+#include <cm/memory>
+
 #include "cmDocumentationEntry.h"
+#include "cmGlobalGenerator.h"
+#include "cmLocalGenerator.h"
 #include "cmLocalUnixMakefileGenerator3.h"
 #include "cmMakefile.h"
-#include "cmMessageType.h"
 #include "cmState.h"
 #include "cmake.h"
 
@@ -22,6 +28,15 @@ cmGlobalBorlandMakefileGenerator::cmGlobalBorlandMakefileGenerator(cmake* cm)
   this->DefineWindowsNULL = true;
   this->PassMakeflags = true;
   this->UnixCD = false;
+
+  /*
+   * Borland Make does not support long line depend rule, as we have tested
+   * generate one source file includes 40000 header files, and generate
+   * depend.make in one line(use line continued tag), and error occurred:
+   * ** Fatal CMakeFiles\main.dir\depend.make 1224: Rule line too long **
+   * we disable long line dependencies rule generation for Borland make
+   */
+  this->ToolSupportsLongLineDependencies = false;
 }
 
 void cmGlobalBorlandMakefileGenerator::EnableLanguage(
@@ -35,15 +50,14 @@ void cmGlobalBorlandMakefileGenerator::EnableLanguage(
 }
 
 //! Create a local generator appropriate to this Global Generator
-cmLocalGenerator* cmGlobalBorlandMakefileGenerator::CreateLocalGenerator(
-  cmMakefile* mf)
+std::unique_ptr<cmLocalGenerator>
+cmGlobalBorlandMakefileGenerator::CreateLocalGenerator(cmMakefile* mf)
 {
-  cmLocalUnixMakefileGenerator3* lg =
-    new cmLocalUnixMakefileGenerator3(this, mf);
+  auto lg = cm::make_unique<cmLocalUnixMakefileGenerator3>(this, mf);
   lg->SetMakefileVariableSize(32);
   lg->SetMakeCommandEscapeTargetTwice(true);
   lg->SetBorlandMakeCurlyHack(true);
-  return lg;
+  return std::unique_ptr<cmLocalGenerator>(std::move(lg));
 }
 
 void cmGlobalBorlandMakefileGenerator::GetDocumentation(
@@ -57,12 +71,13 @@ std::vector<cmGlobalGenerator::GeneratedMakeCommand>
 cmGlobalBorlandMakefileGenerator::GenerateBuildCommand(
   const std::string& makeProgram, const std::string& projectName,
   const std::string& projectDir, std::vector<std::string> const& targetNames,
-  const std::string& config, bool fast, int /*jobs*/, bool verbose,
+  const std::string& config, int /*jobs*/, bool verbose,
+  const cmBuildOptions& buildOptions,
   std::vector<std::string> const& makeOptions)
 {
   return this->cmGlobalUnixMakefileGenerator3::GenerateBuildCommand(
-    makeProgram, projectName, projectDir, targetNames, config, fast,
-    cmake::NO_BUILD_PARALLEL_LEVEL, verbose, makeOptions);
+    makeProgram, projectName, projectDir, targetNames, config,
+    cmake::NO_BUILD_PARALLEL_LEVEL, verbose, buildOptions, makeOptions);
 }
 
 void cmGlobalBorlandMakefileGenerator::PrintBuildCommandAdvice(

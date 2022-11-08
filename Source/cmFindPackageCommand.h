@@ -1,18 +1,23 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmFindPackageCommand_h
-#define cmFindPackageCommand_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-#include "cmPolicies.h"
 
-#include "cm_kwiml.h"
 #include <cstddef>
 #include <functional>
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <cm/string_view>
+
+#include <cm3p/kwiml/int.h>
+
+#include "cmFindCommon.h"
+#include "cmPolicies.h"
 
 // IWYU insists we should forward-declare instead of including <functional>,
 // but we cannot forward-declare reliably because some C++ standard libraries
@@ -25,9 +30,6 @@ namespace std {
 /* clang-format on */
 #endif
 
-#include "cmFindCommon.h"
-
-class cmCommand;
 class cmExecutionStatus;
 class cmSearchPath;
 
@@ -60,19 +62,9 @@ public:
                    std::vector<std::string>::iterator end, SortOrderType order,
                    SortDirectionType dir);
 
-  cmFindPackageCommand();
+  cmFindPackageCommand(cmExecutionStatus& status);
 
-  /**
-   * This is a virtual constructor for the command.
-   */
-  cmCommand* Clone() override { return new cmFindPackageCommand; }
-
-  /**
-   * This is called when the command is first encountered in
-   * the CMakeLists.txt file.
-   */
-  bool InitialPass(std::vector<std::string> const& args,
-                   cmExecutionStatus& status) override;
+  bool InitialPass(std::vector<std::string> const& args);
 
 private:
   class PathLabel : public cmFindCommon::PathLabel
@@ -85,6 +77,7 @@ private:
       : cmFindCommon::PathLabel(label)
     {
     }
+    static PathLabel PackageRedirect;
     static PathLabel UserRegistry;
     static PathLabel Builds;
     static PathLabel SystemRegistry;
@@ -99,9 +92,17 @@ private:
 
   void AppendSuccessInformation();
   void AppendToFoundProperty(bool found);
-  void SetModuleVariables(const std::string& components);
+  void SetVersionVariables(
+    const std::function<void(const std::string&, cm::string_view)>&
+      addDefinition,
+    const std::string& prefix, const std::string& version, unsigned int count,
+    unsigned int major, unsigned int minor, unsigned int patch,
+    unsigned int tweak);
+  void SetModuleVariables(
+    const std::string& components,
+    const std::vector<std::pair<std::string, const char*>>& componentVarDefs);
   bool FindModule(bool& found);
-  void AddFindDefinition(const std::string& var, const char* val);
+  void AddFindDefinition(const std::string& var, cm::string_view value);
   void RestoreFindDefinitions();
 
   enum /*class*/ HandlePackageModeType
@@ -122,8 +123,10 @@ private:
   };
   bool ReadListFile(const std::string& f, PolicyScopeRule psr);
   void StoreVersionFound();
+  void SetConfigDirCacheVariable(const std::string& value);
 
   void ComputePrefixes();
+  void FillPrefixesPackageRedirect();
   void FillPrefixesPackageRoot();
   void FillPrefixesCMakeEnvironment();
   void FillPrefixesCMakeVariable();
@@ -150,8 +153,6 @@ private:
   bool SearchFrameworkPrefix(std::string const& prefix_in);
   bool SearchAppBundlePrefix(std::string const& prefix_in);
 
-  friend class cmFindPackageFileList;
-
   struct OriginalDef
   {
     bool exists;
@@ -161,44 +162,60 @@ private:
 
   std::map<std::string, cmPolicies::PolicyID> DeprecatedFindModules;
 
+  static const cm::string_view VERSION_ENDPOINT_INCLUDED;
+  static const cm::string_view VERSION_ENDPOINT_EXCLUDED;
+
   std::string Name;
   std::string Variable;
+  std::string VersionComplete;
+  std::string VersionRange;
+  cm::string_view VersionRangeMin;
+  cm::string_view VersionRangeMax;
   std::string Version;
-  unsigned int VersionMajor;
-  unsigned int VersionMinor;
-  unsigned int VersionPatch;
-  unsigned int VersionTweak;
-  unsigned int VersionCount;
-  bool VersionExact;
+  unsigned int VersionMajor = 0;
+  unsigned int VersionMinor = 0;
+  unsigned int VersionPatch = 0;
+  unsigned int VersionTweak = 0;
+  unsigned int VersionCount = 0;
+  std::string VersionMax;
+  unsigned int VersionMaxMajor = 0;
+  unsigned int VersionMaxMinor = 0;
+  unsigned int VersionMaxPatch = 0;
+  unsigned int VersionMaxTweak = 0;
+  unsigned int VersionMaxCount = 0;
+  bool VersionExact = false;
   std::string FileFound;
   std::string VersionFound;
-  unsigned int VersionFoundMajor;
-  unsigned int VersionFoundMinor;
-  unsigned int VersionFoundPatch;
-  unsigned int VersionFoundTweak;
-  unsigned int VersionFoundCount;
-  KWIML_INT_uint64_t RequiredCMakeVersion;
-  bool Quiet;
-  bool Required;
-  bool UseConfigFiles;
-  bool UseFindModules;
-  bool NoUserRegistry;
-  bool NoSystemRegistry;
-  bool DebugMode;
-  bool UseLib32Paths;
-  bool UseLib64Paths;
-  bool UseLibx32Paths;
-  bool UseRealPath;
-  bool PolicyScope;
+  unsigned int VersionFoundMajor = 0;
+  unsigned int VersionFoundMinor = 0;
+  unsigned int VersionFoundPatch = 0;
+  unsigned int VersionFoundTweak = 0;
+  unsigned int VersionFoundCount = 0;
+  KWIML_INT_uint64_t RequiredCMakeVersion = 0;
+  bool Quiet = false;
+  bool Required = false;
+  bool UseConfigFiles = true;
+  bool UseFindModules = true;
+  bool NoUserRegistry = false;
+  bool NoSystemRegistry = false;
+  bool UseLib32Paths = false;
+  bool UseLib64Paths = false;
+  bool UseLibx32Paths = false;
+  bool UseRealPath = false;
+  bool PolicyScope = true;
+  bool GlobalScope = false;
+  bool RegistryViewDefined = false;
   std::string LibraryArchitecture;
   std::vector<std::string> Names;
   std::vector<std::string> Configs;
   std::set<std::string> IgnoredPaths;
+  std::set<std::string> IgnoredPrefixPaths;
+  std::string DebugBuffer;
 
   /*! the selected sortOrder (None by default)*/
-  SortOrderType SortOrder;
+  SortOrderType SortOrder = None;
   /*! the selected sortDirection (Asc by default)*/
-  SortDirectionType SortDirection;
+  SortDirectionType SortDirection = Asc;
 
   struct ConfigFileInfo
   {
@@ -230,8 +247,8 @@ namespace std {
 template <>
 struct hash<cmFindPackageCommand::ConfigFileInfo>
 {
-  typedef cmFindPackageCommand::ConfigFileInfo argument_type;
-  typedef size_t result_type;
+  using argument_type = cmFindPackageCommand::ConfigFileInfo;
+  using result_type = size_t;
 
   result_type operator()(argument_type const& s) const noexcept
   {
@@ -241,4 +258,5 @@ struct hash<cmFindPackageCommand::ConfigFileInfo>
 };
 }
 
-#endif
+bool cmFindPackage(std::vector<std::string> const& args,
+                   cmExecutionStatus& status);

@@ -39,7 +39,7 @@ foreach(i 1 2)
 "Name: CMakeInternalFakePackage${i}
 Description: Dummy package (${i}) for FindPkgConfig IMPORTED_TARGET test
 Version: 1.2.3
-Libs: -l${pname}
+Libs: -l${pname} -l${pname}-doesnotexist
 ")
 endforeach()
 
@@ -47,66 +47,52 @@ endforeach()
 # the import target find_library() calls handle the NO...PATH options correctly
 set(ENV{PKG_CONFIG_PATH} ${fakePkgDir}/lib/pkgconfig)
 
-# Confirm correct behavior of NO_CMAKE_PATH, ensuring we only find the library
-# for the imported target if we have both set CMAKE_PREFIX_PATH and have not
-# given the NO_CMAKE_PATH option
-unset(CMAKE_PREFIX_PATH)
-unset(ENV{CMAKE_PREFIX_PATH})
-pkg_check_modules(FakePackage1 QUIET IMPORTED_TARGET cmakeinternalfakepackage1)
-if (TARGET PkgConfig::FakePackage1)
-  message(FATAL_ERROR "Have import target for fake package 1 with no path prefix")
-endif()
-
-set(CMAKE_PREFIX_PATH ${fakePkgDir})
-pkg_check_modules(FakePackage1 QUIET IMPORTED_TARGET NO_CMAKE_PATH cmakeinternalfakepackage1)
-if (TARGET PkgConfig::FakePackage1)
-  message(FATAL_ERROR "Have import target for fake package 1 with ignored cmake path")
-endif()
-
-pkg_check_modules(FakePackage1 REQUIRED QUIET IMPORTED_TARGET cmakeinternalfakepackage1)
-if (NOT TARGET PkgConfig::FakePackage1)
-  message(FATAL_ERROR "No import target for fake package 1 with prefix path")
-endif()
-
 # find targets in subdir and check their visibility
 add_subdirectory(target_subdir)
-if (TARGET PkgConfig::FakePackage1_dir)
-  message(FATAL_ERROR "imported target PkgConfig::FakePackage1_dir is visible outside it's directory")
+
+set(tgt PkgConfig::FakePackage1_dir)
+if (TARGET ${tgt})
+  message(FATAL_ERROR "imported target \"${tgt}\" is visible outside its directory")
 endif()
 
-if (NOT TARGET PkgConfig::FakePackage1_global)
-  message(FATAL_ERROR "imported target PkgConfig::FakePackage1_global is not visible outside it's directory")
+set(tgt PkgConfig::FakePackage1_global)
+if (NOT TARGET ${tgt})
+  message(FATAL_ERROR "imported target \"${tgt}\" is not visible outside its directory")
 endif()
 
 # And now do the same for the NO_CMAKE_ENVIRONMENT_PATH - ENV{CMAKE_PREFIX_PATH}
 # combination
 unset(CMAKE_PREFIX_PATH)
 unset(ENV{CMAKE_PREFIX_PATH})
-pkg_check_modules(FakePackage2 QUIET IMPORTED_TARGET cmakeinternalfakepackage2)
-if (TARGET PkgConfig::FakePackage2)
-  message(FATAL_ERROR "Have import target for fake package 2 with no path prefix")
-endif()
-
 set(ENV{CMAKE_PREFIX_PATH} ${fakePkgDir})
-pkg_check_modules(FakePackage2 QUIET IMPORTED_TARGET NO_CMAKE_ENVIRONMENT_PATH cmakeinternalfakepackage2)
-if (TARGET PkgConfig::FakePackage2)
-  message(FATAL_ERROR "Have import target for fake package 2 with ignored cmake path")
-endif()
 
 pkg_check_modules(FakePackage2 REQUIRED QUIET IMPORTED_TARGET cmakeinternalfakepackage2)
 if (NOT TARGET PkgConfig::FakePackage2)
   message(FATAL_ERROR "No import target for fake package 2 with prefix path")
 endif()
 
+# check that 2 library entries exist
+list(LENGTH FakePackage2_LINK_LIBRARIES fp2_nlibs)
+if (NOT fp2_nlibs EQUAL 2)
+  message(FATAL_ERROR "FakePackage2_LINK_LIBRARIES has ${fp2_nlibs} entries but should have exactly 2")
+endif()
+
 # check that the full library path is also returned
-if (NOT FakePackage2_LINK_LIBRARIES STREQUAL "${fakePkgDir}/lib/libcmakeinternalfakepackage2.a")
+list(GET FakePackage2_LINK_LIBRARIES 0 fp2_lib0)
+if (NOT fp2_lib0 STREQUAL "${fakePkgDir}/lib/libcmakeinternalfakepackage2.a")
+  message(FATAL_ERROR "FakePackage2_LINK_LIBRARIES has bad content on first run: ${FakePackage2_LINK_LIBRARIES}")
+endif()
+
+# check that the library that couldn't be found still shows up
+list(GET FakePackage2_LINK_LIBRARIES 1 fp2_lib1)
+if (NOT fp2_lib1 STREQUAL "cmakeinternalfakepackage2-doesnotexist")
   message(FATAL_ERROR "FakePackage2_LINK_LIBRARIES has bad content on first run: ${FakePackage2_LINK_LIBRARIES}")
 endif()
 
 # the information in *_LINK_LIBRARIES is not cached, so ensure is also is present on second run
 unset(FakePackage2_LINK_LIBRARIES)
 pkg_check_modules(FakePackage2 REQUIRED QUIET IMPORTED_TARGET cmakeinternalfakepackage2)
-if (NOT FakePackage2_LINK_LIBRARIES STREQUAL "${fakePkgDir}/lib/libcmakeinternalfakepackage2.a")
+if (NOT FakePackage2_LINK_LIBRARIES STREQUAL "${fakePkgDir}/lib/libcmakeinternalfakepackage2.a;cmakeinternalfakepackage2-doesnotexist")
   message(FATAL_ERROR "FakePackage2_LINK_LIBRARIES has bad content on second run: ${FakePackage2_LINK_LIBRARIES}")
 endif()
 
@@ -116,17 +102,50 @@ file(WRITE ${fakePkgDir}/lib/pkgconfig/${pname}.pc
 Description: Dummy package for FindPkgConfig IMPORTED_TARGET INTERFACE_LINK_OPTIONS test
 Version: 1.2.3
 Libs: -e dummy_main
+Cflags: -I/special -isystem /other -isystem/more -DA-isystem/foo
 ")
 
 set(expected_link_options -e dummy_main)
 pkg_check_modules(FakeLinkOptionsPackage REQUIRED QUIET IMPORTED_TARGET fakelinkoptionspackage)
-if (NOT TARGET PkgConfig::FakeLinkOptionsPackage)
+
+set(tgt PkgConfig::FakeLinkOptionsPackage)
+message(STATUS "Verifying target \"${tgt}\"")
+if (NOT TARGET ${tgt})
   message(FATAL_ERROR "No import target for fake link options package")
 endif()
-get_target_property(link_options PkgConfig::FakeLinkOptionsPackage INTERFACE_LINK_OPTIONS)
-if (NOT link_options STREQUAL expected_link_options)
-  message(FATAL_ERROR
-    "Additional link options not present in INTERFACE_LINK_OPTIONS property"
-    "expected: \"${expected_link_options}\", but got \"${link_options}\""
-  )
+
+# Some versions of pkg-config on Windows don't parse the Libs and Cflags
+# correctly. The pkg-config that comes with Strawberry perl is one example.
+# It appears to treat the dummymain part of Libs as a library and only returns
+# -e. It also doesn't recognize "-isystem /other", presumably because it doesn't
+# support having a space between "-isystem" and the directory after it (it does
+# give us the "-isystem/more" flag). Since we can't reliably test for these,
+# we don't enable these checks on Windows.
+if(NOT WIN32)
+  get_target_property(link_options ${tgt} INTERFACE_LINK_OPTIONS)
+  if (NOT link_options STREQUAL expected_link_options)
+    message(FATAL_ERROR
+      "Additional link options not present in INTERFACE_LINK_OPTIONS property\n"
+      "expected: \"${expected_link_options}\", but got \"${link_options}\""
+    )
+  endif()
+
+  get_target_property(inc_dirs ${tgt} INTERFACE_INCLUDE_DIRECTORIES)
+  set(expected_inc_dirs "/special" "/other" "/more")
+
+  if (NOT inc_dirs STREQUAL expected_inc_dirs)
+    message(FATAL_ERROR
+      "Additional include directories not correctly present in INTERFACE_INCLUDE_DIRECTORIES property\n"
+      "expected: \"${expected_inc_dirs}\", got \"${inc_dirs}\""
+    )
+  endif ()
 endif()
+
+get_target_property(c_opts ${tgt} INTERFACE_COMPILE_OPTIONS)
+set(expected_c_opts "-DA-isystem/foo") # this is an invalid option, but a good testcase
+if (NOT c_opts STREQUAL expected_c_opts)
+    message(FATAL_ERROR
+      "Additional compile options not present in INTERFACE_COMPILE_OPTIONS property\n"
+      "expected: \"${expected_c_opts}\", got \"${c_opts}\""
+    )
+endif ()

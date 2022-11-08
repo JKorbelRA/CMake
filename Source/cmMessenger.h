@@ -1,14 +1,16 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmMessenger_h
-#define cmMessenger_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <iosfwd>
+#include <string>
+
+#include <cm/optional>
+
 #include "cmListFileCache.h"
 #include "cmMessageType.h"
-
-#include <string>
 
 class cmMessenger
 {
@@ -19,6 +21,8 @@ public:
 
   void DisplayMessage(MessageType t, std::string const& text,
                       cmListFileBacktrace const& backtrace) const;
+
+  void SetTopSource(cm::optional<std::string> topSource);
 
   void SetSuppressDevWarnings(bool suppress)
   {
@@ -48,14 +52,18 @@ public:
     return this->DeprecatedWarningsAsErrors;
   }
 
+  // Print the top of a backtrace.
+  void PrintBacktraceTitle(std::ostream& out,
+                           cmListFileBacktrace const& bt) const;
+
 private:
   bool IsMessageTypeVisible(MessageType t) const;
   MessageType ConvertMessageType(MessageType t) const;
+
+  cm::optional<std::string> TopSource;
 
   bool SuppressDevWarnings = false;
   bool SuppressDeprecatedWarnings = false;
   bool DevWarningsAsErrors = false;
   bool DeprecatedWarningsAsErrors = false;
 };
-
-#endif

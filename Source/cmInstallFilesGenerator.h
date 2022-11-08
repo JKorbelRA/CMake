@@ -1,17 +1,17 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmInstallFilesGenerator_h
-#define cmInstallFilesGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-
-#include "cmInstallGenerator.h"
-#include "cmScriptGenerator.h"
 
 #include <iosfwd>
 #include <string>
 #include <vector>
 
+#include "cmInstallGenerator.h"
+#include "cmScriptGenerator.h"
+
+class cmListFileBacktrace;
 class cmLocalGenerator;
 
 /** \class cmInstallFilesGenerator
@@ -21,17 +21,20 @@ class cmInstallFilesGenerator : public cmInstallGenerator
 {
 public:
   cmInstallFilesGenerator(std::vector<std::string> const& files,
-                          const char* dest, bool programs,
-                          const char* file_permissions,
+                          std::string const& dest, bool programs,
+                          std::string file_permissions,
                           std::vector<std::string> const& configurations,
-                          const char* component, MessageLevel message,
-                          bool exclude_from_all, const char* rename,
-                          bool optional = false);
+                          std::string const& component, MessageLevel message,
+                          bool exclude_from_all, std::string rename,
+                          bool optional, cmListFileBacktrace backtrace);
   ~cmInstallFilesGenerator() override;
 
   bool Compute(cmLocalGenerator* lg) override;
 
   std::string GetDestination(std::string const& config) const;
+  std::string GetRename(std::string const& config) const;
+  std::vector<std::string> GetFiles(std::string const& config) const;
+  bool GetOptional() const { return this->Optional; }
 
 protected:
   void GenerateScriptActions(std::ostream& os, Indent indent) override;
@@ -41,12 +44,10 @@ protected:
                            Indent indent,
                            std::vector<std::string> const& files);
 
-  cmLocalGenerator* LocalGenerator;
-  std::vector<std::string> Files;
-  std::string FilePermissions;
-  std::string Rename;
-  bool Programs;
-  bool Optional;
+  cmLocalGenerator* LocalGenerator = nullptr;
+  std::vector<std::string> const Files;
+  std::string const FilePermissions;
+  std::string const Rename;
+  bool const Programs;
+  bool const Optional;
 };
-
-#endif

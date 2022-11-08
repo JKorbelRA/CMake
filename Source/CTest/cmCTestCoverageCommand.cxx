@@ -2,14 +2,19 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestCoverageCommand.h"
 
+#include <set>
+
+#include <cmext/string_view>
+
 #include "cmCTest.h"
 #include "cmCTestCoverageHandler.h"
 
 class cmCTestGenericHandler;
 
-cmCTestCoverageCommand::cmCTestCoverageCommand()
+void cmCTestCoverageCommand::BindArguments()
 {
-  this->LabelsMentioned = false;
+  this->cmCTestHandlerCommand::BindArguments();
+  this->Bind("LABELS"_s, this->Labels);
 }
 
 cmCTestGenericHandler* cmCTestCoverageCommand::InitializeHandler()
@@ -23,35 +28,11 @@ cmCTestGenericHandler* cmCTestCoverageCommand::InitializeHandler()
   handler->Initialize();
 
   // If a LABELS option was given, select only files with the labels.
-  if (this->LabelsMentioned) {
-    handler->SetLabelFilter(this->Labels);
+  if (this->Labels) {
+    handler->SetLabelFilter(
+      std::set<std::string>(this->Labels->begin(), this->Labels->end()));
   }
 
   handler->SetQuiet(this->Quiet);
   return handler;
-}
-
-bool cmCTestCoverageCommand::CheckArgumentKeyword(std::string const& arg)
-{
-  // Look for arguments specific to this command.
-  if (arg == "LABELS") {
-    this->ArgumentDoing = ArgumentDoingLabels;
-    this->LabelsMentioned = true;
-    return true;
-  }
-
-  // Look for other arguments.
-  return this->Superclass::CheckArgumentKeyword(arg);
-}
-
-bool cmCTestCoverageCommand::CheckArgumentValue(std::string const& arg)
-{
-  // Handle states specific to this command.
-  if (this->ArgumentDoing == ArgumentDoingLabels) {
-    this->Labels.insert(arg);
-    return true;
-  }
-
-  // Look for other arguments.
-  return this->Superclass::CheckArgumentValue(arg);
 }

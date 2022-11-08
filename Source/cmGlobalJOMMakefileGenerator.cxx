@@ -2,8 +2,12 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGlobalJOMMakefileGenerator.h"
 
+#include <ostream>
+
+#include <cmext/algorithm>
+
 #include "cmDocumentationEntry.h"
-#include "cmLocalUnixMakefileGenerator3.h"
+#include "cmGlobalGenerator.h"
 #include "cmMakefile.h"
 #include "cmState.h"
 #include "cmake.h"
@@ -39,8 +43,9 @@ void cmGlobalJOMMakefileGenerator::GetDocumentation(
   entry.Brief = "Generates JOM makefiles.";
 }
 
-void cmGlobalJOMMakefileGenerator::PrintCompilerAdvice(
-  std::ostream& os, std::string const& lang, const char* envVar) const
+void cmGlobalJOMMakefileGenerator::PrintCompilerAdvice(std::ostream& os,
+                                                       std::string const& lang,
+                                                       cmValue envVar) const
 {
   if (lang == "CXX" || lang == "C") {
     /* clang-format off */
@@ -58,7 +63,8 @@ std::vector<cmGlobalGenerator::GeneratedMakeCommand>
 cmGlobalJOMMakefileGenerator::GenerateBuildCommand(
   const std::string& makeProgram, const std::string& projectName,
   const std::string& projectDir, std::vector<std::string> const& targetNames,
-  const std::string& config, bool fast, int jobs, bool verbose,
+  const std::string& config, int jobs, bool verbose,
+  const cmBuildOptions& buildOptions,
   std::vector<std::string> const& makeOptions)
 {
   std::vector<std::string> jomMakeOptions;
@@ -66,7 +72,7 @@ cmGlobalJOMMakefileGenerator::GenerateBuildCommand(
   // Since we have full control over the invocation of JOM, let us
   // make it quiet.
   jomMakeOptions.push_back(this->MakeSilentFlag);
-  cmAppend(jomMakeOptions, makeOptions);
+  cm::append(jomMakeOptions, makeOptions);
 
   // JOM does parallel builds by default, the -j is only needed if a specific
   // number is given
@@ -76,6 +82,6 @@ cmGlobalJOMMakefileGenerator::GenerateBuildCommand(
   }
 
   return cmGlobalUnixMakefileGenerator3::GenerateBuildCommand(
-    makeProgram, projectName, projectDir, targetNames, config, fast, jobs,
-    verbose, jomMakeOptions);
+    makeProgram, projectName, projectDir, targetNames, config, jobs, verbose,
+    buildOptions, jomMakeOptions);
 }

@@ -5,21 +5,22 @@
 FindDoxygen
 -----------
 
-Doxygen is a documentation generation tool (see http://www.doxygen.org).
-This module looks for Doxygen and some optional tools it supports. These
-tools are enabled as components in the :command:`find_package` command:
+Doxygen is a documentation generation tool (see https://www.doxygen.nl).
+This module looks for Doxygen and some optional tools it supports:
 
 ``dot``
-  `Graphviz <http://graphviz.org>`_ ``dot`` utility used to render various
+  `Graphviz <https://graphviz.org>`_ ``dot`` utility used to render various
   graphs.
 ``mscgen``
-  `Message Chart Generator <http://www.mcternan.me.uk/mscgen/>`_ utility used
+  `Message Chart Generator <https://www.mcternan.me.uk/mscgen/>`_ utility used
   by Doxygen's ``\msc`` and ``\mscfile`` commands.
 ``dia``
   `Dia <https://wiki.gnome.org/Apps/Dia>`_ the diagram editor used by Doxygen's
   ``\diafile`` command.
 
-Examples:
+.. versionadded:: 3.9
+  These tools are available as components in the :command:`find_package` command.
+  For example:
 
 .. code-block:: cmake
 
@@ -38,12 +39,13 @@ The following variables are defined by this module:
 
   The version reported by ``doxygen --version``.
 
-The module defines ``IMPORTED`` targets for Doxygen and each component found.
-These can be used as part of custom commands, etc. and should be preferred over
-old-style (and now deprecated) variables like ``DOXYGEN_EXECUTABLE``. The
-following import targets are defined if their corresponding executable could be
-found (the component import targets will only be defined if that component was
-requested):
+.. versionadded:: 3.9
+  The module defines ``IMPORTED`` targets for Doxygen and each component found.
+  These can be used as part of custom commands, etc. and should be preferred over
+  old-style (and now deprecated) variables like ``DOXYGEN_EXECUTABLE``. The
+  following import targets are defined if their corresponding executable could be
+  found (the component import targets will only be defined if that component was
+  requested):
 
 ::
 
@@ -58,6 +60,8 @@ Functions
 
 .. command:: doxygen_add_docs
 
+  .. versionadded:: 3.9
+
   This function is intended as a convenience for adding a target for generating
   documentation with Doxygen. It aims to provide sensible defaults so that
   projects can generally just provide the input files and directories and that
@@ -70,6 +74,7 @@ Functions
     doxygen_add_docs(targetName
         [filesOrDirs...]
         [ALL]
+        [USE_STAMP_FILE]
         [WORKING_DIRECTORY dir]
         [COMMENT comment])
 
@@ -86,19 +91,33 @@ Functions
   base point. Note also that Doxygen's default behavior is to strip the working
   directory from relative paths in the generated documentation (see the
   ``STRIP_FROM_PATH`` `Doxygen config option
-  <http://www.doxygen.org/manual/config.html>`_ for details).
+  <https://www.doxygen.nl/manual/config.html>`_ for details).
 
   If provided, the optional ``comment`` will be passed as the ``COMMENT`` for
   the :command:`add_custom_target` command used to create the custom target
   internally.
 
-  If ALL is set, the target will be added to the default build target.
+  .. versionadded:: 3.12
+    If ``ALL`` is set, the target will be added to the default build target.
+
+  .. versionadded:: 3.16
+    If ``USE_STAMP_FILE`` is set, the custom command defined by this function will
+    create a stamp file with the name ``<targetName>.stamp`` in the current
+    binary directory whenever doxygen is re-run.  With this option present, all
+    items in ``<filesOrDirs>`` must be files (i.e. no directories, symlinks or
+    wildcards) and each of the files must exist at the time
+    ``doxygen_add_docs()`` is called.  An error will be raised if any of the
+    items listed is missing or is not a file when ``USE_STAMP_FILE`` is given.
+    A dependency will be created on each of the files so that doxygen will only
+    be re-run if one of the files is updated.  Without the ``USE_STAMP_FILE``
+    option, doxygen will always be re-run if the ``<targetName>`` target is built
+    regardless of whether anything listed in ``<filesOrDirs>`` has changed.
 
   The contents of the generated ``Doxyfile`` can be customized by setting CMake
   variables before calling ``doxygen_add_docs()``. Any variable with a name of
   the form ``DOXYGEN_<tag>`` will have its value substituted for the
   corresponding ``<tag>`` configuration option in the ``Doxyfile``. See the
-  `Doxygen documentation <http://www.doxygen.org/manual/config.html>`_ for the
+  `Doxygen documentation <https://www.doxygen.nl/manual/config.html>`_ for the
   full list of supported configuration options.
 
   Some of Doxygen's defaults are overridden to provide more appropriate
@@ -204,7 +223,8 @@ them to be separated by whitespace. CMake variables hold lists as a string with
 items separated by semi-colons, so a conversion needs to be performed. The
 ``doxygen_add_docs()`` command specifically checks the following Doxygen config
 options and will convert their associated CMake variable's contents into the
-required form if set.
+required form if set. CMake variables are named ``DOXYGEN_<name>`` for the
+Doxygen settings specified here.
 
 ::
 
@@ -295,18 +315,19 @@ if they contain at least one space:
   WARN_LOGFILE
   XML_OUTPUT
 
-There are situations where it may be undesirable for a particular config option
-to be automatically quoted by ``doxygen_add_docs()``, such as ``ALIASES`` which
-may need to include its own embedded quoting.  The ``DOXYGEN_VERBATIM_VARS``
-variable can be used to specify a list of Doxygen variables (including the
-leading ``DOXYGEN_`` prefix) which should not be quoted.  The project is then
-responsible for ensuring that those variables' values make sense when placed
-directly in the Doxygen input file.  In the case of list variables, list items
-are still separated by spaces, it is only the automatic quoting that is
-skipped.  For example, the following allows ``doxygen_add_docs()`` to apply
-quoting to ``DOXYGEN_PROJECT_BRIEF``, but not each item in the
-``DOXYGEN_ALIASES`` list (:ref:`bracket syntax <Bracket Argument>` can also
-be used to make working with embedded quotes easier):
+.. versionadded:: 3.11
+  There are situations where it may be undesirable for a particular config option
+  to be automatically quoted by ``doxygen_add_docs()``, such as ``ALIASES`` which
+  may need to include its own embedded quoting.  The ``DOXYGEN_VERBATIM_VARS``
+  variable can be used to specify a list of Doxygen variables (including the
+  leading ``DOXYGEN_`` prefix) which should not be quoted.  The project is then
+  responsible for ensuring that those variables' values make sense when placed
+  directly in the Doxygen input file.  In the case of list variables, list items
+  are still separated by spaces, it is only the automatic quoting that is
+  skipped.  For example, the following allows ``doxygen_add_docs()`` to apply
+  quoting to ``DOXYGEN_PROJECT_BRIEF``, but not each item in the
+  ``DOXYGEN_ALIASES`` list (:ref:`bracket syntax <Bracket Argument>` can also
+  be used to make working with embedded quotes easier):
 
 .. code-block:: cmake
 
@@ -327,6 +348,8 @@ The resultant ``Doxyfile`` will contain the following lines:
 
 Deprecated Result Variables
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. deprecated:: 3.9
 
 For compatibility with previous versions of CMake, the following variables
 are also defined but they are deprecated and should no longer be used:
@@ -362,6 +385,8 @@ are also defined but they are deprecated and should no longer be used:
 Deprecated Hint Variables
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+.. deprecated:: 3.9
+
 .. variable:: DOXYGEN_SKIP_DOT
 
   This variable has no effect for the component form of ``find_package``.
@@ -371,6 +396,7 @@ Deprecated Hint Variables
 #]=======================================================================]
 
 cmake_policy(PUSH)
+cmake_policy(SET CMP0054 NEW) # quoted if arguments
 cmake_policy(SET CMP0057 NEW) # if IN_LIST
 
 # For backwards compatibility support
@@ -406,9 +432,44 @@ endif()
 # or use something like homebrew.
 # ============== End OSX stuff ================
 
+include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+
 #
 # Find Doxygen...
 #
+function(_Doxygen_get_version doxy_version result_var doxy_path)
+        execute_process(
+            COMMAND "${doxy_path}" --version
+            OUTPUT_VARIABLE full_doxygen_version
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE version_result
+        )
+
+        # Ignore any commit hashes, etc.
+        string(REGEX MATCH [[^[0-9]+\.[0-9]+\.[0-9]+]] sem_doxygen_version "${full_doxygen_version}")
+
+        set(${result_var} ${version_result} PARENT_SCOPE)
+        set(${doxy_version} ${sem_doxygen_version} PARENT_SCOPE)
+endfunction()
+
+function(_Doxygen_version_validator version_match doxy_path)
+    if(NOT DEFINED Doxygen_FIND_VERSION)
+        set(${is_valid_version} TRUE PARENT_SCOPE)
+    else()
+        _Doxygen_get_version(candidate_version version_result "${doxy_path}")
+
+        if(version_result)
+            message(DEBUG "Unable to determine candidate doxygen version at ${doxy_path}: ${version_result}")
+        endif()
+
+        find_package_check_version("${candidate_version}" valid_doxy_version
+            HANDLE_VERSION_RANGE
+        )
+
+        set(${version_match} "${valid_doxy_version}" PARENT_SCOPE)
+    endif()
+endfunction()
+
 macro(_Doxygen_find_doxygen)
     find_program(
         DOXYGEN_EXECUTABLE
@@ -419,17 +480,14 @@ macro(_Doxygen_find_doxygen)
             /Applications/Doxygen.app/Contents/MacOS
             /Applications/Utilities/Doxygen.app/Contents/Resources
             /Applications/Utilities/Doxygen.app/Contents/MacOS
-        DOC "Doxygen documentation generation tool (http://www.doxygen.org)"
+        DOC "Doxygen documentation generation tool (https://www.doxygen.nl)"
+        VALIDATOR _Doxygen_version_validator
     )
     mark_as_advanced(DOXYGEN_EXECUTABLE)
 
     if(DOXYGEN_EXECUTABLE)
-        execute_process(
-            COMMAND "${DOXYGEN_EXECUTABLE}" --version
-            OUTPUT_VARIABLE DOXYGEN_VERSION
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE _Doxygen_version_result
-        )
+        _Doxygen_get_version(DOXYGEN_VERSION _Doxygen_version_result "${DOXYGEN_EXECUTABLE}")
+
         if(_Doxygen_version_result)
             message(WARNING "Unable to determine doxygen version: ${_Doxygen_version_result}")
         endif()
@@ -616,11 +674,11 @@ endforeach()
 unset(_comp)
 
 # Verify find results
-include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 find_package_handle_standard_args(
     Doxygen
     REQUIRED_VARS DOXYGEN_EXECUTABLE
     VERSION_VAR DOXYGEN_VERSION
+    HANDLE_VERSION_RANGE
     HANDLE_COMPONENTS
 )
 
@@ -696,8 +754,8 @@ if(TARGET Doxygen::doxygen)
     set(_doxyfile_in       "${CMAKE_BINARY_DIR}/CMakeDoxyfile.in")
     set(_doxyfile_defaults "${CMAKE_BINARY_DIR}/CMakeDoxygenDefaults.cmake")
 
-    file(WRITE "${_doxyfile_in}"       ${_Doxygen_dne_header})
-    file(WRITE "${_doxyfile_defaults}" ${_Doxygen_dne_header})
+    set(_doxyfile_in_contents "")
+    set(_doxyfile_defaults_contents "")
 
     # Get strings containing a configuration key from the template Doxyfile
     # we obtained from this version of Doxygen. Because some options are split
@@ -729,19 +787,19 @@ if(TARGET Doxygen::doxygen)
         if(_Doxygen_param MATCHES "([A-Z][A-Z0-9_]+)( *)=( (.*))?")
             # Ok, this is a config key with a value
             if(CMAKE_MATCH_COUNT EQUAL 4)
-                file(APPEND "${_doxyfile_in}"
-                    "${CMAKE_MATCH_1}${CMAKE_MATCH_2}= @DOXYGEN_${CMAKE_MATCH_1}@\n")
+                string(APPEND _doxyfile_in_contents
+                       "${CMAKE_MATCH_1}${CMAKE_MATCH_2}= @DOXYGEN_${CMAKE_MATCH_1}@\n")
                 # Remove the backslashes we had to preserve to handle newlines
                 string(REPLACE "\\\n" "\n" _value "${CMAKE_MATCH_4}")
-                file(APPEND "${_doxyfile_defaults}"
+                string(APPEND _doxyfile_defaults_contents
 "if(NOT DEFINED DOXYGEN_${CMAKE_MATCH_1})
     set(DOXYGEN_${CMAKE_MATCH_1} ${_value})
 endif()
 ")
             # Ok, this is a config key with empty default value
             elseif(CMAKE_MATCH_COUNT EQUAL 2)
-                file(APPEND "${_doxyfile_in}"
-                    "${CMAKE_MATCH_1}${CMAKE_MATCH_2}= @DOXYGEN_${CMAKE_MATCH_1}@\n")
+                string(APPEND _doxyfile_in_contents
+                       "${CMAKE_MATCH_1}${CMAKE_MATCH_2}= @DOXYGEN_${CMAKE_MATCH_1}@\n")
             else()
                 message(AUTHOR_WARNING
 "Unexpected line format! Code review required!\nFault line: ${_Doxygen_param}")
@@ -751,6 +809,10 @@ endif()
 "Unexpected line format! Code review required!\nFault line: ${_Doxygen_param}")
         endif()
     endforeach()
+    file(WRITE "${_doxyfile_defaults}" "${_Doxygen_dne_header}"
+                                       "${_doxyfile_defaults_contents}")
+    file(WRITE "${_doxyfile_in}"       "${_Doxygen_dne_header}"
+                                       "${_doxyfile_in_contents}")
 
     # Ok, dumped defaults are not needed anymore...
     file(REMOVE "${_Doxygen_tpl}")
@@ -801,7 +863,7 @@ function(doxygen_list_to_quoted_strings LIST_VARIABLE)
 endfunction()
 
 function(doxygen_add_docs targetName)
-    set(_options ALL)
+    set(_options ALL USE_STAMP_FILE)
     set(_one_value_args WORKING_DIRECTORY COMMENT)
     set(_multi_value_args)
     cmake_parse_arguments(_args
@@ -889,7 +951,7 @@ doxygen_add_docs() for target ${targetName}")
     if(NOT DEFINED DOXYGEN_HAVE_DOT)
         # If you set the HAVE_DOT tag to YES then doxygen will assume the dot
         # tool is available from the path. This tool is part of Graphviz (see:
-        # http://www.graphviz.org/), a graph visualization toolkit from AT&T
+        # https://www.graphviz.org/), a graph visualization toolkit from AT&T
         # and Lucent Bell Labs. The other options in this section have no
         # effect if this option is set to NO.
         # Doxygen's default value is: NO.
@@ -978,22 +1040,27 @@ doxygen_add_docs() for target ${targetName}")
     endif()
 
     # Build up a list of files we can identify from the inputs so we can list
-    # them as SOURCES in the custom target (makes them display in IDEs). We
-    # must do this before we transform the various DOXYGEN_... variables below
-    # because we need to process DOXYGEN_INPUT as a list first.
+    # them as DEPENDS and SOURCES in the custom command/target (the latter
+    # makes them display in IDEs). This must be done before we transform the
+    # various DOXYGEN_... variables below because we need to process
+    # DOXYGEN_INPUT as a list first.
     unset(_sources)
     foreach(_item IN LISTS DOXYGEN_INPUT)
         get_filename_component(_abs_item "${_item}" ABSOLUTE
                                BASE_DIR "${_args_WORKING_DIRECTORY}")
-        if(EXISTS "${_abs_item}" AND
-           NOT IS_DIRECTORY "${_abs_item}" AND
-           NOT IS_SYMLINK "${_abs_item}")
+        get_source_file_property(_isGenerated "${_abs_item}" GENERATED)
+        if(_isGenerated OR
+           (EXISTS "${_abs_item}" AND
+            NOT IS_DIRECTORY "${_abs_item}" AND
+            NOT IS_SYMLINK "${_abs_item}"))
             list(APPEND _sources "${_abs_item}")
+        elseif(_args_USE_STAMP_FILE)
+            message(FATAL_ERROR "Source does not exist or is not a file:\n"
+                "    ${_abs_item}\n"
+                "Only existing files may be specified when the "
+                "USE_STAMP_FILE option is given.")
         endif()
     endforeach()
-    if(_sources)
-        list(INSERT _sources 0 SOURCES)
-    endif()
 
     # Transform known list type options into space separated strings.
     set(_doxygen_list_options
@@ -1107,15 +1174,35 @@ doxygen_add_docs() for target ${targetName}")
         set(_all ALL)
     endif()
 
-    # Add the target
-    add_custom_target( ${targetName} ${_all} VERBATIM
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${_original_doxygen_output_dir}
-        COMMAND "${DOXYGEN_EXECUTABLE}" "${_target_doxyfile}"
-        WORKING_DIRECTORY "${_args_WORKING_DIRECTORY}"
-        DEPENDS "${_target_doxyfile}"
-        COMMENT "${_args_COMMENT}"
-        ${_sources}
-    )
+    # Only create the stamp file if asked to. If we don't create it,
+    # the target will always be considered out-of-date.
+    if(_args_USE_STAMP_FILE)
+        set(__stamp_file "${CMAKE_CURRENT_BINARY_DIR}/${targetName}.stamp")
+        add_custom_command(
+            VERBATIM
+            OUTPUT ${__stamp_file}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${_original_doxygen_output_dir}
+            COMMAND "${DOXYGEN_EXECUTABLE}" "${_target_doxyfile}"
+            COMMAND ${CMAKE_COMMAND} -E touch ${__stamp_file}
+            WORKING_DIRECTORY "${_args_WORKING_DIRECTORY}"
+            DEPENDS "${_target_doxyfile}" ${_sources}
+            COMMENT "${_args_COMMENT}"
+        )
+        add_custom_target(${targetName} ${_all}
+            DEPENDS ${__stamp_file}
+            SOURCES ${_sources}
+        )
+        unset(__stamp_file)
+    else()
+        add_custom_target( ${targetName} ${_all} VERBATIM
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${_original_doxygen_output_dir}
+            COMMAND "${DOXYGEN_EXECUTABLE}" "${_target_doxyfile}"
+            WORKING_DIRECTORY "${_args_WORKING_DIRECTORY}"
+            DEPENDS "${_target_doxyfile}" ${_sources}
+            COMMENT "${_args_COMMENT}"
+            SOURCES ${_sources}
+        )
+    endif()
 
 endfunction()
 

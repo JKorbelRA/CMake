@@ -2,10 +2,18 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGlobalVisualStudio12Generator.h"
 
-#include "cmAlgorithms.h"
+#include <cstring>
+#include <sstream>
+#include <vector>
+
 #include "cmDocumentationEntry.h"
-#include "cmLocalVisualStudio10Generator.h"
+#include "cmGlobalGenerator.h"
+#include "cmGlobalGeneratorFactory.h"
+#include "cmGlobalVisualStudioGenerator.h"
 #include "cmMakefile.h"
+#include "cmMessageType.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
 
 static const char vs12generatorName[] = "Visual Studio 12 2013";
 
@@ -28,27 +36,30 @@ class cmGlobalVisualStudio12Generator::Factory
   : public cmGlobalGeneratorFactory
 {
 public:
-  cmGlobalGenerator* CreateGlobalGenerator(const std::string& name,
-                                           cmake* cm) const override
+  std::unique_ptr<cmGlobalGenerator> CreateGlobalGenerator(
+    const std::string& name, bool allowArch, cmake* cm) const override
   {
     std::string genName;
     const char* p = cmVS12GenName(name, genName);
     if (!p) {
-      return 0;
+      return std::unique_ptr<cmGlobalGenerator>();
     }
     if (!*p) {
-      return new cmGlobalVisualStudio12Generator(cm, genName, "");
+      return std::unique_ptr<cmGlobalGenerator>(
+        new cmGlobalVisualStudio12Generator(cm, genName, ""));
     }
-    if (*p++ != ' ') {
-      return 0;
+    if (!allowArch || *p++ != ' ') {
+      return std::unique_ptr<cmGlobalGenerator>();
     }
     if (strcmp(p, "Win64") == 0) {
-      return new cmGlobalVisualStudio12Generator(cm, genName, "x64");
+      return std::unique_ptr<cmGlobalGenerator>(
+        new cmGlobalVisualStudio12Generator(cm, genName, "x64"));
     }
     if (strcmp(p, "ARM") == 0) {
-      return new cmGlobalVisualStudio12Generator(cm, genName, "ARM");
+      return std::unique_ptr<cmGlobalGenerator>(
+        new cmGlobalVisualStudio12Generator(cm, genName, "ARM"));
     }
-    return 0;
+    return std::unique_ptr<cmGlobalGenerator>();
   }
 
   void GetDocumentation(cmDocumentationEntry& entry) const override
@@ -88,9 +99,10 @@ public:
   std::string GetDefaultPlatformName() const override { return "Win32"; }
 };
 
-cmGlobalGeneratorFactory* cmGlobalVisualStudio12Generator::NewFactory()
+std::unique_ptr<cmGlobalGeneratorFactory>
+cmGlobalVisualStudio12Generator::NewFactory()
 {
-  return new Factory;
+  return std::unique_ptr<cmGlobalGeneratorFactory>(new Factory);
 }
 
 cmGlobalVisualStudio12Generator::cmGlobalVisualStudio12Generator(
@@ -110,7 +122,7 @@ cmGlobalVisualStudio12Generator::cmGlobalVisualStudio12Generator(
   this->DefaultLinkFlagTableName = "v12";
   this->DefaultMasmFlagTableName = "v12";
   this->DefaultRCFlagTableName = "v12";
-  this->Version = VS12;
+  this->Version = VSVersion::VS12;
 }
 
 bool cmGlobalVisualStudio12Generator::MatchesGeneratorName(
@@ -126,7 +138,8 @@ bool cmGlobalVisualStudio12Generator::MatchesGeneratorName(
 bool cmGlobalVisualStudio12Generator::ProcessGeneratorToolsetField(
   std::string const& key, std::string const& value)
 {
-  if (key == "host" && (value == "x64" || value == "x86")) {
+  if (key == "host" &&
+      (value == "x64" || value == "x86" || value == "ARM64")) {
     this->GeneratorToolsetHostArchitecture = value;
     return true;
   }

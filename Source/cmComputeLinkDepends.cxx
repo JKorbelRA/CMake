@@ -2,26 +2,33 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmComputeLinkDepends.h"
 
-#include "cmAlgorithms.h"
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+#include <iterator>
+#include <sstream>
+#include <unordered_map>
+#include <utility>
+
+#include <cm/memory>
+#include <cm/string_view>
+#include <cmext/string_view>
+
 #include "cmComputeComponentGraph.h"
+#include "cmGeneratorExpression.h"
+#include "cmGeneratorExpressionDAGChecker.h"
 #include "cmGeneratorTarget.h"
 #include "cmGlobalGenerator.h"
 #include "cmListFileCache.h"
 #include "cmLocalGenerator.h"
 #include "cmMakefile.h"
+#include "cmMessageType.h"
 #include "cmRange.h"
 #include "cmStateTypes.h"
-#include "cmSystemTools.h"
+#include "cmStringAlgorithms.h"
 #include "cmTarget.h"
+#include "cmValue.h"
 #include "cmake.h"
-
-#include <algorithm>
-#include <assert.h>
-#include <iterator>
-#include <sstream>
-#include <stdio.h>
-#include <string.h>
-#include <utility>
 
 /*
 
@@ -172,8 +179,62 @@ items that we know the linker will re-use automatically (shared libs).
 
 */
 
+namespace {
+// LINK_LIBRARY helpers
+const auto LL_BEGIN = "<LINK_LIBRARY:"_s;
+const auto LL_END = "</LINK_LIBRARY:"_s;
+
+inline std::string ExtractFeature(std::string const& item)
+{
+  return item.substr(LL_BEGIN.length(),
+                     item.find('>', LL_BEGIN.length()) - LL_BEGIN.length());
+}
+
+bool IsFeatureSupported(cmMakefile* makefile, std::string const& linkLanguage,
+                        std::string const& feature)
+{
+  auto featureSupported = cmStrCat(
+    "CMAKE_", linkLanguage, "_LINK_LIBRARY_USING_", feature, "_SUPPORTED");
+  if (makefile->GetDefinition(featureSupported).IsOn()) {
+    return true;
+  }
+
+  featureSupported =
+    cmStrCat("CMAKE_LINK_LIBRARY_USING_", feature, "_SUPPORTED");
+  return makefile->GetDefinition(featureSupported).IsOn();
+}
+
+// LINK_GROUP helpers
+const auto LG_BEGIN = "<LINK_GROUP:"_s;
+const auto LG_END = "</LINK_GROUP:"_s;
+
+inline std::string ExtractGroupFeature(std::string const& item)
+{
+  return item.substr(LG_BEGIN.length(),
+                     item.find(':', LG_BEGIN.length()) - LG_BEGIN.length());
+}
+
+bool IsGroupFeatureSupported(cmMakefile* makefile,
+                             std::string const& linkLanguage,
+                             std::string const& feature)
+{
+  auto featureSupported = cmStrCat(
+    "CMAKE_", linkLanguage, "_LINK_GROUP_USING_", feature, "_SUPPORTED");
+  if (makefile->GetDefinition(featureSupported).IsOn()) {
+    return true;
+  }
+
+  featureSupported =
+    cmStrCat("CMAKE_LINK_GROUP_USING_", feature, "_SUPPORTED");
+  return makefile->GetDefinition(featureSupported).IsOn();
+}
+}
+
+const std::string cmComputeLinkDepends::LinkEntry::DEFAULT = "DEFAULT";
+
 cmComputeLinkDepends::cmComputeLinkDepends(const cmGeneratorTarget* target,
-                                           const std::string& config)
+                                           const std::string& config,
+                                           const std::string& linkLanguage)
 {
   // Store context information.
   this->Target = target;
@@ -181,6 +242,50 @@ cmComputeLinkDepends::cmComputeLinkDepends(const cmGeneratorTarget* target,
   this->GlobalGenerator =
     this->Target->GetLocalGenerator()->GetGlobalGenerator();
   this->CMakeInstance = this->GlobalGenerator->GetCMakeInstance();
+  this->LinkLanguage = linkLanguage;
+
+  // target oriented feature override property takes precedence over
+  // global override property
+  cm::string_view lloPrefix = "LINK_LIBRARY_OVERRIDE_"_s;
+  auto const& keys = this->Target->GetPropertyKeys();
+  std::for_each(
+    keys.cbegin(), keys.cend(),
+    [this, &lloPrefix, &config, &linkLanguage](std::string const& key) {
+      if (cmHasPrefix(key, lloPrefix)) {
+        if (cmValue feature = this->Target->GetProperty(key)) {
+          if (!feature->empty() && key.length() > lloPrefix.length()) {
+            auto item = key.substr(lloPrefix.length());
+            cmGeneratorExpressionDAGChecker dag{ this->Target->GetBacktrace(),
+                                                 this->Target,
+                                                 "LINK_LIBRARY_OVERRIDE",
+                                                 nullptr, nullptr };
+            auto overrideFeature = cmGeneratorExpression::Evaluate(
+              feature, this->Target->GetLocalGenerator(), config, this->Target,
+              &dag, this->Target, linkLanguage);
+            this->LinkLibraryOverride.emplace(item, overrideFeature);
+          }
+        }
+      }
+    });
+  // global override property
+  if (cmValue linkLibraryOverride =
+        this->Target->GetProperty("LINK_LIBRARY_OVERRIDE")) {
+    cmGeneratorExpressionDAGChecker dag{ target->GetBacktrace(), target,
+                                         "LINK_LIBRARY_OVERRIDE", nullptr,
+                                         nullptr };
+    auto overrideValue = cmGeneratorExpression::Evaluate(
+      linkLibraryOverride, target->GetLocalGenerator(), config, target, &dag,
+      target, linkLanguage);
+
+    auto overrideList = cmTokenize(overrideValue, ","_s);
+    if (overrideList.size() >= 2) {
+      auto const& feature = overrideList.front();
+      for_each(overrideList.cbegin() + 1, overrideList.cend(),
+               [this, &feature](std::string const& item) {
+                 this->LinkLibraryOverride.emplace(item, feature);
+               });
+    }
+  }
 
   // The configuration being linked.
   this->HasConfig = !config.empty();
@@ -199,10 +304,7 @@ cmComputeLinkDepends::cmComputeLinkDepends(const cmGeneratorTarget* target,
   this->CCG = nullptr;
 }
 
-cmComputeLinkDepends::~cmComputeLinkDepends()
-{
-  cmDeleteAll(this->InferredDependSets);
-}
+cmComputeLinkDepends::~cmComputeLinkDepends() = default;
 
 void cmComputeLinkDepends::SetOldLinkDirMode(bool b)
 {
@@ -235,6 +337,11 @@ cmComputeLinkDepends::Compute()
   // Infer dependencies of targets for which they were not known.
   this->InferDependencies();
 
+  // finalize groups dependencies
+  // All dependencies which are raw items must be replaced by the group
+  // it belongs to, if any.
+  this->UpdateGroupDependencies();
+
   // Cleanup the constraint graph.
   this->CleanConstraintGraph();
 
@@ -249,24 +356,66 @@ cmComputeLinkDepends::Compute()
     this->DisplayConstraintGraph();
   }
 
+  // Compute the DAG of strongly connected components.  The algorithm
+  // used by cmComputeComponentGraph should identify the components in
+  // the same order in which the items were originally discovered in
+  // the BFS.  This should preserve the original order when no
+  // constraints disallow it.
+  this->CCG =
+    cm::make_unique<cmComputeComponentGraph>(this->EntryConstraintGraph);
+  this->CCG->Compute();
+
+  if (!this->CheckCircularDependencies()) {
+    return this->FinalLinkEntries;
+  }
+
   // Compute the final ordering.
-  this->OrderLinkEntires();
+  this->OrderLinkEntries();
 
   // Compute the final set of link entries.
   // Iterate in reverse order so we can keep only the last occurrence
   // of a shared library.
-  std::set<int> emmitted;
+  std::set<int> emitted;
   for (int i : cmReverseRange(this->FinalLinkOrder)) {
     LinkEntry const& e = this->EntryList[i];
     cmGeneratorTarget const* t = e.Target;
     // Entries that we know the linker will re-use do not need to be repeated.
     bool uniquify = t && t->GetType() == cmStateEnums::SHARED_LIBRARY;
-    if (!uniquify || emmitted.insert(i).second) {
+    if (!uniquify || emitted.insert(i).second) {
       this->FinalLinkEntries.push_back(e);
     }
   }
+  // Place explicitly linked object files in the front.  The linker will
+  // always use them anyway, and they may depend on symbols from libraries.
+  // Append in reverse order since we reverse the final order below.
+  for (int i : cmReverseRange(this->ObjectEntries)) {
+    this->FinalLinkEntries.emplace_back(this->EntryList[i]);
+  }
   // Reverse the resulting order since we iterated in reverse.
   std::reverse(this->FinalLinkEntries.begin(), this->FinalLinkEntries.end());
+
+  // Expand group items
+  if (!this->GroupItems.empty()) {
+    for (const auto& group : this->GroupItems) {
+      const LinkEntry& groupEntry = this->EntryList[group.first];
+      auto it = this->FinalLinkEntries.begin();
+      while (true) {
+        it = std::find_if(it, this->FinalLinkEntries.end(),
+                          [&groupEntry](const LinkEntry& entry) -> bool {
+                            return groupEntry.Item == entry.Item;
+                          });
+        if (it == this->FinalLinkEntries.end()) {
+          break;
+        }
+        it->Item.Value = "</LINK_GROUP>";
+        for (auto i = group.second.rbegin(); i != group.second.rend(); ++i) {
+          it = this->FinalLinkEntries.insert(it, this->EntryList[*i]);
+        }
+        it = this->FinalLinkEntries.insert(it, groupEntry);
+        it->Item.Value = "<LINK_GROUP>";
+      }
+    }
+  }
 
   // Display the final set.
   if (this->DebugMode) {
@@ -276,67 +425,101 @@ cmComputeLinkDepends::Compute()
   return this->FinalLinkEntries;
 }
 
-std::map<cmLinkItem, int>::iterator cmComputeLinkDepends::AllocateLinkEntry(
-  cmLinkItem const& item)
+std::string const& cmComputeLinkDepends::GetCurrentFeature(
+  std::string const& item, std::string const& defaultFeature) const
+{
+  auto it = this->LinkLibraryOverride.find(item);
+  return it == this->LinkLibraryOverride.end() ? defaultFeature : it->second;
+}
+
+std::pair<std::map<cmLinkItem, int>::iterator, bool>
+cmComputeLinkDepends::AllocateLinkEntry(cmLinkItem const& item)
 {
   std::map<cmLinkItem, int>::value_type index_entry(
     item, static_cast<int>(this->EntryList.size()));
-  std::map<cmLinkItem, int>::iterator lei =
-    this->LinkEntryIndex.insert(index_entry).first;
-  this->EntryList.emplace_back();
-  this->InferredDependSets.push_back(nullptr);
-  this->EntryConstraintGraph.emplace_back();
+  auto lei = this->LinkEntryIndex.insert(index_entry);
+  if (lei.second) {
+    this->EntryList.emplace_back();
+    this->InferredDependSets.emplace_back();
+    this->EntryConstraintGraph.emplace_back();
+  }
   return lei;
 }
 
-int cmComputeLinkDepends::AddLinkEntry(cmLinkItem const& item)
+std::pair<int, bool> cmComputeLinkDepends::AddLinkEntry(cmLinkItem const& item,
+                                                        int groupIndex)
 {
+  // Allocate a spot for the item entry.
+  auto lei = this->AllocateLinkEntry(item);
+
   // Check if the item entry has already been added.
-  std::map<cmLinkItem, int>::iterator lei = this->LinkEntryIndex.find(item);
-  if (lei != this->LinkEntryIndex.end()) {
+  if (!lei.second) {
     // Yes.  We do not need to follow the item's dependencies again.
-    return lei->second;
+    return { lei.first->second, false };
   }
 
-  // Allocate a spot for the item entry.
-  lei = this->AllocateLinkEntry(item);
-
   // Initialize the item entry.
-  int index = lei->second;
+  int index = lei.first->second;
   LinkEntry& entry = this->EntryList[index];
-  entry.Item = item.AsStr();
+  entry.Item = BT<std::string>(item.AsStr(), item.Backtrace);
   entry.Target = item.Target;
-  entry.IsFlag =
-    (!entry.Target && entry.Item[0] == '-' && entry.Item[1] != 'l' &&
-     entry.Item.substr(0, 10) != "-framework");
+  if (!entry.Target && entry.Item.Value[0] == '-' &&
+      entry.Item.Value[1] != 'l' &&
+      entry.Item.Value.substr(0, 10) != "-framework") {
+    entry.Kind = LinkEntry::Flag;
+  } else if (cmHasPrefix(entry.Item.Value, LG_BEGIN) &&
+             cmHasSuffix(entry.Item.Value, '>')) {
+    entry.Kind = LinkEntry::Group;
+  }
 
-  // If the item has dependencies queue it to follow them.
-  if (entry.Target) {
-    // Target dependencies are always known.  Follow them.
-    BFSEntry qe = { index, nullptr };
-    this->BFSQueue.push(qe);
-  } else {
-    // Look for an old-style <item>_LIB_DEPENDS variable.
-    std::string var = entry.Item;
-    var += "_LIB_DEPENDS";
-    if (const char* val = this->Makefile->GetDefinition(var)) {
-      // The item dependencies are known.  Follow them.
-      BFSEntry qe = { index, val };
+  if (entry.Kind != LinkEntry::Group) {
+    // If the item has dependencies queue it to follow them.
+    if (entry.Target) {
+      // Target dependencies are always known.  Follow them.
+      BFSEntry qe = { index, groupIndex, nullptr };
       this->BFSQueue.push(qe);
-    } else if (!entry.IsFlag) {
-      // The item dependencies are not known.  We need to infer them.
-      this->InferredDependSets[index] = new DependSetList;
+    } else {
+      // Look for an old-style <item>_LIB_DEPENDS variable.
+      std::string var = cmStrCat(entry.Item.Value, "_LIB_DEPENDS");
+      if (cmValue val = this->Makefile->GetDefinition(var)) {
+        // The item dependencies are known.  Follow them.
+        BFSEntry qe = { index, groupIndex, val->c_str() };
+        this->BFSQueue.push(qe);
+      } else if (entry.Kind != LinkEntry::Flag) {
+        // The item dependencies are not known.  We need to infer them.
+        this->InferredDependSets[index].Initialized = true;
+      }
     }
   }
 
-  return index;
+  return { index, true };
+}
+
+void cmComputeLinkDepends::AddLinkObject(cmLinkItem const& item)
+{
+  // Allocate a spot for the item entry.
+  auto lei = this->AllocateLinkEntry(item);
+
+  // Check if the item entry has already been added.
+  if (!lei.second) {
+    return;
+  }
+
+  // Initialize the item entry.
+  int index = lei.first->second;
+  LinkEntry& entry = this->EntryList[index];
+  entry.Item = BT<std::string>(item.AsStr(), item.Backtrace);
+  entry.Kind = LinkEntry::Object;
+
+  // Record explicitly linked object files separately.
+  this->ObjectEntries.emplace_back(index);
 }
 
 void cmComputeLinkDepends::FollowLinkEntry(BFSEntry qe)
 {
   // Get this entry representation.
-  int depender_index = qe.Index;
-  LinkEntry const& entry = this->EntryList[depender_index];
+  int depender_index = qe.GroupIndex == -1 ? qe.Index : qe.GroupIndex;
+  LinkEntry const& entry = this->EntryList[qe.Index];
 
   // Follow the item's dependencies.
   if (entry.Target) {
@@ -347,6 +530,13 @@ void cmComputeLinkDepends::FollowLinkEntry(BFSEntry qe)
         entry.Target->GetType() == cmStateEnums::INTERFACE_LIBRARY;
       // This target provides its own link interface information.
       this->AddLinkEntries(depender_index, iface->Libraries);
+      this->AddLinkObjects(iface->Objects);
+      for (auto const& language : iface->Languages) {
+        auto runtimeEntries = iface->LanguageRuntimeLibraries.find(language);
+        if (runtimeEntries != iface->LanguageRuntimeLibraries.end()) {
+          this->AddLinkEntries(depender_index, runtimeEntries->second);
+        }
+      }
 
       if (isIface) {
         return;
@@ -392,32 +582,30 @@ void cmComputeLinkDepends::QueueSharedDependencies(
 
 void cmComputeLinkDepends::HandleSharedDependency(SharedDepEntry const& dep)
 {
-  // Check if the target already has an entry.
-  std::map<cmLinkItem, int>::iterator lei =
-    this->LinkEntryIndex.find(dep.Item);
-  if (lei == this->LinkEntryIndex.end()) {
-    // Allocate a spot for the item entry.
-    lei = this->AllocateLinkEntry(dep.Item);
+  // Allocate a spot for the item entry.
+  auto lei = this->AllocateLinkEntry(dep.Item);
+  int index = lei.first->second;
 
+  // Check if the target does not already has an entry.
+  if (lei.second) {
     // Initialize the item entry.
-    LinkEntry& entry = this->EntryList[lei->second];
-    entry.Item = dep.Item.AsStr();
+    LinkEntry& entry = this->EntryList[index];
+    entry.Item = BT<std::string>(dep.Item.AsStr(), dep.Item.Backtrace);
     entry.Target = dep.Item.Target;
 
     // This item was added specifically because it is a dependent
     // shared library.  It may get special treatment
     // in cmComputeLinkInformation.
-    entry.IsSharedDep = true;
+    entry.Kind = LinkEntry::SharedDep;
   }
 
   // Get the link entry for this target.
-  int index = lei->second;
   LinkEntry& entry = this->EntryList[index];
 
   // This shared library dependency must follow the item that listed
   // it.
   this->EntryConstraintGraph[dep.DependerIndex].emplace_back(
-    index, true, cmListFileBacktrace());
+    index, true, false, cmListFileBacktrace());
 
   // Target items may have their own dependencies.
   if (entry.Target) {
@@ -435,8 +623,7 @@ void cmComputeLinkDepends::AddVarLinkEntries(int depender_index,
   // This is called to add the dependencies named by
   // <item>_LIB_DEPENDS.  The variable contains a semicolon-separated
   // list.  The list contains link-type;item pairs and just items.
-  std::vector<std::string> deplist;
-  cmSystemTools::ExpandListArgument(value, deplist);
+  std::vector<std::string> deplist = cmExpandedList(value);
 
   // Look for entries meant for this configuration.
   std::vector<cmLinkItem> actual_libs;
@@ -459,12 +646,11 @@ void cmComputeLinkDepends::AddVarLinkEntries(int depender_index,
       // the export_library_dependencies command from CMake 2.4 and
       // lower.
       if (!haveLLT) {
-        std::string var = d;
-        var += "_LINK_TYPE";
-        if (const char* val = this->Makefile->GetDefinition(var)) {
-          if (strcmp(val, "debug") == 0) {
+        std::string var = cmStrCat(d, "_LINK_TYPE");
+        if (cmValue val = this->Makefile->GetDefinition(var)) {
+          if (*val == "debug") {
             llt = DEBUG_LibraryType;
-          } else if (strcmp(val, "optimized") == 0) {
+          } else if (*val == "optimized") {
             llt = OPTIMIZED_LibraryType;
           }
         }
@@ -491,9 +677,17 @@ void cmComputeLinkDepends::AddVarLinkEntries(int depender_index,
 void cmComputeLinkDepends::AddDirectLinkEntries()
 {
   // Add direct link dependencies in this configuration.
-  cmLinkImplementation const* impl =
-    this->Target->GetLinkImplementation(this->Config);
+  cmLinkImplementation const* impl = this->Target->GetLinkImplementation(
+    this->Config, cmGeneratorTarget::LinkInterfaceFor::Link);
   this->AddLinkEntries(-1, impl->Libraries);
+  this->AddLinkObjects(impl->Objects);
+
+  for (auto const& language : impl->Languages) {
+    auto runtimeEntries = impl->LanguageRuntimeLibraries.find(language);
+    if (runtimeEntries != impl->LanguageRuntimeLibraries.end()) {
+      this->AddLinkEntries(-1, runtimeEntries->second);
+    }
+  }
   for (cmLinkItem const& wi : impl->WrongConfigLibraries) {
     this->CheckWrongConfigItem(wi);
   }
@@ -505,6 +699,11 @@ void cmComputeLinkDepends::AddLinkEntries(int depender_index,
 {
   // Track inferred dependency sets implied by this list.
   std::map<int, DependSet> dependSets;
+  std::string feature = LinkEntry::DEFAULT;
+
+  bool inGroup = false;
+  std::pair<int, bool> groupIndex{ -1, false };
+  std::vector<int> groupItems;
 
   // Loop over the libraries linked directly by the depender.
   for (T const& l : libs) {
@@ -515,41 +714,246 @@ void cmComputeLinkDepends::AddLinkEntries(int depender_index,
       continue;
     }
 
-    // Add a link entry for this item.
-    int dependee_index = this->AddLinkEntry(l);
-
-    // The dependee must come after the depender.
-    if (depender_index >= 0) {
-      this->EntryConstraintGraph[depender_index].emplace_back(
-        dependee_index, false, cmListFileBacktrace());
-    } else {
-      // This is a direct dependency of the target being linked.
-      this->OriginalEntries.push_back(dependee_index);
+    if (cmHasPrefix(item.AsStr(), LL_BEGIN) &&
+        cmHasSuffix(item.AsStr(), '>')) {
+      feature = ExtractFeature(item.AsStr());
+      // emit a warning if an undefined feature is used as part of
+      // an imported target
+      if (depender_index >= 0) {
+        const auto& depender = this->EntryList[depender_index];
+        if (depender.Target != nullptr && depender.Target->IsImported() &&
+            !IsFeatureSupported(this->Makefile, this->LinkLanguage, feature)) {
+          this->CMakeInstance->IssueMessage(
+            MessageType::AUTHOR_ERROR,
+            cmStrCat("The 'IMPORTED' target '", depender.Target->GetName(),
+                     "' uses the generator-expression '$<LINK_LIBRARY>' with "
+                     "the feature '",
+                     feature,
+                     "', which is undefined or unsupported.\nDid you miss to "
+                     "define it by setting variables \"CMAKE_",
+                     this->LinkLanguage, "_LINK_LIBRARY_USING_", feature,
+                     "\" and \"CMAKE_", this->LinkLanguage,
+                     "_LINK_LIBRARY_USING_", feature, "_SUPPORTED\"?"),
+            this->Target->GetBacktrace());
+        }
+      }
+      continue;
+    }
+    if (cmHasPrefix(item.AsStr(), LL_END) && cmHasSuffix(item.AsStr(), '>')) {
+      feature = LinkEntry::DEFAULT;
+      continue;
     }
 
-    // Update the inferred dependencies for earlier items.
-    for (auto& dependSet : dependSets) {
-      // Add this item to the inferred dependencies of other items.
-      // Target items are never inferred dependees because unknown
-      // items are outside libraries that should not be depending on
-      // targets.
-      if (!this->EntryList[dependee_index].Target &&
-          !this->EntryList[dependee_index].IsFlag &&
-          dependee_index != dependSet.first) {
-        dependSet.second.insert(dependee_index);
+    if (cmHasPrefix(item.AsStr(), LG_BEGIN) &&
+        cmHasSuffix(item.AsStr(), '>')) {
+      groupIndex = this->AddLinkEntry(item);
+      if (groupIndex.second) {
+        LinkEntry& entry = this->EntryList[groupIndex.first];
+        entry.Feature = ExtractGroupFeature(item.AsStr());
+      }
+      inGroup = true;
+      if (depender_index >= 0) {
+        this->EntryConstraintGraph[depender_index].emplace_back(
+          groupIndex.first, false, false, cmListFileBacktrace());
+      } else {
+        // This is a direct dependency of the target being linked.
+        this->OriginalEntries.push_back(groupIndex.first);
+      }
+      continue;
+    }
+
+    int dependee_index;
+
+    if (cmHasPrefix(item.AsStr(), LG_END) && cmHasSuffix(item.AsStr(), '>')) {
+      dependee_index = groupIndex.first;
+      if (groupIndex.second) {
+        this->GroupItems.emplace(groupIndex.first, groupItems);
+      }
+      inGroup = false;
+      groupIndex = std::make_pair(-1, false);
+      groupItems.clear();
+      continue;
+    }
+
+    if (depender_index >= 0 && inGroup) {
+      const auto& depender = this->EntryList[depender_index];
+      const auto& groupFeature = this->EntryList[groupIndex.first].Feature;
+      if (depender.Target != nullptr && depender.Target->IsImported() &&
+          !IsGroupFeatureSupported(this->Makefile, this->LinkLanguage,
+                                   groupFeature)) {
+        this->CMakeInstance->IssueMessage(
+          MessageType::AUTHOR_ERROR,
+          cmStrCat("The 'IMPORTED' target '", depender.Target->GetName(),
+                   "' uses the generator-expression '$<LINK_GROUP>' with "
+                   "the feature '",
+                   groupFeature,
+                   "', which is undefined or unsupported.\nDid you miss to "
+                   "define it by setting variables \"CMAKE_",
+                   this->LinkLanguage, "_LINK_GROUP_USING_", groupFeature,
+                   "\" and \"CMAKE_", this->LinkLanguage, "_LINK_GROUP_USING_",
+                   groupFeature, "_SUPPORTED\"?"),
+          this->Target->GetBacktrace());
       }
     }
 
-    // If this item needs to have dependencies inferred, do so.
-    if (this->InferredDependSets[dependee_index]) {
-      // Make sure an entry exists to hold the set for the item.
-      dependSets[dependee_index];
+    // Add a link entry for this item.
+    auto ale = this->AddLinkEntry(item, groupIndex.first);
+    dependee_index = ale.first;
+    LinkEntry& entry = this->EntryList[dependee_index];
+    auto const& itemFeature =
+      this->GetCurrentFeature(entry.Item.Value, feature);
+    if (inGroup && ale.second && entry.Target != nullptr &&
+        (entry.Target->GetType() == cmStateEnums::TargetType::OBJECT_LIBRARY ||
+         entry.Target->GetType() ==
+           cmStateEnums::TargetType::INTERFACE_LIBRARY)) {
+      const auto& groupFeature = this->EntryList[groupIndex.first].Feature;
+      this->CMakeInstance->IssueMessage(
+        MessageType::AUTHOR_WARNING,
+        cmStrCat(
+          "The feature '", groupFeature,
+          "', specified as part of a generator-expression "
+          "'$",
+          LG_BEGIN, groupFeature, ">', will not be applied to the ",
+          (entry.Target->GetType() == cmStateEnums::TargetType::OBJECT_LIBRARY
+             ? "OBJECT"
+             : "INTERFACE"),
+          " library '", entry.Item.Value, "'."),
+        this->Target->GetBacktrace());
+    }
+    if (itemFeature != LinkEntry::DEFAULT) {
+      if (ale.second) {
+        // current item not yet defined
+        if (entry.Target != nullptr &&
+            (entry.Target->GetType() ==
+               cmStateEnums::TargetType::OBJECT_LIBRARY ||
+             entry.Target->GetType() ==
+               cmStateEnums::TargetType::INTERFACE_LIBRARY)) {
+          this->CMakeInstance->IssueMessage(
+            MessageType::AUTHOR_WARNING,
+            cmStrCat("The feature '", feature,
+                     "', specified as part of a generator-expression "
+                     "'$",
+                     LL_BEGIN, feature, ">', will not be applied to the ",
+                     (entry.Target->GetType() ==
+                          cmStateEnums::TargetType::OBJECT_LIBRARY
+                        ? "OBJECT"
+                        : "INTERFACE"),
+                     " library '", entry.Item.Value, "'."),
+            this->Target->GetBacktrace());
+        } else {
+          entry.Feature = itemFeature;
+        }
+      }
+    }
+
+    bool supportedItem = entry.Target == nullptr ||
+      (entry.Target->GetType() != cmStateEnums::TargetType::OBJECT_LIBRARY &&
+       entry.Target->GetType() != cmStateEnums::TargetType::INTERFACE_LIBRARY);
+
+    if (supportedItem) {
+      if (inGroup) {
+        const auto& currentFeature = this->EntryList[groupIndex.first].Feature;
+        for (const auto& g : this->GroupItems) {
+          const auto& groupFeature = this->EntryList[g.first].Feature;
+          if (groupFeature == currentFeature) {
+            continue;
+          }
+          if (std::find(g.second.cbegin(), g.second.cend(), dependee_index) !=
+              g.second.cend()) {
+            this->CMakeInstance->IssueMessage(
+              MessageType::FATAL_ERROR,
+              cmStrCat("Impossible to link target '", this->Target->GetName(),
+                       "' because the link item '", entry.Item.Value,
+                       "', specified with the group feature '", currentFeature,
+                       '\'', ", has already occurred with the feature '",
+                       groupFeature, '\'', ", which is not allowed."),
+              this->Target->GetBacktrace());
+            continue;
+          }
+        }
+      }
+      if (entry.Feature != itemFeature) {
+        // incompatibles features occurred
+        this->CMakeInstance->IssueMessage(
+          MessageType::FATAL_ERROR,
+          cmStrCat("Impossible to link target '", this->Target->GetName(),
+                   "' because the link item '", entry.Item.Value,
+                   "', specified ",
+                   (itemFeature == LinkEntry::DEFAULT
+                      ? "without any feature or 'DEFAULT' feature"
+                      : cmStrCat("with the feature '", itemFeature, '\'')),
+                   ", has already occurred ",
+                   (entry.Feature == LinkEntry::DEFAULT
+                      ? "without any feature or 'DEFAULT' feature"
+                      : cmStrCat("with the feature '", entry.Feature, '\'')),
+                   ", which is not allowed."),
+          this->Target->GetBacktrace());
+      }
+    }
+
+    if (inGroup) {
+      // store item index for dependencies handling
+      groupItems.push_back(dependee_index);
+    } else {
+      std::vector<int> indexes;
+      bool entryHandled = false;
+      // search any occurrence of the library in already defined groups
+      for (const auto& group : this->GroupItems) {
+        for (auto index : group.second) {
+          if (entry.Item.Value == this->EntryList[index].Item.Value) {
+            indexes.push_back(group.first);
+            entryHandled = true;
+            break;
+          }
+        }
+      }
+      if (!entryHandled) {
+        indexes.push_back(dependee_index);
+      }
+
+      for (auto index : indexes) {
+        // The dependee must come after the depender.
+        if (depender_index >= 0) {
+          this->EntryConstraintGraph[depender_index].emplace_back(
+            index, false, false, cmListFileBacktrace());
+        } else {
+          // This is a direct dependency of the target being linked.
+          this->OriginalEntries.push_back(index);
+        }
+
+        // Update the inferred dependencies for earlier items.
+        for (auto& dependSet : dependSets) {
+          // Add this item to the inferred dependencies of other items.
+          // Target items are never inferred dependees because unknown
+          // items are outside libraries that should not be depending on
+          // targets.
+          if (!this->EntryList[index].Target &&
+              this->EntryList[index].Kind != LinkEntry::Flag &&
+              this->EntryList[index].Kind != LinkEntry::Group &&
+              dependee_index != dependSet.first) {
+            dependSet.second.insert(index);
+          }
+        }
+
+        // If this item needs to have dependencies inferred, do so.
+        if (this->InferredDependSets[index].Initialized) {
+          // Make sure an entry exists to hold the set for the item.
+          dependSets[index];
+        }
+      }
     }
   }
 
   // Store the inferred dependency sets discovered for this list.
   for (auto const& dependSet : dependSets) {
-    this->InferredDependSets[dependSet.first]->push_back(dependSet.second);
+    this->InferredDependSets[dependSet.first].push_back(dependSet.second);
+  }
+}
+
+void cmComputeLinkDepends::AddLinkObjects(std::vector<cmLinkItem> const& objs)
+{
+  for (cmLinkItem const& obj : objs) {
+    this->AddLinkObject(obj);
   }
 }
 
@@ -564,7 +968,7 @@ cmLinkItem cmComputeLinkDepends::ResolveLinkItem(int depender_index,
       from = depender;
     }
   }
-  return from->ResolveLinkItem(name, cmListFileBacktrace());
+  return from->ResolveLinkItem(BT<std::string>(name));
 }
 
 void cmComputeLinkDepends::InferDependencies()
@@ -576,14 +980,14 @@ void cmComputeLinkDepends::InferDependencies()
        depender_index < this->InferredDependSets.size(); ++depender_index) {
     // Skip items for which dependencies do not need to be inferred or
     // for which the inferred dependency sets are empty.
-    DependSetList* sets = this->InferredDependSets[depender_index];
-    if (!sets || sets->empty()) {
+    DependSetList& sets = this->InferredDependSets[depender_index];
+    if (!sets.Initialized || sets.empty()) {
       continue;
     }
 
     // Intersect the sets for this item.
-    DependSet common = sets->front();
-    for (DependSet const& i : cmMakeRange(*sets).advance(1)) {
+    DependSet common = sets.front();
+    for (DependSet const& i : cmMakeRange(sets).advance(1)) {
       DependSet intersection;
       std::set_intersection(common.begin(), common.end(), i.begin(), i.end(),
                             std::inserter(intersection, intersection.begin()));
@@ -594,7 +998,37 @@ void cmComputeLinkDepends::InferDependencies()
     cmGraphEdgeList& edges = this->EntryConstraintGraph[depender_index];
     edges.reserve(edges.size() + common.size());
     for (auto const& c : common) {
-      edges.emplace_back(c, true, cmListFileBacktrace());
+      edges.emplace_back(c, true, false, cmListFileBacktrace());
+    }
+  }
+}
+
+void cmComputeLinkDepends::UpdateGroupDependencies()
+{
+  if (this->GroupItems.empty()) {
+    return;
+  }
+
+  // Walks through all entries of the constraint graph to replace dependencies
+  // over raw items by the group it belongs to, if any.
+  for (auto& edgeList : this->EntryConstraintGraph) {
+    for (auto& edge : edgeList) {
+      int index = edge;
+      if (this->EntryList[index].Kind == LinkEntry::Group ||
+          this->EntryList[index].Kind == LinkEntry::Flag ||
+          this->EntryList[index].Kind == LinkEntry::Object) {
+        continue;
+      }
+      // search the item in the defined groups
+      for (const auto& groupItems : this->GroupItems) {
+        auto pos = std::find(groupItems.second.cbegin(),
+                             groupItems.second.cend(), index);
+        if (pos != groupItems.second.cend()) {
+          // replace lib dependency by the group it belongs to
+          edge = cmGraphEdge{ groupItems.first, false, false,
+                              cmListFileBacktrace() };
+        }
+      }
     }
   }
 }
@@ -612,6 +1046,76 @@ void cmComputeLinkDepends::CleanConstraintGraph()
   }
 }
 
+bool cmComputeLinkDepends::CheckCircularDependencies() const
+{
+  std::vector<NodeList> const& components = this->CCG->GetComponents();
+  int nc = static_cast<int>(components.size());
+  for (int c = 0; c < nc; ++c) {
+    // Get the current component.
+    NodeList const& nl = components[c];
+
+    // Skip trivial components.
+    if (nl.size() < 2) {
+      continue;
+    }
+
+    // no group must be evolved
+    bool cycleDetected = false;
+    for (int ni : nl) {
+      if (this->EntryList[ni].Kind == LinkEntry::Group) {
+        cycleDetected = true;
+        break;
+      }
+    }
+    if (!cycleDetected) {
+      continue;
+    }
+
+    // Construct the error message.
+    auto formatItem = [](LinkEntry const& entry) -> std::string {
+      if (entry.Kind == LinkEntry::Group) {
+        auto items =
+          entry.Item.Value.substr(entry.Item.Value.find(':', 12) + 1);
+        items.pop_back();
+        std::replace(items.begin(), items.end(), '|', ',');
+        return cmStrCat("group \"", ExtractGroupFeature(entry.Item.Value),
+                        ":{", items, "}\"");
+      }
+      return cmStrCat('"', entry.Item.Value, '"');
+    };
+
+    std::ostringstream e;
+    e << "The inter-target dependency graph, for the target \""
+      << this->Target->GetName()
+      << "\", contains the following strongly connected component "
+         "(cycle):\n";
+    std::vector<int> const& cmap = this->CCG->GetComponentMap();
+    for (int i : nl) {
+      // Get the depender.
+      LinkEntry const& depender = this->EntryList[i];
+
+      // Describe the depender.
+      e << "  " << formatItem(depender) << "\n";
+
+      // List its dependencies that are inside the component.
+      EdgeList const& el = this->EntryConstraintGraph[i];
+      for (cmGraphEdge const& ni : el) {
+        int j = ni;
+        if (cmap[j] == c) {
+          LinkEntry const& dependee = this->EntryList[j];
+          e << "    depends on " << formatItem(dependee) << "\n";
+        }
+      }
+    }
+    this->CMakeInstance->IssueMessage(MessageType::FATAL_ERROR, e.str(),
+                                      this->Target->GetBacktrace());
+
+    return false;
+  }
+
+  return true;
+}
+
 void cmComputeLinkDepends::DisplayConstraintGraph()
 {
   // Display the graph nodes and their edges.
@@ -624,16 +1128,8 @@ void cmComputeLinkDepends::DisplayConstraintGraph()
   fprintf(stderr, "%s\n", e.str().c_str());
 }
 
-void cmComputeLinkDepends::OrderLinkEntires()
+void cmComputeLinkDepends::OrderLinkEntries()
 {
-  // Compute the DAG of strongly connected components.  The algorithm
-  // used by cmComputeComponentGraph should identify the components in
-  // the same order in which the items were originally discovered in
-  // the BFS.  This should preserve the original order when no
-  // constraints disallow it.
-  this->CCG =
-    cm::make_unique<cmComputeComponentGraph>(this->EntryConstraintGraph);
-
   // The component graph is guaranteed to be acyclic.  Start a DFS
   // from every entry to compute a topological order for the
   // components.
@@ -678,7 +1174,8 @@ void cmComputeLinkDepends::DisplayComponents()
     fprintf(stderr, "Component (%u):\n", c);
     NodeList const& nl = components[c];
     for (int i : nl) {
-      fprintf(stderr, "  item %d [%s]\n", i, this->EntryList[i].Item.c_str());
+      fprintf(stderr, "  item %d [%s]\n", i,
+              this->EntryList[i].Item.Value.c_str());
     }
     EdgeList const& ol = this->CCG->GetComponentGraphEdges(c);
     for (cmGraphEdge const& oi : ol) {
@@ -720,8 +1217,7 @@ void cmComputeLinkDepends::VisitEntry(int index)
   // This entry has now been seen.  Update its component.
   bool completed = false;
   int component = this->CCG->GetComponentMap()[index];
-  std::map<int, PendingComponent>::iterator mi =
-    this->PendingComponents.find(this->ComponentOrder[component]);
+  auto mi = this->PendingComponents.find(this->ComponentOrder[component]);
   if (mi != this->PendingComponents.end()) {
     // The entry is in an already pending component.
     PendingComponent& pc = mi->second;
@@ -823,12 +1319,23 @@ int cmComputeLinkDepends::ComputeComponentCount(NodeList const& nl)
 void cmComputeLinkDepends::DisplayFinalEntries()
 {
   fprintf(stderr, "target [%s] links to:\n", this->Target->GetName().c_str());
+  char space[] = "  ";
+  int count = 2;
   for (LinkEntry const& lei : this->FinalLinkEntries) {
-    if (lei.Target) {
-      fprintf(stderr, "  target [%s]\n", lei.Target->GetName().c_str());
+    if (lei.Kind == LinkEntry::Group) {
+      fprintf(stderr, "  %s group",
+              lei.Item.Value == "<LINK_GROUP>" ? "start" : "end");
+      count = lei.Item.Value == "<LINK_GROUP>" ? 4 : 2;
+    } else if (lei.Target) {
+      fprintf(stderr, "%*starget [%s]", count, space,
+              lei.Target->GetName().c_str());
     } else {
-      fprintf(stderr, "  item [%s]\n", lei.Item.c_str());
+      fprintf(stderr, "%*sitem [%s]", count, space, lei.Item.Value.c_str());
     }
+    if (lei.Feature != LinkEntry::DEFAULT) {
+      fprintf(stderr, ", feature [%s]", lei.Feature.c_str());
+    }
+    fprintf(stderr, "\n");
   }
   fprintf(stderr, "\n");
 }

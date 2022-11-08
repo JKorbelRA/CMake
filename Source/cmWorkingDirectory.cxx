@@ -2,9 +2,9 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmWorkingDirectory.h"
 
-#include "cmSystemTools.h"
-
 #include <cerrno>
+
+#include "cmSystemTools.h"
 
 cmWorkingDirectory::cmWorkingDirectory(std::string const& newdir)
 {
@@ -19,7 +19,7 @@ cmWorkingDirectory::~cmWorkingDirectory()
 
 bool cmWorkingDirectory::SetDirectory(std::string const& newdir)
 {
-  if (cmSystemTools::ChangeDirectory(newdir) == 0) {
+  if (cmSystemTools::ChangeDirectory(newdir)) {
     this->ResultCode = 0;
     return true;
   }

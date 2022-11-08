@@ -1,13 +1,15 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#include "cmRST.h"
-#include "cmSystemTools.h"
-
-#include "cmsys/FStream.hxx"
 #include <iostream>
 #include <string>
 
-void reportLine(std::ostream& os, bool ret, std::string const& line, bool eol)
+#include "cmsys/FStream.hxx"
+
+#include "cmRST.h"
+#include "cmSystemTools.h"
+
+static void reportLine(std::ostream& os, bool ret, std::string const& line,
+                       bool eol)
 {
   if (ret) {
     os << "\"" << line << "\" (" << (eol ? "with EOL" : "without EOL") << ")";

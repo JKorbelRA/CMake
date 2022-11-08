@@ -5,10 +5,10 @@
 #include "cmsys/FStream.hxx"
 
 #include "cmDocumentationEntry.h"
-#include "cmLocalUnixMakefileGenerator3.h"
 #include "cmMakefile.h"
-#include "cmMessageType.h"
 #include "cmState.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
 #include "cmake.h"
 
 cmGlobalMSYSMakefileGenerator::cmGlobalMSYSMakefileGenerator(cmake* cm)
@@ -24,8 +24,7 @@ cmGlobalMSYSMakefileGenerator::cmGlobalMSYSMakefileGenerator(cmake* cm)
 std::string cmGlobalMSYSMakefileGenerator::FindMinGW(
   std::string const& makeloc)
 {
-  std::string fstab = makeloc;
-  fstab += "/../etc/fstab";
+  std::string fstab = cmStrCat(makeloc, "/../etc/fstab");
   cmsys::ifstream fin(fstab.c_str());
   std::string path;
   std::string mount;
@@ -34,8 +33,7 @@ std::string cmGlobalMSYSMakefileGenerator::FindMinGW(
     fin >> path;
     fin >> mount;
     if (mount == "/mingw") {
-      mingwBin = path;
-      mingwBin += "/bin";
+      mingwBin = cmStrCat(path, "/bin");
     }
   }
   return mingwBin;
@@ -44,34 +42,7 @@ std::string cmGlobalMSYSMakefileGenerator::FindMinGW(
 void cmGlobalMSYSMakefileGenerator::EnableLanguage(
   std::vector<std::string> const& l, cmMakefile* mf, bool optional)
 {
-  this->FindMakeProgram(mf);
-  const std::string& makeProgram =
-    mf->GetRequiredDefinition("CMAKE_MAKE_PROGRAM");
-  std::vector<std::string> locations;
-  std::string makeloc = cmSystemTools::GetProgramPath(makeProgram);
-  locations.push_back(this->FindMinGW(makeloc));
-  locations.push_back(makeloc);
-  locations.push_back("/mingw/bin");
-  locations.push_back("c:/mingw/bin");
-  std::string tgcc = cmSystemTools::FindProgram("gcc", locations);
-  std::string gcc = "gcc.exe";
-  if (!tgcc.empty()) {
-    gcc = tgcc;
-  }
-  std::string tgxx = cmSystemTools::FindProgram("g++", locations);
-  std::string gxx = "g++.exe";
-  if (!tgxx.empty()) {
-    gxx = tgxx;
-  }
-  std::string trc = cmSystemTools::FindProgram("windres", locations);
-  std::string rc = "windres.exe";
-  if (!trc.empty()) {
-    rc = trc;
-  }
   mf->AddDefinition("MSYS", "1");
-  mf->AddDefinition("CMAKE_GENERATOR_CC", gcc.c_str());
-  mf->AddDefinition("CMAKE_GENERATOR_CXX", gxx.c_str());
-  mf->AddDefinition("CMAKE_GENERATOR_RC", rc.c_str());
   this->cmGlobalUnixMakefileGenerator3::EnableLanguage(l, mf, optional);
 
   if (!mf->IsSet("CMAKE_AR") && !this->CMakeInstance->GetIsInTryCompile() &&

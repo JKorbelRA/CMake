@@ -2,11 +2,13 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmInstallCommandArguments.h"
 
+#include <algorithm>
+#include <utility>
+
+#include <cmext/string_view>
+
 #include "cmRange.h"
 #include "cmSystemTools.h"
-#include "cm_static_string_view.hxx"
-
-#include <utility>
 
 // Table of valid permissions.
 const char* cmInstallCommandArguments::PermissionsTable[] = {
@@ -150,6 +152,11 @@ const std::string& cmInstallCommandArguments::GetType() const
   return this->Type;
 }
 
+const std::string& cmInstallCommandArguments::GetDefaultComponent() const
+{
+  return this->DefaultComponentName;
+}
+
 const std::vector<std::string>& cmInstallCommandArguments::GetConfigurations()
   const
 {
@@ -175,13 +182,11 @@ bool cmInstallCommandArguments::Finalize()
 bool cmInstallCommandArguments::CheckPermissions()
 {
   this->PermissionsString.clear();
-  for (std::string const& perm : this->Permissions) {
-    if (!cmInstallCommandArguments::CheckPermissions(
-          perm, this->PermissionsString)) {
-      return false;
-    }
-  }
-  return true;
+  return std::all_of(this->Permissions.begin(), this->Permissions.end(),
+                     [this](std::string const& perm) -> bool {
+                       return cmInstallCommandArguments::CheckPermissions(
+                         perm, this->PermissionsString);
+                     });
 }
 
 bool cmInstallCommandArguments::CheckPermissions(
@@ -219,4 +224,18 @@ void cmInstallCommandIncludesArgument::Parse(
     cmSystemTools::ConvertToUnixSlashes(dir);
     this->IncludeDirs.push_back(std::move(dir));
   }
+}
+
+cmInstallCommandFileSetArguments::cmInstallCommandFileSetArguments(
+  std::string defaultComponent)
+  : cmInstallCommandArguments(std::move(defaultComponent))
+{
+  this->Bind("FILE_SET"_s, this->FileSet);
+}
+
+void cmInstallCommandFileSetArguments::Parse(
+  std::vector<std::string> args, std::vector<std::string>* unconsumedArgs)
+{
+  args.insert(args.begin(), "FILE_SET");
+  this->cmInstallCommandArguments::Parse(args, unconsumedArgs);
 }

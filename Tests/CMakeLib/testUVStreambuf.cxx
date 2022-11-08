@@ -1,26 +1,24 @@
-#include "cmUVStreambuf.h"
-
-#include "cmGetPipes.h"
-#include "cmUVHandlePtr.h"
-
-#include "cm_uv.h"
-
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include <cstring>
-
+#include <cm3p/uv.h>
 #include <stdint.h>
+
+#include "cmGetPipes.h"
+#include "cmUVHandlePtr.h"
+#include "cmUVStreambuf.h"
 
 #define TEST_STR_LINE_1 "This string must be exactly 128 characters long so"
 #define TEST_STR_LINE_2 "that we can test CMake's std::streambuf integration"
 #define TEST_STR_LINE_3 "with libuv's uv_stream_t."
 #define TEST_STR TEST_STR_LINE_1 "\n" TEST_STR_LINE_2 "\n" TEST_STR_LINE_3
 
-bool writeDataToStreamPipe(uv_loop_t& loop, cm::uv_pipe_ptr& inputPipe,
-                           char* outputData, unsigned int outputDataLength,
-                           const char* /* unused */)
+static bool writeDataToStreamPipe(uv_loop_t& loop, cm::uv_pipe_ptr& inputPipe,
+                                  char* outputData,
+                                  unsigned int outputDataLength,
+                                  const char* /* unused */)
 {
   int err;
 
@@ -69,9 +67,11 @@ bool writeDataToStreamPipe(uv_loop_t& loop, cm::uv_pipe_ptr& inputPipe,
   return true;
 }
 
-bool writeDataToStreamProcess(uv_loop_t& loop, cm::uv_pipe_ptr& inputPipe,
-                              char* outputData, unsigned int /* unused */,
-                              const char* cmakeCommand)
+static bool writeDataToStreamProcess(uv_loop_t& loop,
+                                     cm::uv_pipe_ptr& inputPipe,
+                                     char* outputData,
+                                     unsigned int /* unused */,
+                                     const char* cmakeCommand)
 {
   int err;
 
@@ -133,7 +133,7 @@ bool writeDataToStreamProcess(uv_loop_t& loop, cm::uv_pipe_ptr& inputPipe,
   return true;
 }
 
-bool testUVStreambufRead(
+static bool testUVStreambufRead(
   bool (*cb)(uv_loop_t& loop, cm::uv_pipe_ptr& inputPipe, char* outputData,
              unsigned int outputDataLength, const char* cmakeCommand),
   const char* cmakeCommand)

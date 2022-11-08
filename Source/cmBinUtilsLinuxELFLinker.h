@@ -1,17 +1,19 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
-#ifndef cmBinUtilsLinuxELFLinker_h
-#define cmBinUtilsLinuxELFLinker_h
+#pragma once
+
+#include "cmConfigure.h" // IWYU pragma: keep
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "cmBinUtilsLinker.h"
 #include "cmBinUtilsLinuxELFGetRuntimeDependenciesTool.h"
 #include "cmLDConfigTool.h"
 #include "cmStateTypes.h"
-
-#include <memory> // IWYU pragma: keep
-#include <string>
-#include <vector>
 
 class cmRuntimeDependencyArchive;
 
@@ -30,6 +32,7 @@ private:
   std::unique_ptr<cmLDConfigTool> LDConfigTool;
   bool HaveLDConfigPaths = false;
   std::vector<std::string> LDConfigPaths;
+  std::uint16_t Machine = 0;
 
   bool ScanDependencies(std::string const& file,
                         std::vector<std::string> const& parentRpaths);
@@ -40,5 +43,3 @@ private:
 
   bool GetLDConfigPaths();
 };
-
-#endif // cmBinUtilsLinuxELFLinker_h

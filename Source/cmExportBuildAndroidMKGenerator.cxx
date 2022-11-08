@@ -2,18 +2,19 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmExportBuildAndroidMKGenerator.h"
 
-#include <algorithm>
-#include <memory> // IWYU pragma: keep
 #include <sstream>
 #include <utility>
+#include <vector>
 
-#include "cmAlgorithms.h"
+#include <cmext/algorithm>
+
 #include "cmGeneratorTarget.h"
 #include "cmLinkItem.h"
 #include "cmMakefile.h"
 #include "cmMessageType.h"
 #include "cmPolicies.h"
 #include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
 #include "cmTarget.h"
 
@@ -42,13 +43,14 @@ void cmExportBuildAndroidMKGenerator::GenerateImportTargetCode(
   std::ostream& os, cmGeneratorTarget const* target,
   cmStateEnums::TargetType /*targetType*/)
 {
-  std::string targetName = this->Namespace;
-  targetName += target->GetExportName();
+  std::string targetName = cmStrCat(this->Namespace, target->GetExportName());
   os << "include $(CLEAR_VARS)\n";
   os << "LOCAL_MODULE := ";
   os << targetName << "\n";
   os << "LOCAL_SRC_FILES := ";
-  std::string path = cmSystemTools::ConvertToOutputPath(target->GetFullPath());
+  std::string const noConfig; // FIXME: What config to use here?
+  std::string path =
+    cmSystemTools::ConvertToOutputPath(target->GetFullPath(noConfig));
   os << path << "\n";
 }
 
@@ -59,7 +61,7 @@ void cmExportBuildAndroidMKGenerator::GenerateImportPropertyCode(
 }
 
 void cmExportBuildAndroidMKGenerator::GenerateMissingTargetsCheckCode(
-  std::ostream&, const std::vector<std::string>&)
+  std::ostream&)
 {
 }
 
@@ -105,7 +107,8 @@ void cmExportBuildAndroidMKGenerator::GenerateInterfaceProperties(
         std::string sharedLibs;
         std::string ldlibs;
         cmLinkInterfaceLibraries const* linkIFace =
-          target->GetLinkInterfaceLibraries(config, target, false);
+          target->GetLinkInterfaceLibraries(
+            config, target, cmGeneratorTarget::LinkInterfaceFor::Link);
         for (cmLinkItem const& item : linkIFace->Libraries) {
           cmGeneratorTarget const* gt = item.Target;
           std::string const& lib = item.AsStr();
@@ -120,13 +123,13 @@ void cmExportBuildAndroidMKGenerator::GenerateInterfaceProperties(
           } else {
             bool relpath = false;
             if (type == cmExportBuildAndroidMKGenerator::INSTALL) {
-              relpath = lib.substr(0, 3) == "../";
+              relpath = cmHasLiteralPrefix(lib, "../");
             }
             // check for full path or if it already has a -l, or
             // in the case of an install check for relative paths
             // if it is full or a link library then use string directly
             if (cmSystemTools::FileIsFullPath(lib) ||
-                lib.substr(0, 2) == "-l" || relpath) {
+                cmHasLiteralPrefix(lib, "-l") || relpath) {
               ldlibs += " " + lib;
               // if it is not a path and does not have a -l then add -l
             } else if (!lib.empty()) {
@@ -145,8 +148,7 @@ void cmExportBuildAndroidMKGenerator::GenerateInterfaceProperties(
         }
       } else if (property.first == "INTERFACE_INCLUDE_DIRECTORIES") {
         std::string includes = property.second;
-        std::vector<std::string> includeList;
-        cmSystemTools::ExpandListArgument(includes, includeList);
+        std::vector<std::string> includeList = cmExpandedList(includes);
         os << "LOCAL_EXPORT_C_INCLUDES := ";
         std::string end;
         for (std::string const& i : includeList) {
@@ -156,8 +158,8 @@ void cmExportBuildAndroidMKGenerator::GenerateInterfaceProperties(
         os << "\n";
       } else if (property.first == "INTERFACE_LINK_OPTIONS") {
         os << "LOCAL_EXPORT_LDFLAGS := ";
-        std::vector<std::string> linkFlagsList;
-        cmSystemTools::ExpandListArgument(property.second, linkFlagsList);
+        std::vector<std::string> linkFlagsList =
+          cmExpandedList(property.second);
         os << cmJoin(linkFlagsList, " ") << "\n";
       } else {
         os << "# " << property.first << " " << (property.second) << "\n";
@@ -167,9 +169,9 @@ void cmExportBuildAndroidMKGenerator::GenerateInterfaceProperties(
 
   // Tell the NDK build system if prebuilt static libraries use C++.
   if (target->GetType() == cmStateEnums::STATIC_LIBRARY) {
-    cmLinkImplementation const* li = target->GetLinkImplementation(config);
-    if (std::find(li->Languages.begin(), li->Languages.end(), "CXX") !=
-        li->Languages.end()) {
+    cmLinkImplementation const* li = target->GetLinkImplementation(
+      config, cmGeneratorTarget::LinkInterfaceFor::Link);
+    if (cm::contains(li->Languages, "CXX")) {
       os << "LOCAL_HAS_CPP := true\n";
     }
   }

@@ -1,15 +1,14 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmCursesForm_h
-#define cmCursesForm_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
-#include "cmCursesStandardIncludes.h"
+#include <string>
 
 #include "cmsys/FStream.hxx"
 
-#include <string>
+#include "cmCursesStandardIncludes.h"
 
 class cmCursesForm
 {
@@ -56,11 +55,13 @@ public:
 
   static cmCursesForm* CurrentForm;
 
+  // Description:
+  // Handle resizing the form with curses.
+  void HandleResize();
+
 protected:
   static cmsys::ofstream DebugFile;
   static bool Debug;
 
   FORM* Form;
 };
-
-#endif // cmCursesForm_h

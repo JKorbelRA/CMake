@@ -1,14 +1,61 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 project(ExternalProjectTest NONE)
+if(CMAKE_XCODE_BUILD_SYSTEM VERSION_GREATER_EQUAL 12)
+  cmake_policy(SET CMP0114 NEW)
+endif()
 
 include(ExternalProject)
 
 # Test ExternalProject, especially with checkouts from VCS
 
-find_package(CVS)
-find_package(Subversion)
-find_package(Git)
-find_package(Hg)
+if(NOT DEFINED EP_TEST_CVS OR EP_TEST_CVS)
+  find_package(CVS)
+endif()
+if(NOT DEFINED EP_TEST_CVS AND CVS_FOUND AND (UNIX OR NOT "${CVS_EXECUTABLE}" MATCHES "cygwin"))
+  set(EP_TEST_CVS 1)
+endif()
+
+if(NOT DEFINED EP_TEST_SVN OR EP_TEST_SVN)
+  find_package(Subversion)
+  if(Subversion_FOUND AND Subversion_VERSION_SVN VERSION_LESS 1.2)
+    message(STATUS "No ExternalProject svn tests with svn client less than version 1.2")
+    set(Subversion_FOUND 0)
+  endif()
+  # Only do svn tests in cygwin/cygwin or not-cygwin/not-cygwin arrangements:
+  if(Subversion_FOUND AND CMAKE_CURRENT_BINARY_DIR MATCHES "cygdrive/" AND NOT "${Subversion_SVN_EXECUTABLE}" MATCHES "cygwin")
+    message(STATUS "No ExternalProject svn tests with non-cygwin svn client in a /cygdrive based build")
+    set(Subversion_FOUND 0)
+  endif()
+endif()
+if(NOT DEFINED EP_TEST_SVN AND Subversion_FOUND)
+  set(EP_TEST_SVN 1)
+endif()
+
+if(NOT DEFINED EP_TEST_GIT OR EP_TEST_GIT)
+  find_package(Git)
+endif()
+if(NOT DEFINED EP_TEST_GIT AND Git_FOUND)
+  message(STATUS "GIT_VERSION_STRING='${GIT_VERSION_STRING}'")
+  if(NOT "${GIT_VERSION_STRING}" VERSION_LESS 1.6.5)
+    set(EP_TEST_GIT 1)
+  endif()
+endif()
+
+if(NOT DEFINED EP_TEST_HG OR EP_TEST_HG)
+  find_package(Hg)
+endif()
+if(NOT DEFINED EP_TEST_HG AND Hg_FOUND)
+  # Check if hg executable is working
+  execute_process(COMMAND "${HG_EXECUTABLE}" --version OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE HG_RV)
+  if(HG_RV EQUAL 0)
+    set(EP_TEST_HG 1)
+  endif()
+endif()
+
+message(STATUS "EP_TEST_CVS='${EP_TEST_CVS}' CVS_EXECUTABLE='${CVS_EXECUTABLE}'")
+message(STATUS "EP_TEST_SVN='${EP_TEST_SVN}' Subversion_SVN_EXECUTABLE='${Subversion_SVN_EXECUTABLE}'")
+message(STATUS "EP_TEST_GIT='${EP_TEST_GIT}' GIT_EXECUTABLE='${GIT_EXECUTABLE}'")
+message(STATUS "EP_TEST_HG='${EP_TEST_HG}'   HG_EXECUTABLE='${HG_EXECUTABLE}'")
 
 option(ExternalProjectTest_USE_FOLDERS "Enable folder grouping in IDEs." ON)
 if(ExternalProjectTest_USE_FOLDERS)
@@ -100,23 +147,19 @@ ExternalProject_Add(${proj}
   INSTALL_COMMAND ""
 )
 
+set(proj NoExtractBool)
+ExternalProject_Add(${proj}
+  URL ${CMAKE_CURRENT_SOURCE_DIR}/gitrepo.tgz
+  DOWNLOAD_NO_EXTRACT 0
+  LOG_DOWNLOAD 1
+  BUILD_COMMAND ""
+  CONFIGURE_COMMAND ""
+  INSTALL_COMMAND ""
+)
 
 # CVS-based tests:
 #
-set(do_cvs_tests 0)
-
-if(CVS_EXECUTABLE)
-  set(do_cvs_tests 1)
-endif()
-
-if(do_cvs_tests AND NOT UNIX)
-  if("${CVS_EXECUTABLE}" MATCHES "cygwin")
-    message(STATUS "No ExternalProject cvs tests with cygwin cvs.exe outside cygwin!")
-    set(do_cvs_tests 0)
-  endif()
-endif()
-
-if(do_cvs_tests)
+if(EP_TEST_CVS)
   # Unzip/untar the CVS repository in our source folder so that other
   # projects below may use it to test CVS args of ExternalProject_Add
   #
@@ -149,7 +192,7 @@ if(do_cvs_tests)
   #
   set(proj TutorialStep1-CVS-20090626)
   ExternalProject_Add(${proj}
-    CVS_REPOSITORY "${local_cvs_repo}"
+    CVS_REPOSITORY ":local:${local_cvs_repo}"
     CVS_MODULE "TutorialStep1"
     CVS_TAG "-D2009-06-26 16:50:00 UTC"
     UPDATE_COMMAND ""
@@ -164,7 +207,7 @@ if(do_cvs_tests)
   #
   set(proj TutorialStep1-CVS-testtag1)
   ExternalProject_Add(${proj}
-    CVS_REPOSITORY "${local_cvs_repo}"
+    CVS_REPOSITORY ":local:${local_cvs_repo}"
     CVS_MODULE "TutorialStep1"
     CVS_TAG -rtesttag1
     UPDATE_COMMAND ""
@@ -179,7 +222,7 @@ if(do_cvs_tests)
   #
   set(proj TutorialStep1-CVS-HEAD)
   ExternalProject_Add(${proj}
-    CVS_REPOSITORY "${local_cvs_repo}"
+    CVS_REPOSITORY ":local:${local_cvs_repo}"
     CVS_MODULE "TutorialStep1"
     CMAKE_GENERATOR "${CMAKE_GENERATOR}"
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
@@ -195,32 +238,7 @@ endif()
 
 # SVN-based tests:
 #
-set(do_svn_tests 0)
-
-if(Subversion_SVN_EXECUTABLE)
-  set(do_svn_tests 1)
-endif()
-
-# Only do svn tests with svn >= version 1.2
-#
-if(do_svn_tests)
-  if(Subversion_VERSION_SVN VERSION_LESS 1.2)
-    message(STATUS "No ExternalProject svn tests with svn client less than version 1.2")
-    set(do_svn_tests 0)
-  endif()
-endif()
-
-# Only do svn tests in cygwin/cygwin or not-cygwin/not-cygwin arrangements:
-#
-if(do_svn_tests)
-  if(CMAKE_CURRENT_BINARY_DIR MATCHES "cygdrive/" AND
-     NOT "${Subversion_SVN_EXECUTABLE}" MATCHES "cygwin")
-    message(STATUS "No ExternalProject svn tests with non-cygwin svn client in a /cygdrive based build")
-    set(do_svn_tests 0)
-  endif()
-endif()
-
-if(do_svn_tests)
+if(EP_TEST_SVN)
   # Unzip/untar the SVN repository in our source folder so that other
   # projects below may use it to test SVN args of ExternalProject_Add
   #
@@ -280,28 +298,7 @@ if(do_svn_tests)
   set_property(TARGET ${proj} PROPERTY FOLDER "SVN")
 endif()
 
-
-set(do_git_tests 0)
-
-if(GIT_EXECUTABLE)
-  set(do_git_tests 1)
-
-  execute_process(
-    COMMAND "${GIT_EXECUTABLE}" --version
-    OUTPUT_VARIABLE ov
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-  string(REGEX REPLACE "^git version (.+)$" "\\1" git_version "${ov}")
-  message(STATUS "git_version='${git_version}'")
-
-  if(git_version VERSION_LESS 1.6.5)
-    message(STATUS "No ExternalProject git tests with git client less than version 1.6.5")
-    set(do_git_tests 0)
-  endif()
-endif()
-
-
-if(do_git_tests)
+if(EP_TEST_GIT)
   set(local_git_repo "../../LocalRepositories/GIT")
 
   # Unzip/untar the git repository in our source folder so that other
@@ -323,7 +320,7 @@ if(do_git_tests)
   set(proj TutorialStep1-GIT-byhash)
   ExternalProject_Add(${proj}
     GIT_REPOSITORY "${local_git_repo}"
-    GIT_TAG d1970730310fe8bc07e73f15dc570071f9f9654a
+    GIT_TAG 57418671a0a0e371e7bac532337152595fbe0df5 # generated by gitrepo.bash
     UPDATE_COMMAND ""
     CMAKE_GENERATOR "${CMAKE_GENERATOR}"
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
@@ -380,7 +377,9 @@ if(do_git_tests)
     set(proj TutorialStep1-GIT-config)
     ExternalProject_Add(${proj}
       GIT_REPOSITORY "${local_git_repo}"
-      GIT_CONFIG core.eol=lf core.autocrlf=input
+      GIT_CONFIG core.eol=lf
+                 core.autocrlf=input
+                 "http.extraheader=AUTHORIZATION: bearer --unsupportedOption"
       CMAKE_GENERATOR "${CMAKE_GENERATOR}"
       CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
       INSTALL_COMMAND ""
@@ -421,7 +420,7 @@ if(do_git_tests)
 
   set(local_git_repo "../../LocalRepositories/GIT-with-submodules")
 
-  set(proj TS1-GIT-no-GIT_SUBMODULES)
+  set(proj TS1-GIT-all-GIT_SUBMODULES)
   ExternalProject_Add(${proj}
     GIT_REPOSITORY "${local_git_repo}"
     CMAKE_GENERATOR "${CMAKE_GENERATOR}"
@@ -435,7 +434,10 @@ if(do_git_tests)
   )
   set_property(TARGET ${proj} PROPERTY FOLDER "GIT")
 
-  set(proj TS1-GIT-empty-GIT_SUBMODULES)
+  set(proj TS1-GIT-all-GIT_SUBMODULES-via-CMP0097-OLD)
+  set(CMAKE_WARN_DEPRECATED FALSE) # we are testing CMP0097 OLD behavior
+  cmake_policy(SET CMP0097 OLD)
+  unset(CMAKE_WARN_DEPRECATED)
   ExternalProject_Add(${proj}
     GIT_REPOSITORY "${local_git_repo}"
     GIT_SUBMODULES ""
@@ -443,6 +445,22 @@ if(do_git_tests)
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
                -DWITH_m1:BOOL=ON
                -DWITH_m2:BOOL=ON
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+    DEPENDS "SetupLocalGITRepository"
+            "SetupLocalGITRepositoryWithSubmodules"
+  )
+  set_property(TARGET ${proj} PROPERTY FOLDER "GIT")
+
+  set(proj TS1-GIT-no-GIT_SUBMODULES)
+  cmake_policy(SET CMP0097 NEW)
+  ExternalProject_Add(${proj}
+    GIT_REPOSITORY "${local_git_repo}"
+    GIT_SUBMODULES ""
+    CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+               -DWITH_m1:BOOL=OFF
+               -DWITH_m2:BOOL=OFF
     BUILD_COMMAND ""
     INSTALL_COMMAND ""
     DEPENDS "SetupLocalGITRepository"
@@ -465,22 +483,69 @@ if(do_git_tests)
   )
   set_property(TARGET ${proj} PROPERTY FOLDER "GIT")
 
+  # Unzip/untar the git repository in our source folder so that other
+  # projects below may use it to test git args of ExternalProject_Add
+  #
+  set(proj SetupLocalGITRepositoryWithRecursiveSubmodules)
+  ExternalProject_Add(${proj}
+          SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/LocalRepositories/GIT-with-recursive-submodules
+          URL ${CMAKE_CURRENT_SOURCE_DIR}/gitrepo-sub-rec.tgz
+          BUILD_COMMAND ""
+          CONFIGURE_COMMAND "${GIT_EXECUTABLE}" --version
+          INSTALL_COMMAND ""
+          )
+  set_property(TARGET ${proj}
+          PROPERTY FOLDER "SetupRepos/Local/Deeply/Nested/For/Testing")
+
+  set(local_git_repo "../../LocalRepositories/GIT-with-recursive-submodules")
+
+  set(proj TS1-GIT-RECURSIVE_SUBMODULES-default)
+  ExternalProject_Add(${proj}
+          GIT_REPOSITORY "${local_git_repo}"
+          CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+          CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+                     -DWITH_RECURSIVE:BOOL=ON
+          BUILD_COMMAND  ""
+          INSTALL_COMMAND ""
+          DEPENDS "SetupLocalGITRepository"
+                  "SetupLocalGITRepositoryWithSubmodules"
+                  "SetupLocalGITRepositoryWithRecursiveSubmodules"
+          )
+  set_property(TARGET ${proj} PROPERTY FOLDER "GIT")
+
+  set(proj TS1-GIT-RECURSIVE_SUBMODULES-exclusive)
+  ExternalProject_Add(${proj}
+          GIT_REPOSITORY "${local_git_repo}"
+          GIT_SUBMODULES_RECURSE TRUE
+          CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+          CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+                     -DWITH_RECURSIVE:BOOL=ON
+          BUILD_COMMAND  ""
+          INSTALL_COMMAND ""
+          DEPENDS "SetupLocalGITRepository"
+                  "SetupLocalGITRepositoryWithSubmodules"
+                  "SetupLocalGITRepositoryWithRecursiveSubmodules"
+          )
+  set_property(TARGET ${proj} PROPERTY FOLDER "GIT")
+
+  set(proj TS1-GIT-RECURSIVE_SUBMODULES-off)
+  ExternalProject_Add(${proj}
+          GIT_REPOSITORY "${local_git_repo}"
+          GIT_SUBMODULES_RECURSE FALSE
+          CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+          CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+                     -DWITH_RECURSIVE:BOOL=OFF
+          BUILD_COMMAND  ""
+          INSTALL_COMMAND ""
+          DEPENDS "SetupLocalGITRepository"
+                  "SetupLocalGITRepositoryWithSubmodules"
+                  "SetupLocalGITRepositoryWithRecursiveSubmodules"
+          )
+  set_property(TARGET ${proj} PROPERTY FOLDER "GIT")
+
 endif()
 
-set(do_hg_tests 0)
-
-if(HG_EXECUTABLE)
-  set(do_hg_tests 1)
-endif()
-
-if(do_hg_tests AND NOT UNIX)
-  if("${HG_EXECUTABLE}" MATCHES "cygwin")
-    message(STATUS "No ExternalProject hg tests with cygwin hg outside cygwin!")
-    set(do_hg_tests 0)
-  endif()
-endif()
-
-if(do_hg_tests)
+if(EP_TEST_HG)
   set(local_hg_repo "../../LocalRepositories/HG")
 
   # Unzip/untar the hg repository in our source folder so that other
@@ -555,7 +620,7 @@ enable_testing()
 #
 # BuildTree tests:
 #
-if(do_cvs_tests)
+if(EP_TEST_CVS)
   add_test(TutorialStep1-CVS-20090626-BuildTreeTest
     "${binary_base}/TutorialStep1-CVS-20090626/Tutorial" 4)
 
@@ -566,7 +631,7 @@ if(do_cvs_tests)
     "${binary_base}/TutorialStep1-CVS-HEAD/Tutorial" 81)
 endif()
 
-if(do_svn_tests)
+if(EP_TEST_SVN)
   add_test(TutorialStep1-SVN-20090626-BuildTreeTest
     "${binary_base}/TutorialStep1-SVN-20090626/Tutorial" 100)
 
@@ -577,26 +642,27 @@ if(do_svn_tests)
     "${binary_base}/TutorialStep1-SVN-trunk/Tutorial" 98)
 endif()
 
-if(do_git_tests)
+if(EP_TEST_GIT)
   add_test(TutorialStep1-GIT-byhash
-    "${binary_base}/TutorialStep1-GIT-byhash/Tutorial" 100)
+    ${CMAKE_COMMAND} -P "${binary_base}/TutorialStep1-GIT-byhash/example.cmake")
 
   add_test(TutorialStep1-GIT-bytag
-    "${binary_base}/TutorialStep1-GIT-bytag/Tutorial" 99)
+    ${CMAKE_COMMAND} -P "${binary_base}/TutorialStep1-GIT-bytag/example.cmake")
+
+  add_test(TutorialStep1-GIT-bytag-withsubmodules
+    ${CMAKE_COMMAND} -P "${binary_base}/TutorialStep1-GIT-bytag-withsubmodules/example.cmake")
 
   add_test(TutorialStep1-GIT-shallow-master
-    "${binary_base}/TutorialStep1-GIT-shallow-master/Tutorial" 98)
+    ${CMAKE_COMMAND} -P "${binary_base}/TutorialStep1-GIT-shallow-master/example.cmake")
 
   add_test(TutorialStep1-GIT-master
-    "${binary_base}/TutorialStep1-GIT-master/Tutorial" 98)
+    ${CMAKE_COMMAND} -P "${binary_base}/TutorialStep1-GIT-master/example.cmake")
+
+  if(NOT git_version VERSION_LESS 1.7.7)
+    add_test(TutorialStep1-GIT-config
+      ${CMAKE_COMMAND} -P "${binary_base}/TutorialStep1-GIT-config/example.cmake")
+  endif()
 endif()
-
-
-message(STATUS "do_cvs_tests='${do_cvs_tests}'")
-message(STATUS "do_svn_tests='${do_svn_tests}'")
-message(STATUS "do_git_tests='${do_git_tests}' GIT_EXECUTABLE='${GIT_EXECUTABLE}'")
-message(STATUS "do_hg_tests='${do_hg_tests}'   HG_EXECUTABLE='${HG_EXECUTABLE}'")
-
 
 # Test if log works when the first arguments of *_COMMAND is "COMMAND".
 set(proj ExternalProject-no-log)

@@ -1,3 +1,5 @@
+find_package(SWIG QUIET)
+
 add_test(NAME UseSWIG.LegacyPython COMMAND
   ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
   --build-and-test
@@ -18,6 +20,16 @@ add_test(NAME UseSWIG.LegacyPerl COMMAND
   --build-options ${build_options}
   --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
   )
+add_test(NAME UseSWIG.LegacyPerl5 COMMAND
+  ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+  --build-and-test
+  "${CMake_SOURCE_DIR}/Tests/UseSWIG/LegacyPerl"
+  "${CMake_BINARY_DIR}/Tests/UseSWIG/LegacyPerl5"
+  ${build_generator_args}
+  --build-project TestLegacyPerl
+  --build-options ${build_options} -Dlanguage=perl5
+  --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+  )
 
 include(CheckLanguage)
 check_language(CSharp)
@@ -33,6 +45,16 @@ if (CMAKE_CSharp_COMPILER)
     --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
     )
 endif()
+add_test(NAME UseSWIG.NamespaceCsharp COMMAND
+  ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+  --build-and-test
+  "${CMake_SOURCE_DIR}/Tests/UseSWIG/NamespaceCsharp"
+  "${CMake_BINARY_DIR}/Tests/UseSWIG/NamespaceCsharp"
+  ${build_generator_args}
+  --build-project TestNamespaceCsharp
+  --build-options ${build_options}
+  --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+  )
 
 add_test(NAME UseSWIG.BasicPython COMMAND
   ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
@@ -54,7 +76,66 @@ add_test(NAME UseSWIG.BasicPerl COMMAND
   --build-options ${build_options}
   --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
   )
+add_test(NAME UseSWIG.BasicPerl5 COMMAND
+  ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+  --build-and-test
+  "${CMake_SOURCE_DIR}/Tests/UseSWIG/BasicPerl"
+  "${CMake_BINARY_DIR}/Tests/UseSWIG/BasicPerl5"
+  ${build_generator_args}
+  --build-project TestBasicPerl
+  --build-options ${build_options} -Dlanguage=perl5
+  --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+  )
+if(SWIG_FOUND AND NOT SWIG_VERSION VERSION_LESS "4.0.2"
+    AND CMAKE_GENERATOR MATCHES "Make|Ninja|Xcode|Visual Studio (1[1-9]|[2-9][0-9])")
+  add_test(NAME UseSWIG.Depfile.BasicPython COMMAND
+    ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+    --build-and-test
+    "${CMake_SOURCE_DIR}/Tests/UseSWIG/BasicPython"
+    "${CMake_BINARY_DIR}/Tests/UseSWIG/BasicPython.Depfile"
+    ${build_generator_args}
+    --build-project TestBasicPython
+    --build-options ${build_options} -DSWIG_USE_SWIG_DEPENDENCIES=ON
+                                     "-DSWIG_OUTFILE_DIR=${CMake_BINARY_DIR}/Tests/UseSWIG/BasicPython.Depfile"
+    --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+    )
+  add_test(NAME UseSWIG.Depfile.BasicPerl COMMAND
+    ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+    --build-and-test
+    "${CMake_SOURCE_DIR}/Tests/UseSWIG/BasicPerl"
+    "${CMake_BINARY_DIR}/Tests/UseSWIG/BasicPerl.Depfile"
+    ${build_generator_args}
+    --build-project TestBasicPerl
+    --build-options ${build_options} -DSWIG_USE_SWIG_DEPENDENCIES=ON
+    --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+    )
+  add_test(NAME UseSWIG.Depfile.BasicPerl5 COMMAND
+    ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+    --build-and-test
+    "${CMake_SOURCE_DIR}/Tests/UseSWIG/BasicPerl"
+    "${CMake_BINARY_DIR}/Tests/UseSWIG/BasicPerl5.Depfile"
+    ${build_generator_args}
+    --build-project TestBasicPerl
+    --build-options ${build_options} -DSWIG_USE_SWIG_DEPENDENCIES=ON -Dlanguage=perl5
+    --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+    )
+endif()
 
+if (CMake_TEST_UseSWIG_Fortran)
+  check_language(Fortran)
+  if (CMAKE_Fortran_COMPILER)
+    add_test(NAME UseSWIG.BasicFortran COMMAND
+      ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+      --build-and-test
+      "${CMake_SOURCE_DIR}/Tests/UseSWIG/BasicFortran"
+      "${CMake_BINARY_DIR}/Tests/UseSWIG/BasicFortran"
+      ${build_generator_args}
+      --build-project TestBasicFortran
+      --build-options ${build_options}
+      --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+      )
+  endif()
+endif()
 
 add_test(NAME UseSWIG.MultipleModules COMMAND
   ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
@@ -75,6 +156,15 @@ add_test(NAME UseSWIG.MultiplePython COMMAND
   --build-project TestMultiplePython
   --build-options ${build_options}
   --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+  )
+add_test(NAME UseSWIG.MultipleFiles COMMAND
+  ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+  --build-and-test
+  "${CMake_SOURCE_DIR}/Tests/UseSWIG/MultipleFiles"
+  "${CMake_BINARY_DIR}/Tests/UseSWIG/MultipleFiles"
+  ${build_generator_args}
+  --build-project TestMultipleFiles
+  --build-options ${build_options}
   )
 
 
@@ -132,6 +222,18 @@ add_test(NAME UseSWIG.AlternateLibraryName COMMAND
   "${CMake_BINARY_DIR}/Tests/UseSWIG/AlternateLibraryName"
   ${build_generator_args}
   --build-project TestAlternateLibraryName
+  --build-options ${build_options}
+  --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
+  )
+
+
+add_test(NAME UseSWIG.SwigSrcOUTPUT_DIR COMMAND
+  ${CMAKE_CTEST_COMMAND} -C $<CONFIGURATION>
+  --build-and-test
+  "${CMake_SOURCE_DIR}/Tests/UseSWIG/SwigSrcOUTPUT_DIR"
+  "${CMake_BINARY_DIR}/Tests/UseSWIG/SwigSrcOUTPUT_DIR"
+  ${build_generator_args}
+  --build-project TestSwigSrcOUTPUT_DIR
   --build-options ${build_options}
   --test-command ${CMAKE_CTEST_COMMAND} -V -C $<CONFIGURATION>
   )

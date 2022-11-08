@@ -2,6 +2,7 @@
 # file Copyright.txt or https://cmake.org/licensing for details.
 
 include(Compiler/SunPro)
+__compiler_sunpro(CXX)
 
 set(CMAKE_CXX_VERBOSE_FLAG "-v")
 
@@ -22,7 +23,7 @@ string(APPEND CMAKE_CXX_FLAGS_MINSIZEREL_INIT " -xO2 -xspace -DNDEBUG")
 string(APPEND CMAKE_CXX_FLAGS_RELEASE_INIT " -xO3 -DNDEBUG")
 string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT " -g -xO2 -DNDEBUG")
 
-set(CMAKE_DEPFILE_FLAGS_CXX "-xMD -xMF <DEPFILE>")
+set(CMAKE_DEPFILE_FLAGS_CXX "-xMD -xMF <DEP_FILE>")
 
 # Initialize C link type selection flags.  These flags are used when
 # building a shared library, shared module, or executable that links

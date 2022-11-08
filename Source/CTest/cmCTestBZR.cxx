@@ -2,24 +2,27 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestBZR.h"
 
-#include "cmAlgorithms.h"
+#include <cstdlib>
+#include <list>
+#include <map>
+#include <ostream>
+#include <vector>
+
+#include <cmext/algorithm>
+
+#include <cm3p/expat.h>
+
+#include "cmsys/RegularExpression.hxx"
+
 #include "cmCTest.h"
 #include "cmCTestVC.h"
 #include "cmProcessTools.h"
 #include "cmSystemTools.h"
 #include "cmXMLParser.h"
 
-#include "cm_expat.h"
-#include "cmsys/RegularExpression.hxx"
-#include <list>
-#include <map>
-#include <ostream>
-#include <stdlib.h>
-#include <vector>
-
-extern "C" int cmBZRXMLParserUnknownEncodingHandler(void* /*unused*/,
-                                                    const XML_Char* name,
-                                                    XML_Encoding* info)
+static int cmBZRXMLParserUnknownEncodingHandler(void* /*unused*/,
+                                                const XML_Char* name,
+                                                XML_Encoding* info)
 {
   static const int latin1[] = {
     0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007, 0x0008,
@@ -85,7 +88,6 @@ class cmCTestBZR::InfoParser : public cmCTestVC::LineParser
 public:
   InfoParser(cmCTestBZR* bzr, const char* prefix)
     : BZR(bzr)
-    , CheckOutFound(false)
   {
     this->SetLog(&bzr->Log, prefix);
     this->RegexCheckOut.compile("checkout of branch: *([^\t\r\n]+)$");
@@ -94,15 +96,15 @@ public:
 
 private:
   cmCTestBZR* BZR;
-  bool CheckOutFound;
+  bool CheckOutFound = false;
   cmsys::RegularExpression RegexCheckOut;
   cmsys::RegularExpression RegexParent;
   bool ProcessLine() override
   {
     if (this->RegexCheckOut.find(this->Line)) {
       this->BZR->URL = this->RegexCheckOut.match(1);
-      CheckOutFound = true;
-    } else if (!CheckOutFound && this->RegexParent.find(this->Line)) {
+      this->CheckOutFound = true;
+    } else if (!this->CheckOutFound && this->RegexParent.find(this->Line)) {
       this->BZR->URL = this->RegexParent.match(1);
     }
     return true;
@@ -188,7 +190,7 @@ public:
 
   int InitializeParser() override
   {
-    int res = cmXMLParser::InitializeParser();
+    int res = this->cmXMLParser::InitializeParser();
     if (res) {
       XML_SetUnknownEncodingHandler(static_cast<XML_Parser>(this->Parser),
                                     cmBZRXMLParserUnknownEncodingHandler,
@@ -200,8 +202,8 @@ public:
 private:
   cmCTestBZR* BZR;
 
-  typedef cmCTestBZR::Revision Revision;
-  typedef cmCTestBZR::Change Change;
+  using Revision = cmCTestBZR::Revision;
+  using Change = cmCTestBZR::Change;
   Revision Rev;
   std::vector<Change> Changes;
   Change CurChange;
@@ -243,7 +245,7 @@ private:
 
   void CharacterDataHandler(const char* data, int length) override
   {
-    cmAppend(this->CData, data, data + length);
+    cm::append(this->CData, data, data + length);
   }
 
   void EndElement(const std::string& name) override
@@ -252,26 +254,26 @@ private:
       this->BZR->DoRevision(this->Rev, this->Changes);
     } else if (!this->CData.empty() &&
                (name == "file" || name == "directory")) {
-      this->CurChange.Path.assign(&this->CData[0], this->CData.size());
+      this->CurChange.Path.assign(this->CData.data(), this->CData.size());
       cmSystemTools::ConvertToUnixSlashes(this->CurChange.Path);
       this->Changes.push_back(this->CurChange);
     } else if (!this->CData.empty() && name == "symlink") {
       // symlinks have an arobase at the end in the log
-      this->CurChange.Path.assign(&this->CData[0], this->CData.size() - 1);
+      this->CurChange.Path.assign(this->CData.data(), this->CData.size() - 1);
       cmSystemTools::ConvertToUnixSlashes(this->CurChange.Path);
       this->Changes.push_back(this->CurChange);
     } else if (!this->CData.empty() && name == "committer") {
-      this->Rev.Author.assign(&this->CData[0], this->CData.size());
+      this->Rev.Author.assign(this->CData.data(), this->CData.size());
       if (this->EmailRegex.find(this->Rev.Author)) {
         this->Rev.Author = this->EmailRegex.match(1);
         this->Rev.EMail = this->EmailRegex.match(2);
       }
     } else if (!this->CData.empty() && name == "timestamp") {
-      this->Rev.Date.assign(&this->CData[0], this->CData.size());
+      this->Rev.Date.assign(this->CData.data(), this->CData.size());
     } else if (!this->CData.empty() && name == "message") {
-      this->Rev.Log.assign(&this->CData[0], this->CData.size());
+      this->Rev.Log.assign(this->CData.data(), this->CData.size());
     } else if (!this->CData.empty() && name == "revno") {
-      this->Rev.Rev.assign(&this->CData[0], this->CData.size());
+      this->Rev.Rev.assign(this->CData.data(), this->CData.size());
     }
     this->CData.clear();
   }
@@ -386,7 +388,7 @@ bool cmCTestBZR::UpdateImpl()
   // For some reason bzr uses stderr to display the update status.
   OutputLogger out(this->Log, "pull-out> ");
   UpdateParser err(this, "pull-err> ");
-  return this->RunUpdateCommand(&bzr_update[0], &out, &err);
+  return this->RunUpdateCommand(bzr_update.data(), &out, &err);
 }
 
 bool cmCTestBZR::LoadRevisions()

@@ -1,10 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmProcessTools.h"
-#include "cmProcessOutput.h"
+
+#include <ostream>
 
 #include "cmsys/Process.h"
-#include <ostream>
+
+#include "cmProcessOutput.h"
 
 void cmProcessTools::RunProcess(struct cmsysProcess_s* cp, OutputParser* out,
                                 OutputParser* err, Encoding encoding)
@@ -19,12 +21,12 @@ void cmProcessTools::RunProcess(struct cmsysProcess_s* cp, OutputParser* out,
          (p = cmsysProcess_WaitForData(cp, &data, &length, nullptr))) {
     if (out && p == cmsysProcess_Pipe_STDOUT) {
       processOutput.DecodeText(data, length, strdata, 1);
-      if (!out->Process(strdata.c_str(), int(strdata.size()))) {
+      if (!out->Process(strdata.c_str(), static_cast<int>(strdata.size()))) {
         out = nullptr;
       }
     } else if (err && p == cmsysProcess_Pipe_STDERR) {
       processOutput.DecodeText(data, length, strdata, 2);
-      if (!err->Process(strdata.c_str(), int(strdata.size()))) {
+      if (!err->Process(strdata.c_str(), static_cast<int>(strdata.size()))) {
         err = nullptr;
       }
     }
@@ -32,13 +34,13 @@ void cmProcessTools::RunProcess(struct cmsysProcess_s* cp, OutputParser* out,
   if (out) {
     processOutput.DecodeText(std::string(), strdata, 1);
     if (!strdata.empty()) {
-      out->Process(strdata.c_str(), int(strdata.size()));
+      out->Process(strdata.c_str(), static_cast<int>(strdata.size()));
     }
   }
   if (err) {
     processOutput.DecodeText(std::string(), strdata, 2);
     if (!strdata.empty()) {
-      err->Process(strdata.c_str(), int(strdata.size()));
+      err->Process(strdata.c_str(), static_cast<int>(strdata.size()));
     }
   }
   cmsysProcess_WaitForExit(cp, nullptr);

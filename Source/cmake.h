@@ -1,27 +1,39 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmake_h
-#define cmake_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <cstddef>
 #include <functional>
 #include <map>
-#include <memory> // IWYU pragma: keep
+#include <memory>
 #include <set>
+#include <stack>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <cm/string_view>
+#include <cmext/string_view>
+
+#include "cmGeneratedFileStream.h"
 #include "cmInstalledFile.h"
 #include "cmListFileCache.h"
 #include "cmMessageType.h"
 #include "cmState.h"
 #include "cmStateSnapshot.h"
 #include "cmStateTypes.h"
+#include "cmValue.h"
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
-#  include "cm_jsoncpp_value.h"
+#if !defined(CMAKE_BOOTSTRAP)
+#  include <cm/optional>
+
+#  include <cm3p/json/value.h>
+
+#  include "cmCMakePresetsGraph.h"
+#  include "cmMakefileProfilingData.h"
 #endif
 
 class cmExternalMakefileProjectGeneratorFactory;
@@ -32,6 +44,7 @@ class cmGlobalGeneratorFactory;
 class cmMakefile;
 class cmMessenger;
 class cmVariableWatch;
+struct cmBuildOptions;
 struct cmDocumentationEntry;
 
 /** \brief Represents a cmake invocation.
@@ -79,13 +92,22 @@ public:
   enum WorkingMode
   {
     NORMAL_MODE, ///< Cmake runs to create project files
-                 /** \brief Script mode (started by using -P).
-                  *
-                  * In script mode there is no generator and no cache. Also,
-                  * languages are not enabled, so add_executable and things do
-                  * nothing.
-                  */
+
+    /** \brief Script mode (started by using -P).
+     *
+     * In script mode there is no generator and no cache. Also,
+     * languages are not enabled, so add_executable and things do
+     * nothing.
+     */
     SCRIPT_MODE,
+
+    /** \brief Help mode
+     *
+     * Used to print help for things that can only be determined after finding
+     * the source directory, for example, the list of presets.
+     */
+    HELP_MODE,
+
     /** \brief A pkg-config like mode
      *
      * In this mode cmake just searches for a package and prints the results to
@@ -96,17 +118,12 @@ public:
     FIND_PACKAGE_MODE
   };
 
-  /** \brief Define log level constants. */
-  enum LogLevel
+  /** \brief Define supported trace formats **/
+  enum TraceFormat
   {
-    LOG_UNDEFINED,
-    LOG_ERROR,
-    LOG_WARNING,
-    LOG_NOTICE,
-    LOG_STATUS,
-    LOG_VERBOSE,
-    LOG_DEBUG,
-    LOG_TRACE
+    TRACE_UNDEFINED,
+    TRACE_HUMAN,
+    TRACE_JSON_V1,
   };
 
   struct GeneratorInfo
@@ -121,24 +138,52 @@ public:
     bool isAlias;
   };
 
-  typedef std::map<std::string, cmInstalledFile> InstalledFilesMap;
+  struct FileExtensions
+  {
+    bool Test(cm::string_view ext) const
+    {
+      return (this->unordered.find(ext) != this->unordered.end());
+    }
+
+    std::vector<std::string> ordered;
+    std::unordered_set<cm::string_view> unordered;
+  };
+
+  using InstalledFilesMap = std::map<std::string, cmInstalledFile>;
 
   static const int NO_BUILD_PARALLEL_LEVEL = -1;
   static const int DEFAULT_BUILD_PARALLEL_LEVEL = 0;
 
   /// Default constructor
-  cmake(Role role, cmState::Mode mode);
+  cmake(Role role, cmState::Mode mode,
+        cmState::ProjectKind projectKind = cmState::ProjectKind::Normal);
   /// Destructor
   ~cmake();
 
   cmake(cmake const&) = delete;
   cmake& operator=(cmake const&) = delete;
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   Json::Value ReportVersionJson() const;
   Json::Value ReportCapabilitiesJson() const;
 #endif
   std::string ReportCapabilities() const;
+
+  /**
+   * Set the home directory from `-S` or from a known location
+   * that contains a CMakeLists.txt. Will generate warnings
+   * when overriding an existing source directory.
+   *
+   *  |    args           | src dir| warning        |
+   *  | ----------------- | ------ | -------------- |
+   *  | `dirA dirA`       | dirA   | N/A            |
+   *  | `-S dirA -S dirA` | dirA   | N/A            |
+   *  | `-S dirA -S dirB` | dirB   | Ignoring dirA  |
+   *  | `-S dirA dirB`    | dirB   | Ignoring dirA  |
+   *  | `dirA -S dirB`    | dirB   | Ignoring dirA  |
+   *  | `dirA dirB`       | dirB   | Ignoring dirA  |
+   */
+  void SetHomeDirectoryViaCommandLine(std::string const& path);
 
   //@{
   /**
@@ -151,6 +196,14 @@ public:
   void SetHomeOutputDirectory(const std::string& dir);
   std::string const& GetHomeOutputDirectory() const;
   //@}
+
+  /**
+   * Working directory at CMake launch
+   */
+  std::string const& GetCMakeWorkingDirectory() const
+  {
+    return this->CMakeWorkingDirectory;
+  }
 
   /**
    * Handle a command line invocation of cmake.
@@ -190,21 +243,33 @@ public:
   void PreLoadCMakeFiles();
 
   //! Create a GlobalGenerator
-  cmGlobalGenerator* CreateGlobalGenerator(const std::string& name);
+  std::unique_ptr<cmGlobalGenerator> CreateGlobalGenerator(
+    const std::string& name, bool allowArch = true);
+
+  //! Create a GlobalGenerator and set it as our own
+  bool CreateAndSetGlobalGenerator(const std::string& name, bool allowArch);
+
+#ifndef CMAKE_BOOTSTRAP
+  //! Print list of configure presets
+  void PrintPresetList(const cmCMakePresetsGraph& graph) const;
+#endif
 
   //! Return the global generator assigned to this instance of cmake
-  cmGlobalGenerator* GetGlobalGenerator() { return this->GlobalGenerator; }
+  cmGlobalGenerator* GetGlobalGenerator()
+  {
+    return this->GlobalGenerator.get();
+  }
   //! Return the global generator assigned to this instance of cmake, const
   const cmGlobalGenerator* GetGlobalGenerator() const
   {
-    return this->GlobalGenerator;
+    return this->GlobalGenerator.get();
   }
 
   //! Return the full path to where the CMakeCache.txt file should be.
   static std::string FindCacheFile(const std::string& binaryDir);
 
   //! Return the global generator assigned to this instance of cmake
-  void SetGlobalGenerator(cmGlobalGenerator*);
+  void SetGlobalGenerator(std::unique_ptr<cmGlobalGenerator>);
 
   //! Get the names of the current registered generators
   void GetRegisteredGenerators(std::vector<GeneratorInfo>& generators,
@@ -231,26 +296,34 @@ public:
     this->GeneratorToolsetSet = true;
   }
 
-  const std::vector<std::string>& GetSourceExtensions() const
+  bool IsAKnownSourceExtension(cm::string_view ext) const
   {
-    return this->SourceFileExtensions;
+    return this->CLikeSourceFileExtensions.Test(ext) ||
+      this->CudaFileExtensions.Test(ext) ||
+      this->FortranFileExtensions.Test(ext) ||
+      this->HipFileExtensions.Test(ext) || this->ISPCFileExtensions.Test(ext);
   }
 
-  bool IsSourceExtension(const std::string& ext) const
+  bool IsACLikeSourceExtension(cm::string_view ext) const
   {
-    return this->SourceFileExtensionsSet.find(ext) !=
-      this->SourceFileExtensionsSet.end();
+    return this->CLikeSourceFileExtensions.Test(ext);
   }
+
+  bool IsAKnownExtension(cm::string_view ext) const
+  {
+    return this->IsAKnownSourceExtension(ext) || this->IsAHeaderExtension(ext);
+  }
+
+  std::vector<std::string> GetAllExtensions() const;
 
   const std::vector<std::string>& GetHeaderExtensions() const
   {
-    return this->HeaderFileExtensions;
+    return this->HeaderFileExtensions.ordered;
   }
 
-  bool IsHeaderExtension(const std::string& ext) const
+  bool IsAHeaderExtension(cm::string_view ext) const
   {
-    return this->HeaderFileExtensionsSet.find(ext) !=
-      this->HeaderFileExtensionsSet.end();
+    return this->HeaderFileExtensions.Test(ext);
   }
 
   // Strips the extension (if present and known) from a filename
@@ -259,9 +332,21 @@ public:
   /**
    * Given a variable name, return its value (as a string).
    */
-  const char* GetCacheDefinition(const std::string&) const;
+  cmValue GetCacheDefinition(const std::string&) const;
   //! Add an entry into the cache
   void AddCacheEntry(const std::string& key, const char* value,
+                     const char* helpString, int type)
+  {
+    this->AddCacheEntry(key,
+                        value ? cmValue(std::string(value)) : cmValue(nullptr),
+                        helpString, type);
+  }
+  void AddCacheEntry(const std::string& key, const std::string& value,
+                     const char* helpString, int type)
+  {
+    this->AddCacheEntry(key, cmValue(value), helpString, type);
+  }
+  void AddCacheEntry(const std::string& key, cmValue value,
                      const char* helpString, int type);
 
   bool DoWriteGlobVerifyTarget() const;
@@ -287,10 +372,22 @@ public:
 
   //! Is this cmake running as a result of a TRY_COMPILE command
   bool GetIsInTryCompile() const;
-  void SetIsInTryCompile(bool b);
+
+#ifndef CMAKE_BOOTSTRAP
+  void SetWarningFromPreset(const std::string& name,
+                            const cm::optional<bool>& warning,
+                            const cm::optional<bool>& error);
+  void ProcessPresetVariables();
+  void PrintPresetVariables();
+  void ProcessPresetEnvironment();
+  void PrintPresetEnvironment();
+#endif
 
   //! Parse command line arguments that might set cache values
   bool SetCacheArgs(const std::vector<std::string>&);
+
+  void ProcessCacheArg(const std::string& var, const std::string& value,
+                       cmStateEnums::CacheEntryType type);
 
   using ProgressCallbackType = std::function<void(const std::string&, float)>;
   /**
@@ -305,7 +402,7 @@ public:
   //! this is called by generators to update the progress
   void UpdateProgress(const std::string& msg, float prog);
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   //! Get the variable watch object
   cmVariableWatch* GetVariableWatch() { return this->VariableWatch.get(); }
 #endif
@@ -314,9 +411,14 @@ public:
 
   //! Set/Get a property of this target file
   void SetProperty(const std::string& prop, const char* value);
-  void AppendProperty(const std::string& prop, const char* value,
+  void SetProperty(const std::string& prop, cmValue value);
+  void SetProperty(const std::string& prop, const std::string& value)
+  {
+    this->SetProperty(prop, cmValue(value));
+  }
+  void AppendProperty(const std::string& prop, const std::string& value,
                       bool asString = false);
-  const char* GetProperty(const std::string& prop);
+  cmValue GetProperty(const std::string& prop);
   bool GetPropertyAsBool(const std::string& prop);
 
   //! Get or create an cmInstalledFile instance and return a pointer to it
@@ -337,7 +439,7 @@ public:
   WorkingMode GetWorkingMode() { return this->CurrentWorkingMode; }
 
   //! Debug the try compile stuff by not deleting the files
-  bool GetDebugTryCompile() { return this->DebugTryCompile; }
+  bool GetDebugTryCompile() const { return this->DebugTryCompile; }
   void DebugTryCompileOn() { this->DebugTryCompile = true; }
 
   /**
@@ -350,20 +452,57 @@ public:
    */
   cmFileTimeCache* GetFileTimeCache() { return this->FileTimeCache.get(); }
 
+  bool WasLogLevelSetViaCLI() const { return this->LogLevelWasSetViaCLI; }
+
   //! Get the selected log level for `message()` commands during the cmake run.
-  LogLevel GetLogLevel() const { return this->MessageLogLevel; }
-  void SetLogLevel(LogLevel level) { this->MessageLogLevel = level; }
-  static LogLevel StringToLogLevel(const std::string& levelStr);
+  Message::LogLevel GetLogLevel() const { return this->MessageLogLevel; }
+  void SetLogLevel(Message::LogLevel level) { this->MessageLogLevel = level; }
+  static Message::LogLevel StringToLogLevel(cm::string_view levelStr);
+  static std::string LogLevelToString(Message::LogLevel level);
+  static TraceFormat StringToTraceFormat(const std::string& levelStr);
+
+  bool HasCheckInProgress() const
+  {
+    return !this->CheckInProgressMessages.empty();
+  }
+  std::size_t GetCheckInProgressSize() const
+  {
+    return this->CheckInProgressMessages.size();
+  }
+  std::string GetTopCheckInProgressMessage()
+  {
+    auto message = this->CheckInProgressMessages.top();
+    this->CheckInProgressMessages.pop();
+    return message;
+  }
+  void PushCheckInProgressMessage(std::string message)
+  {
+    this->CheckInProgressMessages.emplace(std::move(message));
+  }
+
+  //! Should `message` command display context.
+  bool GetShowLogContext() const { return this->LogContext; }
+  void SetShowLogContext(bool b) { this->LogContext = b; }
 
   //! Do we want debug output during the cmake run.
-  bool GetDebugOutput() { return this->DebugOutput; }
+  bool GetDebugOutput() const { return this->DebugOutput; }
   void SetDebugOutputOn(bool b) { this->DebugOutput = b; }
 
+  //! Do we want debug output from the find commands during the cmake run.
+  bool GetDebugFindOutput() const { return this->DebugFindOutput; }
+  bool GetDebugFindOutput(std::string const& var) const;
+  bool GetDebugFindPkgOutput(std::string const& pkg) const;
+  void SetDebugFindOutput(bool b) { this->DebugFindOutput = b; }
+  void SetDebugFindOutputPkgs(std::string const& args);
+  void SetDebugFindOutputVars(std::string const& args);
+
   //! Do we want trace output during the cmake run.
-  bool GetTrace() { return this->Trace; }
+  bool GetTrace() const { return this->Trace; }
   void SetTrace(bool b) { this->Trace = b; }
-  bool GetTraceExpand() { return this->TraceExpand; }
+  bool GetTraceExpand() const { return this->TraceExpand; }
   void SetTraceExpand(bool b) { this->TraceExpand = b; }
+  TraceFormat GetTraceFormat() const { return this->TraceFormatVar; }
+  void SetTraceFormat(TraceFormat f) { this->TraceFormatVar = f; }
   void AddTraceSource(std::string const& file)
   {
     this->TraceOnlyThisSources.push_back(file);
@@ -372,14 +511,27 @@ public:
   {
     return this->TraceOnlyThisSources;
   }
-  bool GetWarnUninitialized() { return this->WarnUninitialized; }
+  cmGeneratedFileStream& GetTraceFile()
+  {
+    if (this->TraceRedirect) {
+      return this->TraceRedirect->GetTraceFile();
+    }
+    return this->TraceFile;
+  }
+  void SetTraceFile(std::string const& file);
+  void PrintTraceFormatVersion();
+
+  //! Use trace from another ::cmake instance.
+  void SetTraceRedirect(cmake* other);
+
+  bool GetWarnUninitialized() const { return this->WarnUninitialized; }
   void SetWarnUninitialized(bool b) { this->WarnUninitialized = b; }
-  bool GetWarnUnused() { return this->WarnUnused; }
-  void SetWarnUnused(bool b) { this->WarnUnused = b; }
-  bool GetWarnUnusedCli() { return this->WarnUnusedCli; }
+  bool GetWarnUnusedCli() const { return this->WarnUnusedCli; }
   void SetWarnUnusedCli(bool b) { this->WarnUnusedCli = b; }
-  bool GetCheckSystemVars() { return this->CheckSystemVars; }
+  bool GetCheckSystemVars() const { return this->CheckSystemVars; }
   void SetCheckSystemVars(bool b) { this->CheckSystemVars = b; }
+  bool GetIgnoreWarningAsError() const { return this->IgnoreWarningAsError; }
+  void SetIgnoreWarningAsError(bool b) { this->IgnoreWarningAsError = b; }
 
   void MarkCliAsUsed(const std::string& variable);
 
@@ -448,13 +600,27 @@ public:
     cmListFileBacktrace const& backtrace = cmListFileBacktrace()) const;
 
   //! run the --build option
-  int Build(int jobs, const std::string& dir,
-            const std::vector<std::string>& targets, const std::string& config,
-            const std::vector<std::string>& nativeOptions, bool clean,
-            bool verbose);
+  int Build(int jobs, std::string dir, std::vector<std::string> targets,
+            std::string config, std::vector<std::string> nativeOptions,
+            cmBuildOptions& buildOptions, bool verbose,
+            const std::string& presetName, bool listPresets);
 
   //! run the --open option
   bool Open(const std::string& dir, bool dryRun);
+
+  //! run the --workflow option
+  enum class WorkflowListPresets
+  {
+    No,
+    Yes,
+  };
+  enum class WorkflowFresh
+  {
+    No,
+    Yes,
+  };
+  int Workflow(const std::string& presetName, WorkflowListPresets listPresets,
+               WorkflowFresh fresh);
 
   void UnwatchUnusedCli(const std::string& var);
   void WatchUnusedCli(const std::string& var);
@@ -466,28 +632,46 @@ public:
   }
   cmStateSnapshot GetCurrentSnapshot() const { return this->CurrentSnapshot; }
 
+  bool GetRegenerateDuringBuild() const { return this->RegenerateDuringBuild; }
+
+#if !defined(CMAKE_BOOTSTRAP)
+  cmMakefileProfilingData& GetProfilingOutput();
+  bool IsProfilingEnabled() const;
+
+  template <typename... Args>
+  cm::optional<cmMakefileProfilingData::RAII> CreateProfilingEntry(
+    Args&&... args)
+  {
+    if (this->IsProfilingEnabled()) {
+      return cm::make_optional<cmMakefileProfilingData::RAII>(
+        this->GetProfilingOutput(), std::forward<Args>(args)...);
+    }
+    return cm::nullopt;
+  }
+#endif
+
 protected:
   void RunCheckForUnusedVariables();
   int HandleDeleteCacheVariables(const std::string& var);
 
-  typedef std::vector<cmGlobalGeneratorFactory*> RegisteredGeneratorsVector;
+  using RegisteredGeneratorsVector =
+    std::vector<std::unique_ptr<cmGlobalGeneratorFactory>>;
   RegisteredGeneratorsVector Generators;
-  typedef std::vector<cmExternalMakefileProjectGeneratorFactory*>
-    RegisteredExtraGeneratorsVector;
+  using RegisteredExtraGeneratorsVector =
+    std::vector<cmExternalMakefileProjectGeneratorFactory*>;
   RegisteredExtraGeneratorsVector ExtraGenerators;
-  void AddScriptingCommands();
-  void AddProjectCommands();
+  void AddScriptingCommands() const;
+  void AddProjectCommands() const;
   void AddDefaultGenerators();
   void AddDefaultExtraGenerators();
 
-  cmGlobalGenerator* GlobalGenerator;
   std::map<std::string, DiagLevel> DiagLevels;
   std::string GeneratorInstance;
   std::string GeneratorPlatform;
   std::string GeneratorToolset;
-  bool GeneratorInstanceSet;
-  bool GeneratorPlatformSet;
-  bool GeneratorToolsetSet;
+  bool GeneratorInstanceSet = false;
+  bool GeneratorPlatformSet = false;
+  bool GeneratorToolsetSet = false;
 
   //! read in a cmake list file to initialize the cache
   void ReadListFile(const std::vector<std::string>& args,
@@ -504,7 +688,7 @@ protected:
    */
   int CheckBuildSystem();
 
-  void SetDirectoriesFromFile(const std::string& arg);
+  bool SetDirectoriesFromFile(const std::string& arg);
 
   //! Make sure all commands are what they say they are and there is no
   /// macros.
@@ -513,15 +697,20 @@ protected:
   void GenerateGraphViz(const std::string& fileName) const;
 
 private:
+  std::string CMakeWorkingDirectory;
   ProgressCallbackType ProgressCallback;
-  WorkingMode CurrentWorkingMode;
-  bool DebugOutput;
-  bool Trace;
-  bool TraceExpand;
-  bool WarnUninitialized;
-  bool WarnUnused;
-  bool WarnUnusedCli;
-  bool CheckSystemVars;
+  WorkingMode CurrentWorkingMode = NORMAL_MODE;
+  bool DebugOutput = false;
+  bool DebugFindOutput = false;
+  bool Trace = false;
+  bool TraceExpand = false;
+  TraceFormat TraceFormatVar = TRACE_HUMAN;
+  cmGeneratedFileStream TraceFile;
+  cmake* TraceRedirect = nullptr;
+  bool WarnUninitialized = false;
+  bool WarnUnusedCli = true;
+  bool CheckSystemVars = false;
+  bool IgnoreWarningAsError = false;
   std::map<std::string, bool> UsedCliVariables;
   std::string CMakeEditCommand;
   std::string CXXEnvironment;
@@ -531,17 +720,27 @@ private:
   std::string CheckStampList;
   std::string VSSolutionFile;
   std::string EnvironmentGenerator;
-  std::vector<std::string> SourceFileExtensions;
-  std::unordered_set<std::string> SourceFileExtensionsSet;
-  std::vector<std::string> HeaderFileExtensions;
-  std::unordered_set<std::string> HeaderFileExtensionsSet;
-  bool ClearBuildSystem;
-  bool DebugTryCompile;
+  FileExtensions CLikeSourceFileExtensions;
+  FileExtensions HeaderFileExtensions;
+  FileExtensions CudaFileExtensions;
+  FileExtensions ISPCFileExtensions;
+  FileExtensions FortranFileExtensions;
+  FileExtensions HipFileExtensions;
+  bool ClearBuildSystem = false;
+  bool DebugTryCompile = false;
+  bool FreshCache = false;
+  bool RegenerateDuringBuild = false;
   std::unique_ptr<cmFileTimeCache> FileTimeCache;
   std::string GraphVizFile;
   InstalledFilesMap InstalledFiles;
+#ifndef CMAKE_BOOTSTRAP
+  std::map<std::string, cm::optional<cmCMakePresetsGraph::CacheVariable>>
+    UnprocessedPresetVariables;
+  std::map<std::string, cm::optional<std::string>>
+    UnprocessedPresetEnvironment;
+#endif
 
-#if defined(CMAKE_BUILD_WITH_CMAKE)
+#if !defined(CMAKE_BOOTSTRAP)
   std::unique_ptr<cmVariableWatch> VariableWatch;
   std::unique_ptr<cmFileAPI> FileAPI;
 #endif
@@ -552,7 +751,16 @@ private:
 
   std::vector<std::string> TraceOnlyThisSources;
 
-  LogLevel MessageLogLevel = LogLevel::LOG_STATUS;
+  std::set<std::string> DebugFindPkgs;
+  std::set<std::string> DebugFindVars;
+
+  Message::LogLevel MessageLogLevel = Message::LogLevel::LOG_STATUS;
+  bool LogLevelWasSetViaCLI = false;
+  bool LogContext = false;
+
+  std::stack<std::string> CheckInProgressMessages;
+
+  std::unique_ptr<cmGlobalGenerator> GlobalGenerator;
 
   void UpdateConversionPathTable();
 
@@ -564,6 +772,20 @@ private:
 
   void AppendGlobalGeneratorsDocumentation(std::vector<cmDocumentationEntry>&);
   void AppendExtraGeneratorsDocumentation(std::vector<cmDocumentationEntry>&);
+
+#if !defined(CMAKE_BOOTSTRAP)
+  template <typename T>
+  const T* FindPresetForWorkflow(
+    cm::static_string_view type,
+    const std::map<std::string, cmCMakePresetsGraph::PresetPair<T>>& presets,
+    const cmCMakePresetsGraph::WorkflowPreset::WorkflowStep& step);
+
+  std::function<int()> BuildWorkflowStep(const std::vector<std::string>& args);
+#endif
+
+#if !defined(CMAKE_BOOTSTRAP)
+  std::unique_ptr<cmMakefileProfilingData> ProfilingOutput;
+#endif
 };
 
 #define CMAKE_STANDARD_OPTIONS_TABLE                                          \
@@ -577,6 +799,10 @@ private:
       "Specify toolset name if supported by generator." },                    \
     { "-A <platform-name>",                                                   \
       "Specify platform name if supported by generator." },                   \
+    { "--toolchain <file>",                                                   \
+      "Specify toolchain file [CMAKE_TOOLCHAIN_FILE]." },                     \
+    { "--install-prefix <directory>",                                         \
+      "Specify install directory [CMAKE_INSTALL_PREFIX]." },                  \
     { "-Wdev", "Enable developer warnings." },                                \
     { "-Wno-dev", "Suppress developer warnings." },                           \
     { "-Werror=dev", "Make developer warnings errors." },                     \
@@ -604,6 +830,8 @@ private:
   F(c_std_90)                                                                 \
   F(c_std_99)                                                                 \
   F(c_std_11)                                                                 \
+  F(c_std_17)                                                                 \
+  F(c_std_23)                                                                 \
   FOR_EACH_C90_FEATURE(F)                                                     \
   FOR_EACH_C99_FEATURE(F)                                                     \
   FOR_EACH_C11_FEATURE(F)
@@ -676,8 +904,26 @@ private:
   F(cxx_std_14)                                                               \
   F(cxx_std_17)                                                               \
   F(cxx_std_20)                                                               \
+  F(cxx_std_23)                                                               \
+  F(cxx_std_26)                                                               \
   FOR_EACH_CXX98_FEATURE(F)                                                   \
   FOR_EACH_CXX11_FEATURE(F)                                                   \
   FOR_EACH_CXX14_FEATURE(F)
 
-#endif
+#define FOR_EACH_CUDA_FEATURE(F)                                              \
+  F(cuda_std_03)                                                              \
+  F(cuda_std_11)                                                              \
+  F(cuda_std_14)                                                              \
+  F(cuda_std_17)                                                              \
+  F(cuda_std_20)                                                              \
+  F(cuda_std_23)                                                              \
+  F(cuda_std_26)
+
+#define FOR_EACH_HIP_FEATURE(F)                                               \
+  F(hip_std_98)                                                               \
+  F(hip_std_11)                                                               \
+  F(hip_std_14)                                                               \
+  F(hip_std_17)                                                               \
+  F(hip_std_20)                                                               \
+  F(hip_std_23)                                                               \
+  F(hip_std_26)

@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under both the BSD-style license (found in the
+ * LICENSE file in the root directory of this source tree) and the GPLv2 (found
+ * in the COPYING file in the root directory of this source tree).
+ * You may select, at your option, one of the above-listed licenses.
+ */
+
 /*-*************************************
 *  Dependencies
 ***************************************/
@@ -6,15 +16,17 @@
 #include <string.h> /* memset */
 #include <time.h>   /* clock */
 
-#include "mem.h" /* read */
-#include "pool.h"
-#include "threading.h"
-#include "cover.h"
-#include "zstd_internal.h" /* includes zstd.h */
 #ifndef ZDICT_STATIC_LINKING_ONLY
-#define ZDICT_STATIC_LINKING_ONLY
+#  define ZDICT_STATIC_LINKING_ONLY
 #endif
-#include "zdict.h"
+
+#include "../common/mem.h" /* read */
+#include "../common/pool.h"
+#include "../common/threading.h"
+#include "../common/zstd_internal.h" /* includes zstd.h */
+#include "../compress/zstd_compress_internal.h" /* ZSTD_hash*() */
+#include "../zdict.h"
+#include "cover.h"
 
 
 /*-*************************************
@@ -23,7 +35,7 @@
 #define FASTCOVER_MAX_SAMPLES_SIZE (sizeof(size_t) == 8 ? ((unsigned)-1) : ((unsigned)1 GB))
 #define FASTCOVER_MAX_F 31
 #define FASTCOVER_MAX_ACCEL 10
-#define DEFAULT_SPLITPOINT 0.75
+#define FASTCOVER_DEFAULT_SPLITPOINT 0.75
 #define DEFAULT_F 20
 #define DEFAULT_ACCEL 1
 
@@ -31,50 +43,50 @@
 /*-*************************************
 *  Console display
 ***************************************/
+#ifndef LOCALDISPLAYLEVEL
 static int g_displayLevel = 2;
+#endif
+#undef  DISPLAY
 #define DISPLAY(...)                                                           \
   {                                                                            \
     fprintf(stderr, __VA_ARGS__);                                              \
     fflush(stderr);                                                            \
   }
+#undef  LOCALDISPLAYLEVEL
 #define LOCALDISPLAYLEVEL(displayLevel, l, ...)                                \
   if (displayLevel >= l) {                                                     \
     DISPLAY(__VA_ARGS__);                                                      \
   } /* 0 : no display;   1: errors;   2: default;  3: details;  4: debug */
+#undef  DISPLAYLEVEL
 #define DISPLAYLEVEL(l, ...) LOCALDISPLAYLEVEL(g_displayLevel, l, __VA_ARGS__)
 
+#ifndef LOCALDISPLAYUPDATE
+static const clock_t g_refreshRate = CLOCKS_PER_SEC * 15 / 100;
+static clock_t g_time = 0;
+#endif
+#undef  LOCALDISPLAYUPDATE
 #define LOCALDISPLAYUPDATE(displayLevel, l, ...)                               \
   if (displayLevel >= l) {                                                     \
-    if ((clock() - g_time > refreshRate) || (displayLevel >= 4)) {             \
+    if ((clock() - g_time > g_refreshRate) || (displayLevel >= 4)) {             \
       g_time = clock();                                                        \
       DISPLAY(__VA_ARGS__);                                                    \
     }                                                                          \
   }
+#undef  DISPLAYUPDATE
 #define DISPLAYUPDATE(l, ...) LOCALDISPLAYUPDATE(g_displayLevel, l, __VA_ARGS__)
-static const clock_t refreshRate = CLOCKS_PER_SEC * 15 / 100;
-static clock_t g_time = 0;
 
 
 /*-*************************************
 * Hash Functions
 ***************************************/
-static const U64 prime6bytes = 227718039650203ULL;
-static size_t ZSTD_hash6(U64 u, U32 h) { return (size_t)(((u  << (64-48)) * prime6bytes) >> (64-h)) ; }
-static size_t ZSTD_hash6Ptr(const void* p, U32 h) { return ZSTD_hash6(MEM_readLE64(p), h); }
-
-static const U64 prime8bytes = 0xCF1BBCDCB7A56463ULL;
-static size_t ZSTD_hash8(U64 u, U32 h) { return (size_t)(((u) * prime8bytes) >> (64-h)) ; }
-static size_t ZSTD_hash8Ptr(const void* p, U32 h) { return ZSTD_hash8(MEM_readLE64(p), h); }
-
-
 /**
- * Hash the d-byte value pointed to by p and mod 2^f
+ * Hash the d-byte value pointed to by p and mod 2^f into the frequency vector
  */
-static size_t FASTCOVER_hashPtrToIndex(const void* p, U32 h, unsigned d) {
+static size_t FASTCOVER_hashPtrToIndex(const void* p, U32 f, unsigned d) {
   if (d == 6) {
-    return ZSTD_hash6Ptr(p, h) & ((1 << h) - 1);
+    return ZSTD_hash6Ptr(p, f);
   }
-  return ZSTD_hash8Ptr(p, h) & ((1 << h) - 1);
+  return ZSTD_hash8Ptr(p, f);
 }
 
 
@@ -132,7 +144,7 @@ typedef struct {
  *
  *     Score(S) = F(S_1) + F(S_2) + ... + F(S_{k-d+1})
  *
- * Once the dmer with hash value d is in the dictionay we set F(d) = 0.
+ * Once the dmer with hash value d is in the dictionary we set F(d) = 0.
  */
 static COVER_segment_t FASTCOVER_selectSegment(const FASTCOVER_ctx_t *ctx,
                                               U32 *freqs, U32 begin, U32 end,
@@ -161,7 +173,7 @@ static COVER_segment_t FASTCOVER_selectSegment(const FASTCOVER_ctx_t *ctx,
     /* Get hash value of current dmer */
     const size_t idx = FASTCOVER_hashPtrToIndex(ctx->samples + activeSegment.end, f, d);
 
-    /* Add frequency of this index to score if this is the first occurence of index in active segment */
+    /* Add frequency of this index to score if this is the first occurrence of index in active segment */
     if (segmentFreqs[idx] == 0) {
       activeSegment.score += freqs[idx];
     }
@@ -287,10 +299,10 @@ FASTCOVER_computeFrequency(U32* freqs, const FASTCOVER_ctx_t* ctx)
  * Prepare a context for dictionary building.
  * The context is only dependent on the parameter `d` and can used multiple
  * times.
- * Returns 1 on success or zero on error.
+ * Returns 0 on success or error code on error.
  * The context must be destroyed with `FASTCOVER_ctx_destroy()`.
  */
-static int
+static size_t
 FASTCOVER_ctx_init(FASTCOVER_ctx_t* ctx,
                    const void* samplesBuffer,
                    const size_t* samplesSizes, unsigned nbSamples,
@@ -310,19 +322,19 @@ FASTCOVER_ctx_init(FASTCOVER_ctx_t* ctx,
         totalSamplesSize >= (size_t)FASTCOVER_MAX_SAMPLES_SIZE) {
         DISPLAYLEVEL(1, "Total samples size is too large (%u MB), maximum size is %u MB\n",
                     (unsigned)(totalSamplesSize >> 20), (FASTCOVER_MAX_SAMPLES_SIZE >> 20));
-        return 0;
+        return ERROR(srcSize_wrong);
     }
 
     /* Check if there are at least 5 training samples */
     if (nbTrainSamples < 5) {
         DISPLAYLEVEL(1, "Total number of training samples is %u and is invalid\n", nbTrainSamples);
-        return 0;
+        return ERROR(srcSize_wrong);
     }
 
     /* Check if there's testing sample */
     if (nbTestSamples < 1) {
         DISPLAYLEVEL(1, "Total number of testing samples is %u and is invalid.\n", nbTestSamples);
-        return 0;
+        return ERROR(srcSize_wrong);
     }
 
     /* Zero the context */
@@ -347,7 +359,7 @@ FASTCOVER_ctx_init(FASTCOVER_ctx_t* ctx,
     if (ctx->offsets == NULL) {
         DISPLAYLEVEL(1, "Failed to allocate scratch buffers \n");
         FASTCOVER_ctx_destroy(ctx);
-        return 0;
+        return ERROR(memory_allocation);
     }
 
     /* Fill offsets from the samplesSizes */
@@ -364,13 +376,13 @@ FASTCOVER_ctx_init(FASTCOVER_ctx_t* ctx,
     if (ctx->freqs == NULL) {
         DISPLAYLEVEL(1, "Failed to allocate frequency table \n");
         FASTCOVER_ctx_destroy(ctx);
-        return 0;
+        return ERROR(memory_allocation);
     }
 
     DISPLAYLEVEL(2, "Computing frequencies\n");
     FASTCOVER_computeFrequency(ctx->freqs, ctx);
 
-    return 1;
+    return 0;
 }
 
 
@@ -386,29 +398,35 @@ FASTCOVER_buildDictionary(const FASTCOVER_ctx_t* ctx,
 {
   BYTE *const dict = (BYTE *)dictBuffer;
   size_t tail = dictBufferCapacity;
-  /* Divide the data up into epochs of equal size.
-   * We will select at least one segment from each epoch.
-   */
-  const unsigned epochs = MAX(1, (U32)(dictBufferCapacity / parameters.k));
-  const unsigned epochSize = (U32)(ctx->nbDmers / epochs);
+  /* Divide the data into epochs. We will select one segment from each epoch. */
+  const COVER_epoch_info_t epochs = COVER_computeEpochs(
+      (U32)dictBufferCapacity, (U32)ctx->nbDmers, parameters.k, 1);
+  const size_t maxZeroScoreRun = 10;
+  size_t zeroScoreRun = 0;
   size_t epoch;
   DISPLAYLEVEL(2, "Breaking content into %u epochs of size %u\n",
-                epochs, epochSize);
+                (U32)epochs.num, (U32)epochs.size);
   /* Loop through the epochs until there are no more segments or the dictionary
    * is full.
    */
-  for (epoch = 0; tail > 0; epoch = (epoch + 1) % epochs) {
-    const U32 epochBegin = (U32)(epoch * epochSize);
-    const U32 epochEnd = epochBegin + epochSize;
+  for (epoch = 0; tail > 0; epoch = (epoch + 1) % epochs.num) {
+    const U32 epochBegin = (U32)(epoch * epochs.size);
+    const U32 epochEnd = epochBegin + epochs.size;
     size_t segmentSize;
     /* Select a segment */
     COVER_segment_t segment = FASTCOVER_selectSegment(
         ctx, freqs, epochBegin, epochEnd, parameters, segmentFreqs);
 
-    /* If the segment covers no dmers, then we are out of content */
+    /* If the segment covers no dmers, then we are out of content.
+     * There may be new content in other epochs, for continue for some time.
+     */
     if (segment.score == 0) {
-      break;
+      if (++zeroScoreRun >= maxZeroScoreRun) {
+          break;
+      }
+      continue;
     }
+    zeroScoreRun = 0;
 
     /* Trim the segment if necessary and if it is too small then we are done */
     segmentSize = MIN(segment.end - segment.begin + parameters.d - 1, tail);
@@ -429,7 +447,6 @@ FASTCOVER_buildDictionary(const FASTCOVER_ctx_t* ctx,
   return tail;
 }
 
-
 /**
  * Parameters for FASTCOVER_tryParameters().
  */
@@ -446,19 +463,20 @@ typedef struct FASTCOVER_tryParameters_data_s {
  * This function is thread safe if zstd is compiled with multithreaded support.
  * It takes its parameters as an *OWNING* opaque pointer to support threading.
  */
-static void FASTCOVER_tryParameters(void *opaque)
+static void FASTCOVER_tryParameters(void* opaque)
 {
   /* Save parameters as local variables */
-  FASTCOVER_tryParameters_data_t *const data = (FASTCOVER_tryParameters_data_t *)opaque;
+  FASTCOVER_tryParameters_data_t *const data = (FASTCOVER_tryParameters_data_t*)opaque;
   const FASTCOVER_ctx_t *const ctx = data->ctx;
   const ZDICT_cover_params_t parameters = data->parameters;
   size_t dictBufferCapacity = data->dictBufferCapacity;
   size_t totalCompressedSize = ERROR(GENERIC);
   /* Initialize array to keep track of frequency of dmer within activeSegment */
-  U16* segmentFreqs = (U16 *)calloc(((U64)1 << ctx->f), sizeof(U16));
+  U16* segmentFreqs = (U16*)calloc(((U64)1 << ctx->f), sizeof(U16));
   /* Allocate space for hash table, dict, and freqs */
-  BYTE *const dict = (BYTE * const)malloc(dictBufferCapacity);
-  U32 *freqs = (U32*) malloc(((U64)1 << ctx->f) * sizeof(U32));
+  BYTE *const dict = (BYTE*)malloc(dictBufferCapacity);
+  COVER_dictSelection_t selection = COVER_dictSelectionError(ERROR(GENERIC));
+  U32* freqs = (U32*) malloc(((U64)1 << ctx->f) * sizeof(U32));
   if (!segmentFreqs || !dict || !freqs) {
     DISPLAYLEVEL(1, "Failed to allocate buffers: out of memory\n");
     goto _cleanup;
@@ -467,27 +485,24 @@ static void FASTCOVER_tryParameters(void *opaque)
   memcpy(freqs, ctx->freqs, ((U64)1 << ctx->f) * sizeof(U32));
   /* Build the dictionary */
   { const size_t tail = FASTCOVER_buildDictionary(ctx, freqs, dict, dictBufferCapacity,
-                                                  parameters, segmentFreqs);
+                                                    parameters, segmentFreqs);
+
     const unsigned nbFinalizeSamples = (unsigned)(ctx->nbTrainSamples * ctx->accelParams.finalize / 100);
-    dictBufferCapacity = ZDICT_finalizeDictionary(
-        dict, dictBufferCapacity, dict + tail, dictBufferCapacity - tail,
-        ctx->samples, ctx->samplesSizes, nbFinalizeSamples, parameters.zParams);
-    if (ZDICT_isError(dictBufferCapacity)) {
-      DISPLAYLEVEL(1, "Failed to finalize dictionary\n");
+    selection = COVER_selectDict(dict + tail, dictBufferCapacity, dictBufferCapacity - tail,
+         ctx->samples, ctx->samplesSizes, nbFinalizeSamples, ctx->nbTrainSamples, ctx->nbSamples, parameters, ctx->offsets,
+         totalCompressedSize);
+
+    if (COVER_dictSelectionIsError(selection)) {
+      DISPLAYLEVEL(1, "Failed to select dictionary\n");
       goto _cleanup;
     }
   }
-  /* Check total compressed size */
-  totalCompressedSize = COVER_checkTotalCompressedSize(parameters, ctx->samplesSizes,
-                                                       ctx->samples, ctx->offsets,
-                                                       ctx->nbTrainSamples, ctx->nbSamples,
-                                                       dict, dictBufferCapacity);
 _cleanup:
-  COVER_best_finish(data->best, totalCompressedSize, parameters, dict,
-                    dictBufferCapacity);
+  free(dict);
+  COVER_best_finish(data->best, parameters, selection);
   free(data);
   free(segmentFreqs);
-  free(dict);
+  COVER_dictSelectionFree(selection);
   free(freqs);
 }
 
@@ -502,6 +517,7 @@ FASTCOVER_convertToCoverParams(ZDICT_fastCover_params_t fastCoverParams,
     coverParams->nbThreads = fastCoverParams.nbThreads;
     coverParams->splitPoint = fastCoverParams.splitPoint;
     coverParams->zParams = fastCoverParams.zParams;
+    coverParams->shrinkDict = fastCoverParams.shrinkDict;
 }
 
 
@@ -518,6 +534,7 @@ FASTCOVER_convertToFastCoverParams(ZDICT_cover_params_t coverParams,
     fastCoverParams->f = f;
     fastCoverParams->accel = accel;
     fastCoverParams->zParams = coverParams.zParams;
+    fastCoverParams->shrinkDict = coverParams.shrinkDict;
 }
 
 
@@ -544,11 +561,11 @@ ZDICT_trainFromBuffer_fastCover(void* dictBuffer, size_t dictBufferCapacity,
     if (!FASTCOVER_checkParameters(coverParams, dictBufferCapacity, parameters.f,
                                    parameters.accel)) {
       DISPLAYLEVEL(1, "FASTCOVER parameters incorrect\n");
-      return ERROR(GENERIC);
+      return ERROR(parameter_outOfBound);
     }
     if (nbSamples == 0) {
       DISPLAYLEVEL(1, "FASTCOVER must have at least one input file\n");
-      return ERROR(GENERIC);
+      return ERROR(srcSize_wrong);
     }
     if (dictBufferCapacity < ZDICT_DICTSIZE_MIN) {
       DISPLAYLEVEL(1, "dictBufferCapacity must be at least %u\n",
@@ -558,12 +575,16 @@ ZDICT_trainFromBuffer_fastCover(void* dictBuffer, size_t dictBufferCapacity,
     /* Assign corresponding FASTCOVER_accel_t to accelParams*/
     accelParams = FASTCOVER_defaultAccelParameters[parameters.accel];
     /* Initialize context */
-    if (!FASTCOVER_ctx_init(&ctx, samplesBuffer, samplesSizes, nbSamples,
+    {
+      size_t const initVal = FASTCOVER_ctx_init(&ctx, samplesBuffer, samplesSizes, nbSamples,
                             coverParams.d, parameters.splitPoint, parameters.f,
-                            accelParams)) {
-      DISPLAYLEVEL(1, "Failed to initialize context\n");
-      return ERROR(GENERIC);
+                            accelParams);
+      if (ZSTD_isError(initVal)) {
+        DISPLAYLEVEL(1, "Failed to initialize context\n");
+        return initVal;
+      }
     }
+    COVER_warnOnSmallCorpus(dictBufferCapacity, ctx.nbDmers, g_displayLevel);
     /* Build the dictionary */
     DISPLAYLEVEL(2, "Building dictionary\n");
     {
@@ -598,7 +619,7 @@ ZDICT_optimizeTrainFromBuffer_fastCover(
     /* constants */
     const unsigned nbThreads = parameters->nbThreads;
     const double splitPoint =
-        parameters->splitPoint <= 0.0 ? DEFAULT_SPLITPOINT : parameters->splitPoint;
+        parameters->splitPoint <= 0.0 ? FASTCOVER_DEFAULT_SPLITPOINT : parameters->splitPoint;
     const unsigned kMinD = parameters->d == 0 ? 6 : parameters->d;
     const unsigned kMaxD = parameters->d == 0 ? 8 : parameters->d;
     const unsigned kMinK = parameters->k == 0 ? 50 : parameters->k;
@@ -609,6 +630,7 @@ ZDICT_optimizeTrainFromBuffer_fastCover(
         (1 + (kMaxD - kMinD) / 2) * (1 + (kMaxK - kMinK) / kStepSize);
     const unsigned f = parameters->f == 0 ? DEFAULT_F : parameters->f;
     const unsigned accel = parameters->accel == 0 ? DEFAULT_ACCEL : parameters->accel;
+    const unsigned shrinkDict = 0;
     /* Local variables */
     const int displayLevel = parameters->zParams.notificationLevel;
     unsigned iteration = 1;
@@ -616,22 +638,23 @@ ZDICT_optimizeTrainFromBuffer_fastCover(
     unsigned k;
     COVER_best_t best;
     POOL_ctx *pool = NULL;
+    int warned = 0;
     /* Checks */
     if (splitPoint <= 0 || splitPoint > 1) {
       LOCALDISPLAYLEVEL(displayLevel, 1, "Incorrect splitPoint\n");
-      return ERROR(GENERIC);
+      return ERROR(parameter_outOfBound);
     }
     if (accel == 0 || accel > FASTCOVER_MAX_ACCEL) {
       LOCALDISPLAYLEVEL(displayLevel, 1, "Incorrect accel\n");
-      return ERROR(GENERIC);
+      return ERROR(parameter_outOfBound);
     }
     if (kMinK < kMaxD || kMaxK < kMinK) {
       LOCALDISPLAYLEVEL(displayLevel, 1, "Incorrect k\n");
-      return ERROR(GENERIC);
+      return ERROR(parameter_outOfBound);
     }
     if (nbSamples == 0) {
       LOCALDISPLAYLEVEL(displayLevel, 1, "FASTCOVER must have at least one input file\n");
-      return ERROR(GENERIC);
+      return ERROR(srcSize_wrong);
     }
     if (dictBufferCapacity < ZDICT_DICTSIZE_MIN) {
       LOCALDISPLAYLEVEL(displayLevel, 1, "dictBufferCapacity must be at least %u\n",
@@ -658,11 +681,18 @@ ZDICT_optimizeTrainFromBuffer_fastCover(
       /* Initialize the context for this value of d */
       FASTCOVER_ctx_t ctx;
       LOCALDISPLAYLEVEL(displayLevel, 3, "d=%u\n", d);
-      if (!FASTCOVER_ctx_init(&ctx, samplesBuffer, samplesSizes, nbSamples, d, splitPoint, f, accelParams)) {
-        LOCALDISPLAYLEVEL(displayLevel, 1, "Failed to initialize context\n");
-        COVER_best_destroy(&best);
-        POOL_free(pool);
-        return ERROR(GENERIC);
+      {
+        size_t const initVal = FASTCOVER_ctx_init(&ctx, samplesBuffer, samplesSizes, nbSamples, d, splitPoint, f, accelParams);
+        if (ZSTD_isError(initVal)) {
+          LOCALDISPLAYLEVEL(displayLevel, 1, "Failed to initialize context\n");
+          COVER_best_destroy(&best);
+          POOL_free(pool);
+          return initVal;
+        }
+      }
+      if (!warned) {
+        COVER_warnOnSmallCorpus(dictBufferCapacity, ctx.nbDmers, displayLevel);
+        warned = 1;
       }
       /* Loop through k reusing the same context */
       for (k = kMinK; k <= kMaxK; k += kStepSize) {
@@ -675,7 +705,7 @@ ZDICT_optimizeTrainFromBuffer_fastCover(
           COVER_best_destroy(&best);
           FASTCOVER_ctx_destroy(&ctx);
           POOL_free(pool);
-          return ERROR(GENERIC);
+          return ERROR(memory_allocation);
         }
         data->ctx = &ctx;
         data->best = &best;
@@ -685,6 +715,7 @@ ZDICT_optimizeTrainFromBuffer_fastCover(
         data->parameters.d = d;
         data->parameters.splitPoint = splitPoint;
         data->parameters.steps = kSteps;
+        data->parameters.shrinkDict = shrinkDict;
         data->parameters.zParams.notificationLevel = g_displayLevel;
         /* Check the parameters */
         if (!FASTCOVER_checkParameters(data->parameters, dictBufferCapacity,

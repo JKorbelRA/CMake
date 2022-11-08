@@ -2,26 +2,29 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestGIT.h"
 
-#include "cmsys/FStream.hxx"
-#include "cmsys/Process.h"
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <utility>
 #include <vector>
 
-#include "cmAlgorithms.h"
+#include "cmsys/FStream.hxx"
+#include "cmsys/Process.h"
+
 #include "cmCTest.h"
 #include "cmCTestVC.h"
 #include "cmProcessOutput.h"
 #include "cmProcessTools.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
 
 static unsigned int cmCTestGITVersion(unsigned int epic, unsigned int major,
                                       unsigned int minor, unsigned int fix)
 {
   // 1.6.5.0 maps to 10605000
-  return fix + minor * 1000 + major * 100000 + epic * 10000000;
+  return epic * 10000000 + major * 100000 + minor * 1000 + fix;
 }
 
 cmCTestGIT::cmCTestGIT(cmCTest* ct, std::ostream& log)
@@ -111,8 +114,8 @@ std::string cmCTestGIT::FindGitDir()
   else if (git_dir[0] == '/') {
     // Cygwin Git reports a full path that Cygwin understands, but we
     // are a Windows application.  Run "cygpath" to get Windows path.
-    std::string cygpath_exe = cmSystemTools::GetFilenamePath(git);
-    cygpath_exe += "/cygpath.exe";
+    std::string cygpath_exe =
+      cmStrCat(cmSystemTools::GetFilenamePath(git), "/cygpath.exe");
     if (cmSystemTools::FileExists(cygpath_exe)) {
       char const* cygpath[] = { cygpath_exe.c_str(), "-w", git_dir.c_str(),
                                 0 };
@@ -173,7 +176,7 @@ bool cmCTestGIT::UpdateByFetchAndReset()
   // Fetch upstream refs.
   OutputLogger fetch_out(this->Log, "fetch-out> ");
   OutputLogger fetch_err(this->Log, "fetch-err> ");
-  if (!this->RunUpdateCommand(&git_fetch[0], &fetch_out, &fetch_err)) {
+  if (!this->RunUpdateCommand(git_fetch.data(), &fetch_out, &fetch_err)) {
     return false;
   }
 
@@ -192,7 +195,8 @@ bool cmCTestGIT::UpdateByFetchAndReset()
       if (line.find("\tnot-for-merge\t") == std::string::npos) {
         std::string::size_type pos = line.find('\t');
         if (pos != std::string::npos) {
-          sha1 = line.substr(0, pos);
+          sha1 = std::move(line);
+          sha1.resize(pos);
         }
       }
     }
@@ -211,8 +215,7 @@ bool cmCTestGIT::UpdateByFetchAndReset()
 
 bool cmCTestGIT::UpdateByCustom(std::string const& custom)
 {
-  std::vector<std::string> git_custom_command;
-  cmSystemTools::ExpandListArgument(custom, git_custom_command, true);
+  std::vector<std::string> git_custom_command = cmExpandedList(custom, true);
   std::vector<char const*> git_custom;
   git_custom.reserve(git_custom_command.size() + 1);
   for (std::string const& i : git_custom_command) {
@@ -222,7 +225,7 @@ bool cmCTestGIT::UpdateByCustom(std::string const& custom)
 
   OutputLogger custom_out(this->Log, "custom-out> ");
   OutputLogger custom_err(this->Log, "custom-err> ");
-  return this->RunUpdateCommand(&git_custom[0], &custom_out, &custom_err);
+  return this->RunUpdateCommand(git_custom.data(), &custom_out, &custom_err);
 }
 
 bool cmCTestGIT::UpdateInternal()
@@ -270,7 +273,7 @@ bool cmCTestGIT::UpdateImpl()
 
   std::string init_submodules =
     this->CTest->GetCTestConfiguration("GITInitSubmodules");
-  if (cmSystemTools::IsOn(init_submodules)) {
+  if (cmIsOn(init_submodules)) {
     char const* git_submodule_init[] = { git, "submodule", "init", nullptr };
     ret = this->RunChild(git_submodule_init, &submodule_out, &submodule_err,
                          top_dir.c_str());
@@ -329,12 +332,11 @@ public:
   DiffParser(cmCTestGIT* git, const char* prefix)
     : LineParser('\0', false)
     , GIT(git)
-    , DiffField(DiffFieldNone)
   {
     this->SetLog(&git->Log, prefix);
   }
 
-  typedef cmCTestGIT::Change Change;
+  using Change = cmCTestGIT::Change;
   std::vector<Change> Changes;
 
 protected:
@@ -346,7 +348,7 @@ protected:
     DiffFieldSrc,
     DiffFieldDst
   };
-  DiffFieldType DiffField;
+  DiffFieldType DiffField = DiffFieldNone;
   Change CurChange;
 
   void DiffReset()
@@ -451,13 +453,12 @@ class cmCTestGIT::CommitParser : public cmCTestGIT::DiffParser
 public:
   CommitParser(cmCTestGIT* git, const char* prefix)
     : DiffParser(git, prefix)
-    , Section(SectionHeader)
   {
     this->Separator = SectionSep[this->Section];
   }
 
 private:
-  typedef cmCTestGIT::Revision Revision;
+  using Revision = cmCTestGIT::Revision;
   enum SectionType
   {
     SectionHeader,
@@ -466,7 +467,7 @@ private:
     SectionCount
   };
   static char const SectionSep[SectionCount];
-  SectionType Section;
+  SectionType Section = SectionHeader;
   Revision Rev;
 
   struct Person
@@ -534,7 +535,8 @@ private:
 
   void NextSection()
   {
-    this->Section = SectionType((this->Section + 1) % SectionCount);
+    this->Section =
+      static_cast<SectionType>((this->Section + 1) % SectionCount);
     this->Separator = SectionSep[this->Section];
     if (this->Section == SectionHeader) {
       this->GIT->DoRevision(this->Rev, this->Changes);
@@ -579,16 +581,17 @@ private:
     time_t seconds = static_cast<time_t>(person.Time);
     struct tm* t = gmtime(&seconds);
     char dt[1024];
-    sprintf(dt, "%04d-%02d-%02d %02d:%02d:%02d", t->tm_year + 1900,
-            t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+    snprintf(dt, sizeof(dt), "%04d-%02d-%02d %02d:%02d:%02d",
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour,
+             t->tm_min, t->tm_sec);
     std::string out = dt;
 
     // Add the time-zone field "+zone" or "-zone".
     char tz[32];
     if (person.TimeZone >= 0) {
-      sprintf(tz, " +%04ld", person.TimeZone);
+      snprintf(tz, sizeof(tz), " +%04ld", person.TimeZone);
     } else {
-      sprintf(tz, " -%04ld", -person.TimeZone);
+      snprintf(tz, sizeof(tz), " -%04ld", -person.TimeZone);
     }
     out += tz;
     return out;

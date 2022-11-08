@@ -10,6 +10,8 @@ Try to find BZip2
 IMPORTED Targets
 ^^^^^^^^^^^^^^^^
 
+.. versionadded:: 3.12
+
 This module defines :prop_tgt:`IMPORTED` target ``BZip2::BZip2``, if
 BZip2 has been found.
 
@@ -21,13 +23,17 @@ This module defines the following variables:
 ``BZIP2_FOUND``
   system has BZip2
 ``BZIP2_INCLUDE_DIRS``
-  the BZip2 include directories
+  .. versionadded:: 3.12
+    the BZip2 include directories
 ``BZIP2_LIBRARIES``
   Link these to use BZip2
 ``BZIP2_NEED_PREFIX``
   this is set if the functions are prefixed with ``BZ2_``
-``BZIP2_VERSION_STRING``
-  the version of BZip2 found
+``BZIP2_VERSION``
+  .. versionadded:: 3.26
+    the version of BZip2 found.
+
+  See also legacy variable ``BZIP2_VERSION_STRING``.
 
 Cache variables
 ^^^^^^^^^^^^^^^
@@ -36,6 +42,17 @@ The following cache variables may also be set:
 
 ``BZIP2_INCLUDE_DIR``
   the BZip2 include directory
+
+Legacy Variables
+^^^^^^^^^^^^^^^^
+
+The following variables are provided for backward compatibility:
+
+``BZIP2_VERSION_STRING``
+  the version of BZip2 found.
+
+  .. versionchanged:: 3.26
+    Superseded by ``BZIP2_VERSION``.
 #]=======================================================================]
 
 set(_BZIP2_PATHS PATHS
@@ -45,8 +62,8 @@ set(_BZIP2_PATHS PATHS
 find_path(BZIP2_INCLUDE_DIR bzlib.h ${_BZIP2_PATHS} PATH_SUFFIXES include)
 
 if (NOT BZIP2_LIBRARIES)
-    find_library(BZIP2_LIBRARY_RELEASE NAMES bz2 bzip2 ${_BZIP2_PATHS} PATH_SUFFIXES lib)
-    find_library(BZIP2_LIBRARY_DEBUG NAMES bz2d bzip2d ${_BZIP2_PATHS} PATH_SUFFIXES lib)
+    find_library(BZIP2_LIBRARY_RELEASE NAMES bz2 bzip2 libbz2 libbzip2 NAMES_PER_DIR ${_BZIP2_PATHS} PATH_SUFFIXES lib)
+    find_library(BZIP2_LIBRARY_DEBUG NAMES bz2d bzip2d libbz2d libbzip2d NAMES_PER_DIR ${_BZIP2_PATHS} PATH_SUFFIXES lib)
 
     include(${CMAKE_CURRENT_LIST_DIR}/SelectLibraryConfigurations.cmake)
     SELECT_LIBRARY_CONFIGURATIONS(BZIP2)
@@ -57,12 +74,13 @@ endif ()
 if (BZIP2_INCLUDE_DIR AND EXISTS "${BZIP2_INCLUDE_DIR}/bzlib.h")
     file(STRINGS "${BZIP2_INCLUDE_DIR}/bzlib.h" BZLIB_H REGEX "bzip2/libbzip2 version [0-9]+\\.[^ ]+ of [0-9]+ ")
     string(REGEX REPLACE ".* bzip2/libbzip2 version ([0-9]+\\.[^ ]+) of [0-9]+ .*" "\\1" BZIP2_VERSION_STRING "${BZLIB_H}")
+    set(BZIP2_VERSION ${BZIP2_VERSION_STRING})
 endif ()
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(BZip2
                                   REQUIRED_VARS BZIP2_LIBRARIES BZIP2_INCLUDE_DIR
-                                  VERSION_VAR BZIP2_VERSION_STRING)
+                                  VERSION_VAR BZIP2_VERSION)
 
 if (BZIP2_FOUND)
   set(BZIP2_INCLUDE_DIRS ${BZIP2_INCLUDE_DIR})

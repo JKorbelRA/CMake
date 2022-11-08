@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8.12)
 project(Preprocess)
 
 # This test is meant both as a test and as a reference for supported
@@ -29,7 +29,10 @@ if("${CMAKE_GENERATOR}" MATCHES "Visual Studio")
   set(PP_VS 1)
 endif()
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
-   "x${CMAKE_C_SIMULATE_ID}" STREQUAL "xMSVC" AND
+   "x${CMAKE_C_SIMULATE_ID}" STREQUAL "xMSVC")
+   set(CLANG_MSVC_WINDOWS 1)
+endif()
+if(CLANG_MSVC_WINDOWS AND
    "x${CMAKE_C_COMPILER_FRONTEND_VARIANT}" STREQUAL "xGNU")
    set(CLANG_GNULIKE_WINDOWS 1)
 endif()
@@ -106,7 +109,7 @@ endif()
 set(EXPR_OP1 "/")
 if((NOT MSVC OR PP_NMAKE) AND
    NOT CMAKE_C_COMPILER_ID STREQUAL "Intel" AND
-   NOT CLANG_GNULIKE_WINDOWS)
+   NOT CLANG_MSVC_WINDOWS)
   # MSVC cl, Intel icl: %
   # When the cl compiler is invoked from the command line then % must
   # be written %% (to distinguish from %ENV% syntax).  However cl does
@@ -144,8 +147,13 @@ endif()
 #  - NMake is okay with just \\\"
 #  - The XL compiler does not re-escape \\\" when launching an
 #    internal tool to do preprocessing .
+#  - The IntelLLVM C and C++ compiler drivers do not re-escape the \\\" when
+#    launching the underlying compiler. FIXME: this bug is expected to be fixed
+#    in a future release.
 if((PP_NMAKE OR PP_UMAKE) AND
-    NOT CMAKE_C_COMPILER_ID STREQUAL "XL")
+    NOT CMAKE_C_COMPILER_ID STREQUAL "XL" AND
+    NOT CMAKE_C_COMPILER_ID STREQUAL "IntelLLVM" AND
+    NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
   string(APPEND STRING_EXTRA "\\\"")
 endif()
 
@@ -189,9 +197,14 @@ endif()
 #-----------------------------------------------------------------------------
 
 # Inform the test if the debug configuration is getting built.
-# The NDEBUG definition takes care of this for release.
 string(APPEND CMAKE_C_FLAGS_DEBUG " -DPREPROCESS_DEBUG")
 string(APPEND CMAKE_CXX_FLAGS_DEBUG " -DPREPROCESS_DEBUG")
+string(APPEND CMAKE_C_FLAGS_RELEASE " -DPREPROCESS_NDEBUG")
+string(APPEND CMAKE_CXX_FLAGS_RELEASE " -DPREPROCESS_NDEBUG")
+string(APPEND CMAKE_C_FLAGS_RELWITHDEBINFO " -DPREPROCESS_NDEBUG")
+string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO " -DPREPROCESS_NDEBUG")
+string(APPEND CMAKE_C_FLAGS_MINSIZEREL " -DPREPROCESS_NDEBUG")
+string(APPEND CMAKE_CXX_FLAGS_MINSIZEREL " -DPREPROCESS_NDEBUG")
 
 # Inform the test if it built from Xcode.
 if(PP_XCODE)

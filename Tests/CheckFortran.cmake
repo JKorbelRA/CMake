@@ -7,10 +7,11 @@ if(NOT DEFINED CMAKE_Fortran_COMPILER)
   message(STATUS ${_desc})
   file(REMOVE_RECURSE ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/CheckFortran)
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/CheckFortran/CMakeLists.txt"
-    "cmake_minimum_required(VERSION 2.4)
+    "cmake_minimum_required(VERSION 2.8.12)
 project(CheckFortran Fortran)
 file(WRITE \"\${CMAKE_CURRENT_BINARY_DIR}/result.cmake\"
   \"set(CMAKE_Fortran_COMPILER \\\"\${CMAKE_Fortran_COMPILER}\\\")\\n\"
+  \"set(CMAKE_Fortran_COMPILER_ID \\\"\${CMAKE_Fortran_COMPILER_ID}\\\")\\n\"
   \"set(CMAKE_Fortran_FLAGS \\\"\${CMAKE_Fortran_FLAGS}\\\")\\n\"
   \"set(CMAKE_Fortran_COMPILER_SUPPORTS_F90 \\\"\${CMAKE_Fortran_COMPILER_SUPPORTS_F90}\\\")\\n\"
   )
@@ -45,6 +46,8 @@ file(WRITE \"\${CMAKE_CURRENT_BINARY_DIR}/result.cmake\"
   message(STATUS "${_desc} - ${CMAKE_Fortran_COMPILER}")
   set(CMAKE_Fortran_COMPILER "${CMAKE_Fortran_COMPILER}" CACHE FILEPATH "Fortran compiler")
   mark_as_advanced(CMAKE_Fortran_COMPILER)
+  set(CMAKE_Fortran_COMPILER_ID "${CMAKE_Fortran_COMPILER_ID}" CACHE STRING "Fortran compiler Id")
+  mark_as_advanced(CMAKE_Fortran_COMPILER_ID)
   set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS}" CACHE STRING "Fortran flags")
   mark_as_advanced(CMAKE_Fortran_FLAGS)
   set(CMAKE_Fortran_COMPILER_SUPPORTS_F90 "${CMAKE_Fortran_COMPILER_SUPPORTS_F90}" CACHE BOOL "Fortran compiler supports F90")

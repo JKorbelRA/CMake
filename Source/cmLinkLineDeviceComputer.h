@@ -1,12 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
-#ifndef cmLinkLineDeviceComputer_h
-#define cmLinkLineDeviceComputer_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <string>
+#include <vector>
 
 #include "cmLinkLineComputer.h"
 
@@ -15,6 +15,8 @@ class cmGeneratorTarget;
 class cmLocalGenerator;
 class cmOutputConverter;
 class cmStateDirectory;
+template <typename T>
+class BT;
 
 class cmLinkLineDeviceComputer : public cmLinkLineComputer
 {
@@ -28,9 +30,11 @@ public:
     delete;
 
   bool ComputeRequiresDeviceLinking(cmComputeLinkInformation& cli);
+  bool ComputeRequiresDeviceLinkingIPOFlag(cmComputeLinkInformation& cli);
 
-  std::string ComputeLinkLibraries(cmComputeLinkInformation& cli,
-                                   std::string const& stdLibString) override;
+  void ComputeLinkLibraries(
+    cmComputeLinkInformation& cli, std::string const& stdLibString,
+    std::vector<BT<std::string>>& linkLibraries) override;
 
   std::string GetLinkerLanguage(cmGeneratorTarget* target,
                                 std::string const& config) override;
@@ -38,5 +42,3 @@ public:
 
 bool requireDeviceLinking(cmGeneratorTarget& target, cmLocalGenerator& lg,
                           const std::string& config);
-
-#endif

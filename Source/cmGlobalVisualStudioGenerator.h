@@ -1,7 +1,6 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmGlobalVisualStudioGenerator_h
-#define cmGlobalVisualStudioGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
@@ -11,8 +10,11 @@
 #include <string>
 #include <vector>
 
+#include "cm_codecvt.hxx"
+
 #include "cmGlobalGenerator.h"
 #include "cmTargetDepend.h"
+#include "cmValue.h"
 
 class cmCustomCommand;
 class cmGeneratorTarget;
@@ -30,16 +32,16 @@ class cmGlobalVisualStudioGenerator : public cmGlobalGenerator
 {
 public:
   /** Known versions of Visual Studio.  */
-  enum VSVersion
+  enum class VSVersion : uint16_t
   {
     VS9 = 90,
-    VS10 = 100,
     VS11 = 110,
     VS12 = 120,
     /* VS13 = 130 was skipped */
     VS14 = 140,
     VS15 = 150,
-    VS16 = 160
+    VS16 = 160,
+    VS17 = 170
   };
 
   virtual ~cmGlobalVisualStudioGenerator();
@@ -90,10 +92,16 @@ public:
    * Call the ReloadProjects macro if necessary based on
    * GetFilesReplacedDuringGenerate results.
    */
-  void CallVisualStudioMacro(MacroName m, const char* vsSolutionFile = 0);
+  void CallVisualStudioMacro(MacroName m, const std::string& vsSolutionFile);
 
   // return true if target is fortran only
   bool TargetIsFortranOnly(const cmGeneratorTarget* gt);
+
+  // return true if target should be included in solution.
+  virtual bool IsInSolution(const cmGeneratorTarget* gt) const;
+
+  // return true if project dependency should be included in solution.
+  virtual bool IsDepInSolution(const std::string& targetName) const;
 
   /** Get the top-level registry key for this VS version.  */
   std::string GetRegistryBase();
@@ -109,6 +117,13 @@ public:
   virtual bool TargetsWindowsCE() const { return false; }
 
   bool IsIncludeExternalMSProjectSupported() const override { return true; }
+
+  /** Get encoding used by generator for generated source files
+   */
+  codecvt::Encoding GetMakefileEncoding() const override
+  {
+    return codecvt::ANSI;
+  }
 
   class TargetSet : public std::set<cmGeneratorTarget const*>
   {
@@ -143,6 +158,8 @@ public:
   bool Open(const std::string& bindir, const std::string& projectName,
             bool dryRun) override;
 
+  bool IsVisualStudio() const override { return true; }
+
 protected:
   cmGlobalVisualStudioGenerator(cmake* cm,
                                 std::string const& platformInGeneratorName);
@@ -173,7 +190,7 @@ protected:
                                   const std::string&);
   virtual std::string WriteUtilityDepend(cmGeneratorTarget const*) = 0;
   std::string GetUtilityDepend(const cmGeneratorTarget* target);
-  typedef std::map<cmGeneratorTarget const*, std::string> UtilityDependsMap;
+  using UtilityDependsMap = std::map<cmGeneratorTarget const*, std::string>;
   UtilityDependsMap UtilityDepends;
 
 protected:
@@ -187,7 +204,7 @@ protected:
 private:
   virtual std::string GetVSMakeProgram() = 0;
   void PrintCompilerAdvice(std::ostream&, std::string const&,
-                           const char*) const override
+                           cmValue) const override
   {
   }
 
@@ -206,15 +223,12 @@ class cmGlobalVisualStudioGenerator::OrderedTargetDependSet
   : public std::multiset<cmTargetDepend,
                          cmGlobalVisualStudioGenerator::TargetCompare>
 {
-  typedef std::multiset<cmTargetDepend,
-                        cmGlobalVisualStudioGenerator::TargetCompare>
-    derived;
+  using derived = std::multiset<cmTargetDepend,
+                                cmGlobalVisualStudioGenerator::TargetCompare>;
 
 public:
-  typedef cmGlobalGenerator::TargetDependSet TargetDependSet;
-  typedef cmGlobalVisualStudioGenerator::TargetSet TargetSet;
+  using TargetDependSet = cmGlobalGenerator::TargetDependSet;
+  using TargetSet = cmGlobalVisualStudioGenerator::TargetSet;
   OrderedTargetDependSet(TargetDependSet const&, std::string const& first);
   OrderedTargetDependSet(TargetSet const&, std::string const& first);
 };
-
-#endif

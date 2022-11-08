@@ -64,26 +64,40 @@
  */
 #include "bindexplib.h"
 
-#include "cmsys/Encoding.hxx"
+#include <cstddef> // IWYU pragma: keep
+#include <sstream>
+#include <vector>
+
+#ifdef _WIN32
+#  include <windows.h>
+
+#  include "cmsys/Encoding.hxx"
+#endif
+
 #include "cmsys/FStream.hxx"
-#include <iostream>
-#include <windows.h>
 
-#ifndef IMAGE_FILE_MACHINE_ARM
-#  define IMAGE_FILE_MACHINE_ARM 0x01c0 // ARM Little-Endian
-#endif
+#include "cmSystemTools.h"
 
-#ifndef IMAGE_FILE_MACHINE_THUMB
-#  define IMAGE_FILE_MACHINE_THUMB 0x01c2 // ARM Thumb/Thumb-2 Little-Endian
-#endif
+#ifdef _WIN32
+#  ifndef IMAGE_FILE_MACHINE_ARM
+#    define IMAGE_FILE_MACHINE_ARM 0x01c0 // ARM Little-Endian
+#  endif
 
-#ifndef IMAGE_FILE_MACHINE_ARMNT
-#  define IMAGE_FILE_MACHINE_ARMNT 0x01c4 // ARM Thumb-2 Little-Endian
-#endif
+#  ifndef IMAGE_FILE_MACHINE_THUMB
+#    define IMAGE_FILE_MACHINE_THUMB 0x01c2 // ARM Thumb/Thumb-2 Little-Endian
+#  endif
 
-#ifndef IMAGE_FILE_MACHINE_ARM64
-#  define IMAGE_FILE_MACHINE_ARM64 0xaa64 // ARM64 Little-Endian
-#endif
+#  ifndef IMAGE_FILE_MACHINE_ARMNT
+#    define IMAGE_FILE_MACHINE_ARMNT 0x01c4 // ARM Thumb-2 Little-Endian
+#  endif
+
+#  ifndef IMAGE_FILE_MACHINE_ARM64
+#    define IMAGE_FILE_MACHINE_ARM64 0xaa64 // ARM64 Little-Endian
+#  endif
+
+#  ifndef IMAGE_FILE_MACHINE_ARM64EC
+#    define IMAGE_FILE_MACHINE_ARM64EC 0xa641 // ARM64EC Little-Endian
+#  endif
 
 typedef struct cmANON_OBJECT_HEADER_BIGOBJ
 {
@@ -124,6 +138,13 @@ typedef struct _cmIMAGE_SYMBOL_EX
   BYTE NumberOfAuxSymbols;
 } cmIMAGE_SYMBOL_EX;
 typedef cmIMAGE_SYMBOL_EX UNALIGNED* cmPIMAGE_SYMBOL_EX;
+
+enum class Arch
+{
+  Generic,
+  I386,
+  ARM64EC,
+};
 
 PIMAGE_SECTION_HEADER GetSectionHeaderOffset(
   PIMAGE_FILE_HEADER pImageFileHeader)
@@ -183,7 +204,8 @@ public:
    */
 
   DumpSymbols(ObjectHeaderType* ih, std::set<std::string>& symbols,
-              std::set<std::string>& dataSymbols, bool isI386)
+              std::set<std::string>& dataSymbols,
+              Arch symbolArch = Arch::Generic)
     : Symbols(symbols)
     , DataSymbols(dataSymbols)
   {
@@ -193,7 +215,7 @@ public:
                          this->ObjectImageHeader->PointerToSymbolTable);
     this->SectionHeaders = GetSectionHeaderOffset(this->ObjectImageHeader);
     this->SymbolCount = this->ObjectImageHeader->NumberOfSymbols;
-    this->IsI386 = isI386;
+    this->SymbolArch = symbolArch;
   }
 
   /*
@@ -249,7 +271,7 @@ public:
             }
           }
           // For i386 builds we need to remove _
-          if (this->IsI386 && symbol[0] == '_') {
+          if (this->SymbolArch == Arch::I386 && symbol[0] == '_') {
             symbol.erase(0, 1);
           }
 
@@ -266,15 +288,23 @@ public:
               symbol.compare(0, 4, vectorPrefix)) {
             SectChar = this->SectionHeaders[pSymbolTable->SectionNumber - 1]
                          .Characteristics;
-            // skip symbols containing a dot
-            if (symbol.find('.') == std::string::npos) {
-              if (!pSymbolTable->Type && (SectChar & IMAGE_SCN_MEM_WRITE)) {
-                // Read only (i.e. constants) must be excluded
-                this->DataSymbols.insert(symbol);
-              } else {
-                if (pSymbolTable->Type || !(SectChar & IMAGE_SCN_MEM_READ) ||
-                    (SectChar & IMAGE_SCN_MEM_EXECUTE)) {
-                  this->Symbols.insert(symbol);
+            // skip symbols containing a dot or are from managed code
+            if (symbol.find('.') == std::string::npos &&
+                !SymbolIsFromManagedCode(symbol)) {
+              // skip arm64ec thunk symbols
+              if (this->SymbolArch != Arch::ARM64EC ||
+                  (symbol.find("$ientry_thunk") == std::string::npos &&
+                   symbol.find("$entry_thunk") == std::string::npos &&
+                   symbol.find("$iexit_thunk") == std::string::npos &&
+                   symbol.find("$exit_thunk") == std::string::npos)) {
+                if (!pSymbolTable->Type && (SectChar & IMAGE_SCN_MEM_WRITE)) {
+                  // Read only (i.e. constants) must be excluded
+                  this->DataSymbols.insert(symbol);
+                } else {
+                  if (pSymbolTable->Type || !(SectChar & IMAGE_SCN_MEM_READ) ||
+                      (SectChar & IMAGE_SCN_MEM_EXECUTE)) {
+                    this->Symbols.insert(symbol);
+                  }
                 }
               }
             }
@@ -292,18 +322,85 @@ public:
   }
 
 private:
+  bool SymbolIsFromManagedCode(std::string const& symbol)
+  {
+    return symbol == "__t2m" || symbol == "__m2mep" || symbol == "__mep" ||
+      symbol.find("$$F") != std::string::npos ||
+      symbol.find("$$J") != std::string::npos;
+  }
+
   std::set<std::string>& Symbols;
   std::set<std::string>& DataSymbols;
   DWORD_PTR SymbolCount;
   PIMAGE_SECTION_HEADER SectionHeaders;
   ObjectHeaderType* ObjectImageHeader;
   SymbolTableType* SymbolTable;
-  bool IsI386;
+  Arch SymbolArch;
 };
+#endif
 
-bool DumpFile(const char* filename, std::set<std::string>& symbols,
-              std::set<std::string>& dataSymbols)
+static bool DumpFileWithLlvmNm(std::string const& nmPath, const char* filename,
+                               std::set<std::string>& symbols,
+                               std::set<std::string>& dataSymbols)
 {
+  std::string output;
+  // break up command line into a vector
+  std::vector<std::string> command;
+  command.push_back(nmPath);
+  command.emplace_back("--no-weak");
+  command.emplace_back("--defined-only");
+  command.emplace_back("--format=posix");
+  command.emplace_back(filename);
+
+  // run the command
+  int exit_code = 0;
+  cmSystemTools::RunSingleCommand(command, &output, &output, &exit_code,
+                                  nullptr, cmSystemTools::OUTPUT_NONE);
+
+  if (exit_code != 0) {
+    fprintf(stderr, "llvm-nm returned an error: %s\n", output.c_str());
+    return false;
+  }
+
+  std::istringstream ss(output);
+  std::string line;
+  while (std::getline(ss, line)) {
+    if (line.empty()) { // last line
+      continue;
+    }
+    size_t sym_end = line.find(' ');
+    if (sym_end == std::string::npos) {
+      fprintf(stderr, "Couldn't parse llvm-nm output line: %s\n",
+              line.c_str());
+      return false;
+    }
+    if (line.size() < sym_end + 1) {
+      fprintf(stderr, "Couldn't parse llvm-nm output line: %s\n",
+              line.c_str());
+      return false;
+    }
+    const char sym_type = line[sym_end + 1];
+    line.resize(sym_end);
+    switch (sym_type) {
+      case 'D':
+        dataSymbols.insert(line);
+        break;
+      case 'T':
+        symbols.insert(line);
+        break;
+    }
+  }
+
+  return true;
+}
+
+static bool DumpFile(std::string const& nmPath, const char* filename,
+                     std::set<std::string>& symbols,
+                     std::set<std::string>& dataSymbols)
+{
+#ifndef _WIN32
+  return DumpFileWithLlvmNm(nmPath, filename, symbols, dataSymbols);
+#else
   HANDLE hFile;
   HANDLE hFileMapping;
   LPVOID lpFileBase;
@@ -343,7 +440,8 @@ bool DumpFile(const char* filename, std::set<std::string>& symbols,
          (imageHeader->Machine == IMAGE_FILE_MACHINE_AMD64) ||
          (imageHeader->Machine == IMAGE_FILE_MACHINE_ARM) ||
          (imageHeader->Machine == IMAGE_FILE_MACHINE_ARMNT) ||
-         (imageHeader->Machine == IMAGE_FILE_MACHINE_ARM64)) &&
+         (imageHeader->Machine == IMAGE_FILE_MACHINE_ARM64) ||
+         (imageHeader->Machine == IMAGE_FILE_MACHINE_ARM64EC)) &&
         (imageHeader->Characteristics == 0)) {
       /*
        * The tests above are checking for IMAGE_FILE_HEADER.Machine
@@ -353,19 +451,37 @@ bool DumpFile(const char* filename, std::set<std::string>& symbols,
        */
       DumpSymbols<IMAGE_FILE_HEADER, IMAGE_SYMBOL> symbolDumper(
         (PIMAGE_FILE_HEADER)lpFileBase, symbols, dataSymbols,
-        (imageHeader->Machine == IMAGE_FILE_MACHINE_I386));
+        (imageHeader->Machine == IMAGE_FILE_MACHINE_I386
+           ? Arch::I386
+           : (imageHeader->Machine == IMAGE_FILE_MACHINE_ARM64EC
+                ? Arch::ARM64EC
+                : Arch::Generic)));
       symbolDumper.DumpObjFile();
     } else {
-      // check for /bigobj format
+      // check for /bigobj and llvm LTO format
       cmANON_OBJECT_HEADER_BIGOBJ* h =
         (cmANON_OBJECT_HEADER_BIGOBJ*)lpFileBase;
       if (h->Sig1 == 0x0 && h->Sig2 == 0xffff) {
+        // bigobj
         DumpSymbols<cmANON_OBJECT_HEADER_BIGOBJ, cmIMAGE_SYMBOL_EX>
-          symbolDumper((cmANON_OBJECT_HEADER_BIGOBJ*)lpFileBase, symbols,
-                       dataSymbols, (h->Machine == IMAGE_FILE_MACHINE_I386));
+          symbolDumper(
+            (cmANON_OBJECT_HEADER_BIGOBJ*)lpFileBase, symbols, dataSymbols,
+            (h->Machine == IMAGE_FILE_MACHINE_I386
+               ? Arch::I386
+               : (h->Machine == IMAGE_FILE_MACHINE_ARM64EC ? Arch::ARM64EC
+                                                           : Arch::Generic)));
         symbolDumper.DumpObjFile();
+      } else if (
+        // BCexCODE - llvm bitcode
+        (h->Sig1 == 0x4342 && h->Sig2 == 0xDEC0) ||
+        // 0x0B17C0DE - llvm bitcode BC wrapper
+        (h->Sig1 == 0x0B17 && h->Sig2 == 0xC0DE)) {
+
+        return DumpFileWithLlvmNm(nmPath, filename, symbols, dataSymbols);
+
       } else {
-        printf("unrecognized file format in '%s'\n", filename);
+        printf("unrecognized file format in '%s, %u'\n", filename,
+               imageHeader->Machine);
         return false;
       }
     }
@@ -374,11 +490,12 @@ bool DumpFile(const char* filename, std::set<std::string>& symbols,
   CloseHandle(hFileMapping);
   CloseHandle(hFile);
   return true;
+#endif
 }
 
 bool bindexplib::AddObjectFile(const char* filename)
 {
-  return DumpFile(filename, this->Symbols, this->DataSymbols);
+  return DumpFile(this->NmPath, filename, this->Symbols, this->DataSymbols);
 }
 
 bool bindexplib::AddDefinitionFile(const char* filename)
@@ -418,4 +535,9 @@ void bindexplib::WriteFile(FILE* file)
   for (std::string const& s : this->Symbols) {
     fprintf(file, "\t%s\n", s.c_str());
   }
+}
+
+void bindexplib::SetNmPath(std::string const& nm)
+{
+  this->NmPath = nm;
 }

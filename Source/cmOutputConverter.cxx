@@ -3,59 +3,211 @@
 #include "cmOutputConverter.h"
 
 #include <algorithm>
-#include <assert.h>
-#include <ctype.h>
+#include <cassert>
+#include <cctype>
 #include <set>
-#include <string.h>
 #include <vector>
 
+#ifdef _WIN32
+#  include <unordered_map>
+#  include <utility>
+#endif
+
 #include "cmState.h"
+#include "cmStateDirectory.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
+
+namespace {
+bool PathEqOrSubDir(std::string const& a, std::string const& b)
+{
+  return (cmSystemTools::ComparePath(a, b) ||
+          cmSystemTools::IsSubDirectory(a, b));
+}
+}
 
 cmOutputConverter::cmOutputConverter(cmStateSnapshot const& snapshot)
   : StateSnapshot(snapshot)
-  , LinkScriptShell(false)
 {
   assert(this->StateSnapshot.IsValid());
+  this->ComputeRelativePathTopSource();
+  this->ComputeRelativePathTopBinary();
+  this->ComputeRelativePathTopRelation();
+}
+
+void cmOutputConverter::ComputeRelativePathTopSource()
+{
+  // Walk up the buildsystem directory tree to find the highest source
+  // directory that contains the current source directory.
+  cmStateSnapshot snapshot = this->StateSnapshot;
+  for (cmStateSnapshot parent = snapshot.GetBuildsystemDirectoryParent();
+       parent.IsValid(); parent = parent.GetBuildsystemDirectoryParent()) {
+    if (cmSystemTools::IsSubDirectory(
+          snapshot.GetDirectory().GetCurrentSource(),
+          parent.GetDirectory().GetCurrentSource())) {
+      snapshot = parent;
+    }
+  }
+  this->RelativePathTopSource = snapshot.GetDirectory().GetCurrentSource();
+}
+
+void cmOutputConverter::ComputeRelativePathTopBinary()
+{
+  // Walk up the buildsystem directory tree to find the highest binary
+  // directory that contains the current binary directory.
+  cmStateSnapshot snapshot = this->StateSnapshot;
+  for (cmStateSnapshot parent = snapshot.GetBuildsystemDirectoryParent();
+       parent.IsValid(); parent = parent.GetBuildsystemDirectoryParent()) {
+    if (cmSystemTools::IsSubDirectory(
+          snapshot.GetDirectory().GetCurrentBinary(),
+          parent.GetDirectory().GetCurrentBinary())) {
+      snapshot = parent;
+    }
+  }
+
+  this->RelativePathTopBinary = snapshot.GetDirectory().GetCurrentBinary();
+}
+
+void cmOutputConverter::ComputeRelativePathTopRelation()
+{
+  if (cmSystemTools::ComparePath(this->RelativePathTopSource,
+                                 this->RelativePathTopBinary)) {
+    this->RelativePathTopRelation = TopRelation::InSource;
+  } else if (cmSystemTools::IsSubDirectory(this->RelativePathTopBinary,
+                                           this->RelativePathTopSource)) {
+    this->RelativePathTopRelation = TopRelation::BinInSrc;
+  } else if (cmSystemTools::IsSubDirectory(this->RelativePathTopSource,
+                                           this->RelativePathTopBinary)) {
+    this->RelativePathTopRelation = TopRelation::SrcInBin;
+  } else {
+    this->RelativePathTopRelation = TopRelation::Separate;
+  }
+}
+
+std::string const& cmOutputConverter::GetRelativePathTopSource() const
+{
+  return this->RelativePathTopSource;
+}
+
+std::string const& cmOutputConverter::GetRelativePathTopBinary() const
+{
+  return this->RelativePathTopBinary;
+}
+
+void cmOutputConverter::SetRelativePathTop(std::string const& topSource,
+                                           std::string const& topBinary)
+{
+  this->RelativePathTopSource = topSource;
+  this->RelativePathTopBinary = topBinary;
+  this->ComputeRelativePathTopRelation();
+}
+
+std::string cmOutputConverter::MaybeRelativeTo(
+  std::string const& local_path, std::string const& remote_path) const
+{
+  bool localInBinary = PathEqOrSubDir(local_path, this->RelativePathTopBinary);
+  bool remoteInBinary =
+    PathEqOrSubDir(remote_path, this->RelativePathTopBinary);
+
+  bool localInSource = PathEqOrSubDir(local_path, this->RelativePathTopSource);
+  bool remoteInSource =
+    PathEqOrSubDir(remote_path, this->RelativePathTopSource);
+
+  switch (this->RelativePathTopRelation) {
+    case TopRelation::Separate:
+      // Checks are independent.
+      break;
+    case TopRelation::BinInSrc:
+      localInSource = localInSource && !localInBinary;
+      remoteInSource = remoteInSource && !remoteInBinary;
+      break;
+    case TopRelation::SrcInBin:
+      localInBinary = localInBinary && !localInSource;
+      remoteInBinary = remoteInBinary && !remoteInSource;
+      break;
+    case TopRelation::InSource:
+      // Checks are identical.
+      break;
+  };
+
+  bool const bothInBinary = localInBinary && remoteInBinary;
+  bool const bothInSource = localInSource && remoteInSource;
+
+  if (bothInBinary || bothInSource) {
+    return cmSystemTools::ForceToRelativePath(local_path, remote_path);
+  }
+  return remote_path;
+}
+
+std::string cmOutputConverter::MaybeRelativeToTopBinDir(
+  std::string const& path) const
+{
+  return this->MaybeRelativeTo(this->GetState()->GetBinaryDirectory(), path);
+}
+
+std::string cmOutputConverter::MaybeRelativeToCurBinDir(
+  std::string const& path) const
+{
+  return this->MaybeRelativeTo(
+    this->StateSnapshot.GetDirectory().GetCurrentBinary(), path);
 }
 
 std::string cmOutputConverter::ConvertToOutputForExisting(
   const std::string& remote, OutputFormat format) const
 {
+#ifdef _WIN32
+  // Cache the Short Paths since we only convert the same few paths anyway and
+  // calling `GetShortPathNameW` is really expensive.
+  static std::unordered_map<std::string, std::string> shortPathCache{};
+
   // If this is a windows shell, the result has a space, and the path
   // already exists, we can use a short-path to reference it without a
   // space.
   if (this->GetState()->UseWindowsShell() &&
-      remote.find(' ') != std::string::npos &&
+      remote.find_first_of(" #") != std::string::npos &&
       cmSystemTools::FileExists(remote)) {
-    std::string tmp;
-    if (cmSystemTools::GetShortPath(remote, tmp)) {
-      return this->ConvertToOutputFormat(tmp, format);
-    }
+
+    std::string shortPath = [&]() {
+      auto cachedShortPathIt = shortPathCache.find(remote);
+
+      if (cachedShortPathIt != shortPathCache.end()) {
+        return cachedShortPathIt->second;
+      }
+
+      std::string tmp{};
+      cmSystemTools::GetShortPath(remote, tmp);
+      shortPathCache[remote] = tmp;
+      return tmp;
+    }();
+
+    return this->ConvertToOutputFormat(shortPath, format);
   }
+#endif
 
   // Otherwise, perform standard conversion.
   return this->ConvertToOutputFormat(remote, format);
 }
 
-std::string cmOutputConverter::ConvertToOutputFormat(const std::string& source,
+std::string cmOutputConverter::ConvertToOutputFormat(cm::string_view source,
                                                      OutputFormat output) const
 {
-  std::string result = source;
+  std::string result(source);
   // Convert it to an output path.
-  if (output == SHELL || output == WATCOMQUOTE) {
+  if (output == SHELL || output == WATCOMQUOTE || output == NINJAMULTI) {
     result = this->ConvertDirectorySeparatorsForShell(source);
-    result = this->EscapeForShell(result, true, false, output == WATCOMQUOTE);
+    result = this->EscapeForShell(result, true, false, output == WATCOMQUOTE,
+                                  output == NINJAMULTI);
   } else if (output == RESPONSE) {
-    result = this->EscapeForShell(result, false, false, false);
+    result = this->EscapeForShell(result, false, false, false, false, true);
   }
   return result;
 }
 
 std::string cmOutputConverter::ConvertDirectorySeparatorsForShell(
-  const std::string& source) const
+  cm::string_view source) const
 {
-  std::string result = source;
+  std::string result(source);
   // For the MSYS shell convert drive letters to posix paths, so
   // that c:/some/path becomes /c/some/path.  This is needed to
   // avoid problems with the shell path translation.
@@ -71,21 +223,23 @@ std::string cmOutputConverter::ConvertDirectorySeparatorsForShell(
   return result;
 }
 
-static bool cmOutputConverterIsShellOperator(const std::string& str)
+static bool cmOutputConverterIsShellOperator(cm::string_view str)
 {
-  static std::set<std::string> const shellOperators{
+  static std::set<cm::string_view> const shellOperators{
     "<", ">", "<<", ">>", "|", "||", "&&", "&>", "1>", "2>", "2>&1", "1>&2"
   };
   return (shellOperators.count(str) != 0);
 }
 
-std::string cmOutputConverter::EscapeForShell(const std::string& str,
+std::string cmOutputConverter::EscapeForShell(cm::string_view str,
                                               bool makeVars, bool forEcho,
-                                              bool useWatcomQuote) const
+                                              bool useWatcomQuote,
+                                              bool unescapeNinjaConfiguration,
+                                              bool forResponse) const
 {
   // Do not escape shell operators.
   if (cmOutputConverterIsShellOperator(str)) {
-    return str;
+    return std::string(str);
   }
 
   // Compute the flags for the target shell environment.
@@ -95,6 +249,9 @@ std::string cmOutputConverter::EscapeForShell(const std::string& str,
   } else if (!this->LinkScriptShell) {
     flags |= Shell_Flag_Make;
   }
+  if (unescapeNinjaConfiguration) {
+    flags |= Shell_Flag_UnescapeNinjaConfiguration;
+  }
   if (makeVars) {
     flags |= Shell_Flag_AllowMakeVariables;
   }
@@ -103,6 +260,9 @@ std::string cmOutputConverter::EscapeForShell(const std::string& str,
   }
   if (useWatcomQuote) {
     flags |= Shell_Flag_WatcomQuote;
+  }
+  if (forResponse) {
+    flags |= Shell_Flag_IsResponse;
   }
   if (this->GetState()->UseWatcomWMake()) {
     flags |= Shell_Flag_WatcomWMake;
@@ -117,46 +277,47 @@ std::string cmOutputConverter::EscapeForShell(const std::string& str,
     flags |= Shell_Flag_IsUnix;
   }
 
-  return Shell__GetArgument(str.c_str(), flags);
+  return Shell_GetArgument(str, flags);
 }
 
-std::string cmOutputConverter::EscapeForCMake(const std::string& str)
+std::string cmOutputConverter::EscapeForCMake(cm::string_view str,
+                                              WrapQuotes wrapQuotes)
 {
   // Always double-quote the argument to take care of most escapes.
-  std::string result = "\"";
-  for (const char* c = str.c_str(); *c; ++c) {
-    if (*c == '"') {
+  std::string result = (wrapQuotes == WrapQuotes::Wrap) ? "\"" : "";
+  for (const char c : str) {
+    if (c == '"') {
       // Escape the double quote to avoid ending the argument.
       result += "\\\"";
-    } else if (*c == '$') {
+    } else if (c == '$') {
       // Escape the dollar to avoid expanding variables.
       result += "\\$";
-    } else if (*c == '\\') {
+    } else if (c == '\\') {
       // Escape the backslash to avoid other escapes.
       result += "\\\\";
     } else {
       // Other characters will be parsed correctly.
-      result += *c;
+      result += c;
     }
   }
-  result += "\"";
+  if (wrapQuotes == WrapQuotes::Wrap) {
+    result += "\"";
+  }
   return result;
 }
 
-std::string cmOutputConverter::EscapeWindowsShellArgument(const char* arg,
+std::string cmOutputConverter::EscapeWindowsShellArgument(cm::string_view arg,
                                                           int shell_flags)
 {
-  return Shell__GetArgument(arg, shell_flags);
+  return Shell_GetArgument(arg, shell_flags);
 }
 
 cmOutputConverter::FortranFormat cmOutputConverter::GetFortranFormat(
-  const char* value)
+  cm::string_view value)
 {
   FortranFormat format = FortranFormatNone;
-  if (value && *value) {
-    std::vector<std::string> fmt;
-    cmSystemTools::ExpandListArgument(value, fmt);
-    for (std::string const& fi : fmt) {
+  if (!value.empty()) {
+    for (std::string const& fi : cmExpandedList(value)) {
       if (fi == "FIXED") {
         format = FortranFormatFixed;
       }
@@ -166,6 +327,17 @@ cmOutputConverter::FortranFormat cmOutputConverter::GetFortranFormat(
     }
   }
   return format;
+}
+
+cmOutputConverter::FortranPreprocess cmOutputConverter::GetFortranPreprocess(
+  cm::string_view value)
+{
+  if (value.empty()) {
+    return FortranPreprocess::Unset;
+  }
+
+  return cmIsOn(value) ? FortranPreprocess::Needed
+                       : FortranPreprocess::NotNeeded;
 }
 
 void cmOutputConverter::SetLinkScriptShell(bool linkScriptShell)
@@ -213,12 +385,12 @@ use the caret character itself (^), use two in a row (^^).
 */
 
 /* Some helpers to identify character classes */
-static int Shell__CharIsWhitespace(char c)
+static bool Shell_CharIsWhitespace(char c)
 {
   return ((c == ' ') || (c == '\t'));
 }
 
-static int Shell__CharNeedsQuotesOnUnix(char c)
+static bool Shell_CharNeedsQuotesOnUnix(char c)
 {
   return ((c == '\'') || (c == '`') || (c == ';') || (c == '#') ||
           (c == '&') || (c == '$') || (c == '(') || (c == ')') || (c == '~') ||
@@ -226,51 +398,59 @@ static int Shell__CharNeedsQuotesOnUnix(char c)
           (c == '\\'));
 }
 
-static int Shell__CharNeedsQuotesOnWindows(char c)
+static bool Shell_CharNeedsQuotesOnWindows(char c)
 {
   return ((c == '\'') || (c == '#') || (c == '&') || (c == '<') ||
           (c == '>') || (c == '|') || (c == '^'));
 }
 
-static int Shell__CharIsMakeVariableName(char c)
+static bool Shell_CharIsMakeVariableName(char c)
 {
   return c && (c == '_' || isalpha((static_cast<int>(c))));
 }
 
-int cmOutputConverter::Shell__CharNeedsQuotes(char c, int flags)
+bool cmOutputConverter::Shell_CharNeedsQuotes(char c, int flags)
 {
   /* On Windows the built-in command shell echo never needs quotes.  */
   if (!(flags & Shell_Flag_IsUnix) && (flags & Shell_Flag_EchoWindows)) {
-    return 0;
+    return false;
   }
 
   /* On all platforms quotes are needed to preserve whitespace.  */
-  if (Shell__CharIsWhitespace(c)) {
-    return 1;
+  if (Shell_CharIsWhitespace(c)) {
+    return true;
+  }
+
+  /* Quote hyphens in response files */
+  if (flags & Shell_Flag_IsResponse) {
+    if (c == '-') {
+      return true;
+    }
   }
 
   if (flags & Shell_Flag_IsUnix) {
     /* On UNIX several special characters need quotes to preserve them.  */
-    if (Shell__CharNeedsQuotesOnUnix(c)) {
-      return 1;
+    if (Shell_CharNeedsQuotesOnUnix(c)) {
+      return true;
     }
   } else {
     /* On Windows several special characters need quotes to preserve them.  */
-    if (Shell__CharNeedsQuotesOnWindows(c)) {
-      return 1;
+    if (Shell_CharNeedsQuotesOnWindows(c)) {
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
-const char* cmOutputConverter::Shell__SkipMakeVariables(const char* c)
+cm::string_view::iterator cmOutputConverter::Shell_SkipMakeVariables(
+  cm::string_view::iterator c, cm::string_view::iterator end)
 {
-  while (*c == '$' && *(c + 1) == '(') {
-    const char* skip = c + 2;
-    while (Shell__CharIsMakeVariableName(*skip)) {
+  while ((c != end && (c + 1) != end) && (*c == '$' && *(c + 1) == '(')) {
+    cm::string_view::iterator skip = c + 2;
+    while ((skip != end) && Shell_CharIsMakeVariableName(*skip)) {
       ++skip;
     }
-    if (*skip == ')') {
+    if ((skip != end) && *skip == ')') {
       c = skip + 1;
     } else {
       break;
@@ -302,69 +482,72 @@ flag later when we understand applications of this better.
 */
 #define KWSYS_SYSTEM_SHELL_QUOTE_MAKE_VARIABLES 0
 
-int cmOutputConverter::Shell__ArgumentNeedsQuotes(const char* in, int flags)
+bool cmOutputConverter::Shell_ArgumentNeedsQuotes(cm::string_view in,
+                                                  int flags)
 {
   /* The empty string needs quotes.  */
-  if (!*in) {
-    return 1;
+  if (in.empty()) {
+    return true;
   }
 
   /* Scan the string for characters that require quoting.  */
-  {
-    const char* c;
-    for (c = in; *c; ++c) {
-      /* Look for $(MAKEVAR) syntax if requested.  */
-      if (flags & Shell_Flag_AllowMakeVariables) {
+  for (cm::string_view::iterator cit = in.begin(), cend = in.end();
+       cit != cend; ++cit) {
+    /* Look for $(MAKEVAR) syntax if requested.  */
+    if (flags & Shell_Flag_AllowMakeVariables) {
 #if KWSYS_SYSTEM_SHELL_QUOTE_MAKE_VARIABLES
-        const char* skip = Shell__SkipMakeVariables(c);
-        if (skip != c) {
-          /* We need to quote make variable references to preserve the
-             string with contents substituted in its place.  */
-          return 1;
-        }
+      cm::string_view::iterator skip = Shell_SkipMakeVariables(cit, cend);
+      if (skip != cit) {
+        /* We need to quote make variable references to preserve the
+           string with contents substituted in its place.  */
+        return true;
+      }
 #else
-        /* Skip over the make variable references if any are present.  */
-        c = Shell__SkipMakeVariables(c);
+      /* Skip over the make variable references if any are present.  */
+      cit = Shell_SkipMakeVariables(cit, cend);
 
-        /* Stop if we have reached the end of the string.  */
-        if (!*c) {
-          break;
-        }
+      /* Stop if we have reached the end of the string.  */
+      if (cit == cend) {
+        break;
+      }
 #endif
-      }
+    }
 
-      /* Check whether this character needs quotes.  */
-      if (Shell__CharNeedsQuotes(*c, flags)) {
-        return 1;
-      }
+    /* Check whether this character needs quotes.  */
+    if (Shell_CharNeedsQuotes(*cit, flags)) {
+      return true;
     }
   }
 
   /* On Windows some single character arguments need quotes.  */
-  if (flags & Shell_Flag_IsUnix && *in && !*(in + 1)) {
-    char c = *in;
+  if (flags & Shell_Flag_IsUnix && in.size() == 1) {
+    char c = in[0];
     if ((c == '?') || (c == '&') || (c == '^') || (c == '|') || (c == '#')) {
-      return 1;
+      return true;
     }
   }
 
-  return 0;
+  /* UNC paths in MinGW Makefiles need quotes.  */
+  if ((flags & Shell_Flag_MinGWMake) && (flags & Shell_Flag_Make)) {
+    if (in.size() > 1 && in[0] == '\\' && in[1] == '\\') {
+      return true;
+    }
+  }
+
+  return false;
 }
 
-std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
+std::string cmOutputConverter::Shell_GetArgument(cm::string_view in, int flags)
 {
   /* Output will be at least as long as input string.  */
   std::string out;
-  out.reserve(strlen(in));
-
-  /* String iterator.  */
-  const char* c;
+  out.reserve(in.size());
 
   /* Keep track of how many backslashes have been encountered in a row.  */
   int windows_backslashes = 0;
 
   /* Whether the argument must be quoted.  */
-  int needQuotes = Shell__ArgumentNeedsQuotes(in, flags);
+  int needQuotes = Shell_ArgumentNeedsQuotes(in, flags);
   if (needQuotes) {
     /* Add the opening quote for this argument.  */
     if (flags & Shell_Flag_WatcomQuote) {
@@ -378,14 +561,15 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
   }
 
   /* Scan the string for characters that require escaping or quoting.  */
-  for (c = in; *c; ++c) {
+  for (cm::string_view::iterator cit = in.begin(), cend = in.end();
+       cit != cend; ++cit) {
     /* Look for $(MAKEVAR) syntax if requested.  */
     if (flags & Shell_Flag_AllowMakeVariables) {
-      const char* skip = Shell__SkipMakeVariables(c);
-      if (skip != c) {
+      cm::string_view::iterator skip = Shell_SkipMakeVariables(cit, cend);
+      if (skip != cit) {
         /* Copy to the end of the make variable references.  */
-        while (c != skip) {
-          out += *c++;
+        while (cit != skip) {
+          out += *cit++;
         }
 
         /* The make variable reference eliminates any escaping needed
@@ -393,7 +577,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
         windows_backslashes = 0;
 
         /* Stop if we have reached the end of the string.  */
-        if (!*c) {
+        if (cit == cend) {
           break;
         }
       }
@@ -403,7 +587,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
     if (flags & Shell_Flag_IsUnix) {
       /* On Unix a few special characters need escaping even inside a
          quoted argument.  */
-      if (*c == '\\' || *c == '"' || *c == '`' || *c == '$') {
+      if (*cit == '\\' || *cit == '"' || *cit == '`' || *cit == '$') {
         /* This character needs a backslash to escape it.  */
         out += '\\';
       }
@@ -411,10 +595,10 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
       /* On Windows the built-in command shell echo never needs escaping.  */
     } else {
       /* On Windows only backslashes and double-quotes need escaping.  */
-      if (*c == '\\') {
+      if (*cit == '\\') {
         /* Found a backslash.  It may need to be escaped later.  */
         ++windows_backslashes;
-      } else if (*c == '"') {
+      } else if (*cit == '"') {
         /* Found a double-quote.  Escape all immediately preceding
            backslashes.  */
         while (windows_backslashes > 0) {
@@ -432,7 +616,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
     }
 
     /* Check whether this character needs escaping for a make tool.  */
-    if (*c == '$') {
+    if (*cit == '$') {
       if (flags & Shell_Flag_Make) {
         /* In Makefiles a dollar is written $$.  The make tool will
            replace it with just $ before passing it to the shell.  */
@@ -449,7 +633,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
         /* Otherwise a dollar is written just $. */
         out += '$';
       }
-    } else if (*c == '#') {
+    } else if (*cit == '#') {
       if ((flags & Shell_Flag_Make) && (flags & Shell_Flag_WatcomWMake)) {
         /* In Watcom WMake makefiles a pound is written $#.  The make
            tool will replace it with just # before passing it to the
@@ -459,7 +643,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
         /* Otherwise a pound is written just #. */
         out += '#';
       }
-    } else if (*c == '%') {
+    } else if (*cit == '%') {
       if ((flags & Shell_Flag_VSIDE) ||
           ((flags & Shell_Flag_Make) &&
            ((flags & Shell_Flag_MinGWMake) || (flags & Shell_Flag_NMake)))) {
@@ -469,7 +653,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
         /* Otherwise a percent is written just %. */
         out += '%';
       }
-    } else if (*c == ';') {
+    } else if (*cit == ';') {
       if (flags & Shell_Flag_VSIDE) {
         /* In a VS IDE a semicolon is written ";".  If this is written
            in an un-quoted argument it starts a quoted segment,
@@ -483,7 +667,7 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
       }
     } else {
       /* Store this character.  */
-      out += *c;
+      out += *cit;
     }
   }
 
@@ -503,6 +687,15 @@ std::string cmOutputConverter::Shell__GetArgument(const char* in, int flags)
     } else {
       out += '"';
     }
+  }
+
+  if (flags & Shell_Flag_UnescapeNinjaConfiguration) {
+    std::string ninjaConfigReplace;
+    if (flags & Shell_Flag_IsUnix) {
+      ninjaConfigReplace += '\\';
+    }
+    ninjaConfigReplace += "$${CONFIGURATION}";
+    cmSystemTools::ReplaceString(out, ninjaConfigReplace, "${CONFIGURATION}");
   }
 
   return out;

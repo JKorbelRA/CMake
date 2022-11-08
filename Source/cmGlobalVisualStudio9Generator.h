@@ -1,9 +1,14 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmGlobalVisualStudio9Generator_h
-#define cmGlobalVisualStudio9Generator_h
+#pragma once
+
+#include <memory>
+#include <string>
 
 #include "cmGlobalVisualStudio8Generator.h"
+
+class cmGlobalGeneratorFactory;
+class cmake;
 
 /** \class cmGlobalVisualStudio9Generator
  * \brief Write a Unix makefiles.
@@ -13,7 +18,7 @@
 class cmGlobalVisualStudio9Generator : public cmGlobalVisualStudio8Generator
 {
 public:
-  static cmGlobalGeneratorFactory* NewFactory();
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory();
 
   /**
    * Where does this version of Visual Studio look for macros for the
@@ -36,4 +41,3 @@ private:
   class Factory;
   friend class Factory;
 };
-#endif

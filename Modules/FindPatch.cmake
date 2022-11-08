@@ -5,6 +5,8 @@
 FindPatch
 ---------
 
+.. versionadded:: 3.10
+
 The module defines the following variables:
 
 ``Patch_EXECUTABLE``
@@ -41,7 +43,7 @@ endif()
 
 # First search the PATH
 find_program(Patch_EXECUTABLE
-  NAME patch
+  NAMES patch
   PATHS ${_patch_path}
   DOC ${_doc}
   )

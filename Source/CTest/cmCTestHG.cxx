@@ -2,16 +2,18 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestHG.h"
 
-#include "cmAlgorithms.h"
+#include <ostream>
+#include <vector>
+
+#include <cmext/algorithm>
+
+#include "cmsys/RegularExpression.hxx"
+
 #include "cmCTest.h"
 #include "cmCTestVC.h"
 #include "cmProcessTools.h"
 #include "cmSystemTools.h"
 #include "cmXMLParser.h"
-
-#include "cmsys/RegularExpression.hxx"
-#include <ostream>
-#include <vector>
 
 cmCTestHG::cmCTestHG(cmCTest* ct, std::ostream& log)
   : cmCTestGlobalVC(ct, log)
@@ -155,7 +157,7 @@ bool cmCTestHG::UpdateImpl()
 
   OutputLogger out(this->Log, "update-out> ");
   OutputLogger err(this->Log, "update-err> ");
-  return this->RunUpdateCommand(&hg_update[0], &out, &err);
+  return this->RunUpdateCommand(hg_update.data(), &out, &err);
 }
 
 class cmCTestHG::LogParser
@@ -174,8 +176,8 @@ public:
 private:
   cmCTestHG* HG;
 
-  typedef cmCTestHG::Revision Revision;
-  typedef cmCTestHG::Change Change;
+  using Revision = cmCTestHG::Revision;
+  using Change = cmCTestHG::Change;
   Revision Rev;
   std::vector<Change> Changes;
   Change CurChange;
@@ -203,7 +205,7 @@ private:
 
   void CharacterDataHandler(const char* data, int length) override
   {
-    cmAppend(this->CData, data, data + length);
+    cm::append(this->CData, data, data + length);
   }
 
   void EndElement(const std::string& name) override
@@ -211,13 +213,13 @@ private:
     if (name == "logentry") {
       this->HG->DoRevision(this->Rev, this->Changes);
     } else if (!this->CData.empty() && name == "author") {
-      this->Rev.Author.assign(&this->CData[0], this->CData.size());
+      this->Rev.Author.assign(this->CData.data(), this->CData.size());
     } else if (!this->CData.empty() && name == "email") {
-      this->Rev.EMail.assign(&this->CData[0], this->CData.size());
+      this->Rev.EMail.assign(this->CData.data(), this->CData.size());
     } else if (!this->CData.empty() && name == "date") {
-      this->Rev.Date.assign(&this->CData[0], this->CData.size());
+      this->Rev.Date.assign(this->CData.data(), this->CData.size());
     } else if (!this->CData.empty() && name == "msg") {
-      this->Rev.Log.assign(&this->CData[0], this->CData.size());
+      this->Rev.Log.assign(this->CData.data(), this->CData.size());
     } else if (!this->CData.empty() && name == "files") {
       std::vector<std::string> paths = this->SplitCData();
       for (std::string const& path : paths) {

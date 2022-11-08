@@ -3,18 +3,31 @@
 #include "cmXCodeScheme.h"
 
 #include <iomanip>
-#include <iostream>
 #include <sstream>
 #include <utility>
 
-#include "cmGeneratedFileStream.h"
-#include "cmGeneratorTarget.h"
-#include "cmXMLSafe.h"
+#include <cmext/algorithm>
 
-cmXCodeScheme::cmXCodeScheme(cmXCodeObject* xcObj, TestObjects tests,
+#include "cmsys/String.h"
+
+#include "cmGeneratedFileStream.h"
+#include "cmGeneratorExpression.h"
+#include "cmGeneratorTarget.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmValue.h"
+#include "cmXCodeObject.h"
+#include "cmXMLWriter.h"
+
+class cmLocalGenerator;
+
+cmXCodeScheme::cmXCodeScheme(cmLocalGenerator* lg, cmXCodeObject* xcObj,
+                             TestObjects tests,
                              const std::vector<std::string>& configList,
                              unsigned int xcVersion)
-  : Target(xcObj)
+  : LocalGenerator(lg)
+  , Target(xcObj)
   , Tests(std::move(tests))
   , TargetName(xcObj->GetTarget()->GetName())
   , ConfigList(configList)
@@ -27,14 +40,11 @@ void cmXCodeScheme::WriteXCodeSharedScheme(const std::string& xcProjDir,
 {
   // Create shared scheme sub-directory tree
   //
-  std::string xcodeSchemeDir = xcProjDir;
-  xcodeSchemeDir += "/xcshareddata/xcschemes";
-  cmSystemTools::MakeDirectory(xcodeSchemeDir.c_str());
+  std::string xcodeSchemeDir = cmStrCat(xcProjDir, "/xcshareddata/xcschemes");
+  cmSystemTools::MakeDirectory(xcodeSchemeDir);
 
-  std::string xcodeSchemeFile = xcodeSchemeDir;
-  xcodeSchemeFile += "/";
-  xcodeSchemeFile += this->TargetName;
-  xcodeSchemeFile += ".xcscheme";
+  std::string xcodeSchemeFile =
+    cmStrCat(xcodeSchemeDir, '/', this->TargetName, ".xcscheme");
 
   cmGeneratedFileStream fout(xcodeSchemeFile);
   fout.SetCopyIfDifferent(true);
@@ -57,9 +67,14 @@ void cmXCodeScheme::WriteXCodeXCScheme(std::ostream& fout,
   xout.Attribute("LastUpgradeVersion", WriteVersionString());
   xout.Attribute("version", "1.3");
 
+  cmValue propDftCfg =
+    Target->GetTarget()->GetProperty("XCODE_SCHEME_LAUNCH_CONFIGURATION");
+  std::string launchConfiguration =
+    !propDftCfg.IsEmpty() ? *propDftCfg : "Debug";
+
   WriteBuildAction(xout, container);
   WriteTestAction(xout, FindConfiguration("Debug"), container);
-  WriteLaunchAction(xout, FindConfiguration("Debug"), container);
+  WriteLaunchAction(xout, FindConfiguration(launchConfiguration), container);
   WriteProfileAction(xout, FindConfiguration("Release"));
   WriteAnalyzeAction(xout, FindConfiguration("Debug"));
   WriteArchiveAction(xout, FindConfiguration("Release"));
@@ -137,12 +152,33 @@ void cmXCodeScheme::WriteLaunchAction(cmXMLWriter& xout,
                  "Xcode.DebuggerFoundation.Debugger.LLDB");
   xout.Attribute("selectedLauncherIdentifier",
                  "Xcode.DebuggerFoundation.Launcher.LLDB");
-  xout.Attribute("launchStyle", "0");
-  xout.Attribute("useCustomWorkingDirectory", "NO");
+  {
+    cmValue launchMode =
+      this->Target->GetTarget()->GetProperty("XCODE_SCHEME_LAUNCH_MODE");
+    std::string value = "0"; // == 'AUTO'
+    if (launchMode && *launchMode == "WAIT") {
+      value = "1";
+    }
+    xout.Attribute("launchStyle", value);
+  }
+  WriteCustomWorkingDirectory(xout, configuration);
+
   xout.Attribute("ignoresPersistentStateOnLaunch", "NO");
-  xout.Attribute("debugDocumentVersioning", "YES");
+  WriteLaunchActionBooleanAttribute(xout, "debugDocumentVersioning",
+                                    "XCODE_SCHEME_DEBUG_DOCUMENT_VERSIONING",
+                                    true);
   xout.Attribute("debugServiceExtension", "internal");
   xout.Attribute("allowLocationSimulation", "YES");
+  if (cmValue gpuFrameCaptureMode = this->Target->GetTarget()->GetProperty(
+        "XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE")) {
+    std::string value = *gpuFrameCaptureMode;
+    if (cmsysString_strcasecmp(value.c_str(), "Metal") == 0) {
+      value = "1";
+    } else if (cmsysString_strcasecmp(value.c_str(), "Disabled") == 0) {
+      value = "3";
+    }
+    xout.Attribute("enableGPUFrameCaptureMode", value);
+  }
 
   // Diagnostics tab begin
 
@@ -167,6 +203,23 @@ void cmXCodeScheme::WriteLaunchAction(cmXMLWriter& xout,
 
   WriteLaunchActionAttribute(xout, "enableUBSanitizer",
                              "XCODE_SCHEME_UNDEFINED_BEHAVIOUR_SANITIZER");
+
+  if (cmValue value = this->Target->GetTarget()->GetProperty(
+        "XCODE_SCHEME_ENABLE_GPU_API_VALIDATION")) {
+    if (value.IsOff()) {
+      xout.Attribute("enableGPUValidationMode",
+                     "1"); // unset means YES, "1" means NO
+    }
+  }
+
+  if (cmValue value = this->Target->GetTarget()->GetProperty(
+        "XCODE_SCHEME_ENABLE_GPU_SHADER_VALIDATION")) {
+    if (value.IsOn()) {
+      xout.Attribute("enableGPUShaderValidationMode",
+                     "2"); // unset means NO, "2" means YES
+    }
+  }
+
   WriteLaunchActionAttribute(
     xout, "stopOnEveryUBSanitizerIssue",
     "XCODE_SCHEME_UNDEFINED_BEHAVIOUR_SANITIZER_STOP");
@@ -199,14 +252,14 @@ void cmXCodeScheme::WriteLaunchAction(cmXMLWriter& xout,
 
   // Info tab begin
 
-  if (const char* exe =
+  if (cmValue exe =
         this->Target->GetTarget()->GetProperty("XCODE_SCHEME_EXECUTABLE")) {
 
     xout.StartElement("PathRunnable");
     xout.BreakAttributes();
 
     xout.Attribute("runnableDebuggingMode", "0");
-    xout.Attribute("FilePath", exe);
+    xout.Attribute("FilePath", *exe);
 
     xout.EndElement(); // PathRunnable
   }
@@ -215,10 +268,9 @@ void cmXCodeScheme::WriteLaunchAction(cmXMLWriter& xout,
 
   // Arguments tab begin
 
-  if (const char* argList =
+  if (cmValue argList =
         this->Target->GetTarget()->GetProperty("XCODE_SCHEME_ARGUMENTS")) {
-    std::vector<std::string> arguments;
-    cmSystemTools::ExpandListArgument(argList, arguments);
+    std::vector<std::string> arguments = cmExpandedList(*argList);
     if (!arguments.empty()) {
       xout.StartElement("CommandLineArguments");
 
@@ -236,10 +288,9 @@ void cmXCodeScheme::WriteLaunchAction(cmXMLWriter& xout,
     }
   }
 
-  if (const char* envList =
+  if (cmValue envList =
         this->Target->GetTarget()->GetProperty("XCODE_SCHEME_ENVIRONMENT")) {
-    std::vector<std::string> envs;
-    cmSystemTools::ExpandListArgument(envList, envs);
+    std::vector<std::string> envs = cmExpandedList(*envList);
     if (!envs.empty()) {
       xout.StartElement("EnvironmentVariables");
 
@@ -316,6 +367,21 @@ bool cmXCodeScheme::WriteLaunchActionAttribute(cmXMLWriter& xout,
   return false;
 }
 
+bool cmXCodeScheme::WriteLaunchActionBooleanAttribute(
+  cmXMLWriter& xout, const std::string& attrName, const std::string& varName,
+  bool defaultValue)
+{
+  cmValue property = Target->GetTarget()->GetProperty(varName);
+  bool isOn = (!property && defaultValue) || cmIsOn(property);
+
+  if (isOn) {
+    xout.Attribute(attrName.c_str(), "YES");
+  } else {
+    xout.Attribute(attrName.c_str(), "NO");
+  }
+  return isOn;
+}
+
 bool cmXCodeScheme::WriteLaunchActionAdditionalOption(
   cmXMLWriter& xout, const std::string& key, const std::string& value,
   const std::string& varName)
@@ -343,8 +409,10 @@ void cmXCodeScheme::WriteProfileAction(cmXMLWriter& xout,
   xout.Attribute("buildConfiguration", configuration);
   xout.Attribute("shouldUseLaunchSchemeArgsEnv", "YES");
   xout.Attribute("savedToolIdentifier", "");
-  xout.Attribute("useCustomWorkingDirectory", "NO");
-  xout.Attribute("debugDocumentVersioning", "YES");
+  WriteCustomWorkingDirectory(xout, configuration);
+  WriteLaunchActionBooleanAttribute(xout, "debugDocumentVersioning",
+                                    "XCODE_SCHEME_DEBUG_DOCUMENT_VERSIONING",
+                                    true);
   xout.EndElement();
 }
 
@@ -375,10 +443,28 @@ void cmXCodeScheme::WriteBuildableReference(cmXMLWriter& xout,
   xout.BreakAttributes();
   xout.Attribute("BuildableIdentifier", "primary");
   xout.Attribute("BlueprintIdentifier", xcObj->GetId());
-  xout.Attribute("BuildableName", xcObj->GetTarget()->GetFullName());
+  std::string const noConfig; // FIXME: What config to use here?
+  xout.Attribute("BuildableName", xcObj->GetTarget()->GetFullName(noConfig));
   xout.Attribute("BlueprintName", xcObj->GetTarget()->GetName());
   xout.Attribute("ReferencedContainer", "container:" + container);
   xout.EndElement();
+}
+
+void cmXCodeScheme::WriteCustomWorkingDirectory(
+  cmXMLWriter& xout, const std::string& configuration)
+{
+  std::string const& propertyValue =
+    this->Target->GetTarget()->GetSafeProperty(
+      "XCODE_SCHEME_WORKING_DIRECTORY");
+  if (propertyValue.empty()) {
+    xout.Attribute("useCustomWorkingDirectory", "NO");
+  } else {
+    xout.Attribute("useCustomWorkingDirectory", "YES");
+
+    auto customWorkingDirectory = cmGeneratorExpression::Evaluate(
+      propertyValue, this->LocalGenerator, configuration);
+    xout.Attribute("customWorkingDirectory", customWorkingDirectory);
+  }
 }
 
 std::string cmXCodeScheme::WriteVersionString()
@@ -393,9 +479,7 @@ std::string cmXCodeScheme::FindConfiguration(const std::string& name)
   // Try to find the desired configuration by name,
   // and if it's not found return first from the list
   //
-  if (std::find(this->ConfigList.begin(), this->ConfigList.end(), name) ==
-        this->ConfigList.end() &&
-      !this->ConfigList.empty()) {
+  if (!cm::contains(this->ConfigList, name) && !this->ConfigList.empty()) {
     return this->ConfigList[0];
   }
 

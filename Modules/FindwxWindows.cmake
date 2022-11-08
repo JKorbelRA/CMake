@@ -79,8 +79,7 @@ DEPRECATED
 
 
 
-AUTHOR Jan Woetzel <http://www.mip.informatik.uni-kiel.de/~jw>
-(07/2003-01/2006)
+AUTHOR Jan Woetzel (07/2003-01/2006)
 #]=======================================================================]
 
 # ------------------------------------------------------------------
@@ -307,7 +306,7 @@ if(WIN32_STYLE_FIND)
   else ()
     ## WX is built as multiple small pieces libraries instead of monolithic
 
-    ## DEPECATED (jw) replaced by more general WXWINDOWS_USE_MONOLITHIC ON/OFF
+    ## DEPRECATED (jw) replaced by more general WXWINDOWS_USE_MONOLITHIC ON/OFF
     # option(WXWINDOWS_SEPARATE_LIBS_BUILD "Is wxWindows build with separate libs?" OFF)
 
     ## HACK: This is very dirty.

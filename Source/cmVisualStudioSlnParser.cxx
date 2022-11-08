@@ -2,12 +2,17 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmVisualStudioSlnParser.h"
 
-#include "cmSystemTools.h"
-#include "cmVisualStudioSlnData.h"
+#include <cassert>
+#include <memory>
+#include <stack>
+#include <utility>
+#include <vector>
+
 #include "cmsys/FStream.hxx"
 
-#include <cassert>
-#include <stack>
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmVisualStudioSlnData.h"
 
 namespace {
 enum LineFormat
@@ -50,7 +55,7 @@ public:
   void CopyVerbatim(const std::string& line) { this->Tag = line; }
 
 private:
-  typedef std::pair<std::string, bool> StringData;
+  using StringData = std::pair<std::string, bool>;
   std::string Tag;
   StringData Arg;
   std::vector<StringData> Values;
@@ -192,8 +197,8 @@ bool cmVisualStudioSlnParser::State::Process(
   assert(!line.IsComment());
   switch (this->Stack.top()) {
     case FileStateStart:
-      if (!cmSystemTools::StringStartsWith(
-            line.GetTag().c_str(), "Microsoft Visual Studio Solution File")) {
+      if (!cmHasLiteralPrefix(line.GetTag(),
+                              "Microsoft Visual Studio Solution File")) {
         result.SetError(ResultErrorInputStructure, this->GetCurrentLine());
         return false;
       }
@@ -215,9 +220,14 @@ bool cmVisualStudioSlnParser::State::Process(
           this->Stack.push(FileStateProject);
         } else
           this->IgnoreUntilTag("EndProject");
-      } else if (line.GetTag().compare("Global") == 0)
+      } else if (line.GetTag().compare("Global") == 0) {
+
         this->Stack.push(FileStateGlobal);
-      else {
+      } else if (line.GetTag().compare("VisualStudioVersion") == 0) {
+        output.SetVisualStudioVersion(line.GetValue(0));
+      } else if (line.GetTag().compare("MinimumVisualStudioVersion") == 0) {
+        output.SetMinimumVisualStudioVersion(line.GetValue(0));
+      } else {
         result.SetError(ResultErrorInputStructure, this->GetCurrentLine());
         return false;
       }
@@ -285,10 +295,9 @@ bool cmVisualStudioSlnParser::State::Process(
     case FileStateSolutionConfigurations:
       if (line.GetTag().compare("EndGlobalSection") == 0)
         this->Stack.pop();
-      else if (line.IsKeyValuePair())
-        // implement configuration storing here, once needed
-        ;
-      else {
+      else if (line.IsKeyValuePair()) {
+        output.AddConfiguration(line.GetValue(0));
+      } else {
         result.SetError(ResultErrorInputStructure, this->GetCurrentLine());
         return false;
       }
@@ -296,10 +305,30 @@ bool cmVisualStudioSlnParser::State::Process(
     case FileStateProjectConfigurations:
       if (line.GetTag().compare("EndGlobalSection") == 0)
         this->Stack.pop();
-      else if (line.IsKeyValuePair())
-        // implement configuration storing here, once needed
-        ;
-      else {
+      else if (line.IsKeyValuePair()) {
+        std::vector<std::string> tagElements =
+          cmSystemTools::SplitString(line.GetTag(), '.');
+        if (tagElements.size() != 3 && tagElements.size() != 4) {
+          result.SetError(ResultErrorInputStructure, this->GetCurrentLine());
+          return false;
+        }
+
+        std::string guid = tagElements[0];
+        std::string solutionConfiguration = tagElements[1];
+        std::string activeBuild = tagElements[2];
+        cm::optional<cmSlnProjectEntry> projectEntry =
+          output.GetProjectByGUID(guid);
+
+        if (!projectEntry) {
+          result.SetError(ResultErrorInputStructure, this->GetCurrentLine());
+          return false;
+        }
+
+        if (activeBuild.compare("ActiveCfg") == 0) {
+          projectEntry->AddProjectConfiguration(solutionConfiguration,
+                                                line.GetValue(0));
+        }
+      } else {
         result.SetError(ResultErrorInputStructure, this->GetCurrentLine());
         return false;
       }
@@ -450,8 +479,7 @@ bool cmVisualStudioSlnParser::GetParseHadBOM() const
 bool cmVisualStudioSlnParser::IsDataGroupSetSupported(
   DataGroupSet dataGroups) const
 {
-  return (dataGroups & DataGroupProjects) == dataGroups;
-  // only supporting DataGroupProjects for now
+  return (dataGroups & DataGroupProjects) != 0;
 }
 
 bool cmVisualStudioSlnParser::ParseImpl(std::istream& input, cmSlnData& output,
@@ -462,7 +490,7 @@ bool cmVisualStudioSlnParser::ParseImpl(std::istream& input, cmSlnData& output,
   if (!this->ParseBOM(input, line, state))
     return false;
   do {
-    line = cmSystemTools::TrimWhitespace(line);
+    line = cmTrimWhitespace(line);
     if (line.empty())
       continue;
     ParsedLine parsedLine;
@@ -515,7 +543,7 @@ bool cmVisualStudioSlnParser::ParseMultiValueTag(const std::string& line,
                                                  State& state)
 {
   size_t idxEqualSign = line.find('=');
-  const std::string& fullTag = line.substr(0, idxEqualSign);
+  auto fullTag = cm::string_view(line).substr(0, idxEqualSign);
   if (!this->ParseTag(fullTag, parsedLine, state))
     return false;
   if (idxEqualSign != line.npos) {
@@ -558,7 +586,7 @@ bool cmVisualStudioSlnParser::ParseSingleValueTag(const std::string& line,
                                                   State& state)
 {
   size_t idxEqualSign = line.find('=');
-  const std::string& fullTag = line.substr(0, idxEqualSign);
+  auto fullTag = cm::string_view(line).substr(0, idxEqualSign);
   if (!this->ParseTag(fullTag, parsedLine, state))
     return false;
   if (idxEqualSign != line.npos) {
@@ -578,29 +606,28 @@ bool cmVisualStudioSlnParser::ParseKeyValuePair(const std::string& line,
     return true;
   }
   const std::string& key = line.substr(0, idxEqualSign);
-  parsedLine.SetTag(cmSystemTools::TrimWhitespace(key));
+  parsedLine.SetTag(cmTrimWhitespace(key));
   const std::string& value = line.substr(idxEqualSign + 1);
-  parsedLine.AddValue(cmSystemTools::TrimWhitespace(value));
+  parsedLine.AddValue(cmTrimWhitespace(value));
   return true;
 }
 
-bool cmVisualStudioSlnParser::ParseTag(const std::string& fullTag,
+bool cmVisualStudioSlnParser::ParseTag(cm::string_view fullTag,
                                        ParsedLine& parsedLine, State& state)
 {
   size_t idxLeftParen = fullTag.find('(');
-  if (idxLeftParen == fullTag.npos) {
-    parsedLine.SetTag(cmSystemTools::TrimWhitespace(fullTag));
+  if (idxLeftParen == cm::string_view::npos) {
+    parsedLine.SetTag(cmTrimWhitespace(fullTag));
     return true;
   }
-  parsedLine.SetTag(
-    cmSystemTools::TrimWhitespace(fullTag.substr(0, idxLeftParen)));
+  parsedLine.SetTag(cmTrimWhitespace(fullTag.substr(0, idxLeftParen)));
   size_t idxRightParen = fullTag.rfind(')');
-  if (idxRightParen == fullTag.npos) {
+  if (idxRightParen == cm::string_view::npos) {
     this->LastResult.SetError(ResultErrorInputStructure,
                               state.GetCurrentLine());
     return false;
   }
-  const std::string& arg = cmSystemTools::TrimWhitespace(
+  const std::string& arg = cmTrimWhitespace(
     fullTag.substr(idxLeftParen + 1, idxRightParen - idxLeftParen - 1));
   if (arg.front() == '"') {
     if (arg.back() != '"') {
@@ -617,7 +644,7 @@ bool cmVisualStudioSlnParser::ParseTag(const std::string& fullTag,
 bool cmVisualStudioSlnParser::ParseValue(const std::string& value,
                                          ParsedLine& parsedLine)
 {
-  const std::string& trimmed = cmSystemTools::TrimWhitespace(value);
+  const std::string& trimmed = cmTrimWhitespace(value);
   if (trimmed.empty())
     parsedLine.AddValue(trimmed);
   else if (trimmed.front() == '"' && trimmed.back() == '"')

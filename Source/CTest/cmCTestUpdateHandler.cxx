@@ -2,7 +2,11 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestUpdateHandler.h"
 
-#include "cmAlgorithms.h"
+#include <chrono>
+#include <sstream>
+
+#include <cm/memory>
+
 #include "cmCLocaleEnvironmentScope.h"
 #include "cmCTest.h"
 #include "cmCTestBZR.h"
@@ -13,13 +17,11 @@
 #include "cmCTestSVN.h"
 #include "cmCTestVC.h"
 #include "cmGeneratedFileStream.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
 #include "cmVersion.h"
 #include "cmXMLWriter.h"
-
-#include <chrono>
-#include <memory> // IWYU pragma: keep
-#include <sstream>
 
 static const char* cmCTestUpdateHandlerUpdateStrings[] = {
   "Unknown", "CVS", "SVN", "BZR", "GIT", "HG", "P4"
@@ -107,7 +109,7 @@ int cmCTestUpdateHandler::ProcessHandler()
   static_cast<void>(fixLocale);
 
   // Get source dir
-  const char* sourceDirectory = this->GetOption("SourceDirectory");
+  cmValue sourceDirectory = this->GetOption("SourceDirectory");
   if (!sourceDirectory) {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
                "Cannot find SourceDirectory  key in the DartConfiguration.tcl"
@@ -239,7 +241,7 @@ int cmCTestUpdateHandler::ProcessHandler()
   if (localModifications) {
     xml.Content("Update error: "
                 "There are modified or conflicting files in the repository");
-    cmCTestLog(this->CTest, ERROR_MESSAGE,
+    cmCTestLog(this->CTest, WARNING,
                "   There are modified or conflicting files in the repository"
                  << std::endl);
   }
@@ -256,7 +258,7 @@ int cmCTestUpdateHandler::ProcessHandler()
   return updated && loadedMods ? numUpdated : -1;
 }
 
-int cmCTestUpdateHandler::DetectVCS(const char* dir)
+int cmCTestUpdateHandler::DetectVCS(const std::string& dir)
 {
   std::string sourceDirectory = dir;
   cmCTestOptionalLog(this->CTest, DEBUG,
@@ -266,33 +268,27 @@ int cmCTestUpdateHandler::DetectVCS(const char* dir)
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_SVN;
   }
-  sourceDirectory = dir;
-  sourceDirectory += "/CVS";
+  sourceDirectory = cmStrCat(dir, "/CVS");
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_CVS;
   }
-  sourceDirectory = dir;
-  sourceDirectory += "/.bzr";
+  sourceDirectory = cmStrCat(dir, "/.bzr");
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_BZR;
   }
-  sourceDirectory = dir;
-  sourceDirectory += "/.git";
+  sourceDirectory = cmStrCat(dir, "/.git");
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_GIT;
   }
-  sourceDirectory = dir;
-  sourceDirectory += "/.hg";
+  sourceDirectory = cmStrCat(dir, "/.hg");
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_HG;
   }
-  sourceDirectory = dir;
-  sourceDirectory += "/.p4";
+  sourceDirectory = cmStrCat(dir, "/.p4");
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_P4;
   }
-  sourceDirectory = dir;
-  sourceDirectory += "/.p4config";
+  sourceDirectory = cmStrCat(dir, "/.p4config");
   if (cmSystemTools::FileExists(sourceDirectory)) {
     return cmCTestUpdateHandler::e_P4;
   }

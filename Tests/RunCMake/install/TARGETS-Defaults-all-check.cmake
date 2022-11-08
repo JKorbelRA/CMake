@@ -6,8 +6,7 @@ if(WIN32)
     [[include]]
     [[include/obj1\.h]]
     [[include/obj2\.h]]
-    [[include/obj4\.h]]
-    [[include/obj5\.h]]
+    [[include/obj3\.h]]
     [[lib]]
     [[lib/(lib)?lib1\.(dll\.a|lib)]]
     [[lib/(lib)?lib2\.(a|lib)]]
@@ -15,6 +14,23 @@ if(WIN32)
     [[lib3/(lib)?lib3\.(dll\.a|lib)]]
     [[lib4]]
     [[lib4/(lib)?lib4\.dll]]
+    )
+elseif(MSYS)
+  set(_check_files
+    [[bin]]
+    [[bin/exe\.exe]]
+    [[bin/msys-lib1\.dll]]
+    [[include]]
+    [[include/obj1\.h]]
+    [[include/obj2\.h]]
+    [[include/obj3\.h]]
+    [[lib]]
+    [[lib/liblib1\.dll\.a]]
+    [[lib/liblib2\.a]]
+    [[lib3]]
+    [[lib3/liblib3\.dll\.a]]
+    [[lib4]]
+    [[lib4/msys-lib4\.dll]]
     )
 elseif(CYGWIN)
   set(_check_files
@@ -24,8 +40,7 @@ elseif(CYGWIN)
     [[include]]
     [[include/obj1\.h]]
     [[include/obj2\.h]]
-    [[include/obj4\.h]]
-    [[include/obj5\.h]]
+    [[include/obj3\.h]]
     [[lib]]
     [[lib/liblib1\.dll\.a]]
     [[lib/liblib2\.a]]
@@ -41,8 +56,7 @@ else()
     [[include]]
     [[include/obj1\.h]]
     [[include/obj2\.h]]
-    [[include/obj4\.h]]
-    [[include/obj5\.h]]
+    [[include/obj3\.h]]
     [[lib]]
     [[lib/liblib1\.(dylib|so)]]
     [[lib/liblib2\.a]]

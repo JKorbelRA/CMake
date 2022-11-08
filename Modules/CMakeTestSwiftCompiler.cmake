@@ -20,11 +20,13 @@ unset(CMAKE_Swift_COMPILER_WORKS CACHE)
 # is set and cmake stops processing commands and will not generate
 # any makefiles or projects.
 if(NOT CMAKE_Swift_COMPILER_WORKS)
-  PrintTestCompilerStatus("Swift" "")
-  file(WRITE ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/main.swift
-    "print(\"CMake\")\n")
-  try_compile(CMAKE_Swift_COMPILER_WORKS ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/main.swift
+  PrintTestCompilerStatus("Swift")
+  # Clear result from normal variable.
+  unset(CMAKE_Swift_COMPILER_WORKS)
+  # Puts test result in cache variable.
+  set(__CMAKE_Swift_TEST_SOURCE "print(\"CMake\")\n")
+  try_compile(CMAKE_Swift_COMPILER_WORKS
+    SOURCE_FROM_VAR main.swift __CMAKE_Swift_TEST_SOURCE
     OUTPUT_VARIABLE __CMAKE_Swift_COMPILER_OUTPUT)
   # Move result from cache to normal variable.
   set(CMAKE_Swift_COMPILER_WORKS ${CMAKE_Swift_COMPILER_WORKS})
@@ -33,7 +35,7 @@ if(NOT CMAKE_Swift_COMPILER_WORKS)
 endif()
 
 if(NOT CMAKE_Swift_COMPILER_WORKS)
-  PrintTestCompilerStatus("Swift" " -- broken")
+  PrintTestCompilerResult(CHECK_FAIL "broken")
   file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
     "Determining if the Swift compiler works failed with "
     "the following output:\n${__CMAKE_Swift_COMPILER_OUTPUT}\n\n")
@@ -44,11 +46,16 @@ if(NOT CMAKE_Swift_COMPILER_WORKS)
     "CMake will not be able to correctly generate this project.")
 else()
   if(Swift_TEST_WAS_RUN)
-    PrintTestCompilerStatus("Swift" " -- works")
+    PrintTestCompilerResult(CHECK_PASS "works")
     file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
       "Determining if the Swift compiler works passed with "
       "the following output:\n${__CMAKE_Swift_COMPILER_OUTPUT}\n\n")
   endif()
+
+  # Unlike C and CXX we do not yet detect any information about the Swift ABI.
+  # However, one of the steps done for C and CXX as part of that detection is
+  # to initialize the implicit include directories.  That is relevant here.
+  set(CMAKE_Swift_IMPLICIT_INCLUDE_DIRECTORIES "${_CMAKE_Swift_IMPLICIT_INCLUDE_DIRECTORIES_INIT}")
 
   # Re-configure to save learned information.
   configure_file(${CMAKE_ROOT}/Modules/CMakeSwiftCompiler.cmake.in
@@ -56,4 +63,5 @@ else()
   include(${CMAKE_PLATFORM_INFO_DIR}/CMakeSwiftCompiler.cmake)
 endif()
 
+unset(__CMAKE_Swift_TEST_SOURCE)
 unset(__CMAKE_Swift_COMPILER_OUTPUT)

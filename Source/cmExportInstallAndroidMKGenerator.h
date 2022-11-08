@@ -1,14 +1,12 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmExportInstallAndroidMKGenerator_h
-#define cmExportInstallAndroidMKGenerator_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <iosfwd>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "cmExportFileGenerator.h"
 #include "cmExportInstallFileGenerator.h"
@@ -51,8 +49,7 @@ protected:
     std::ostream& os, const std::string& config,
     cmGeneratorTarget const* target,
     ImportPropertyMap const& properties) override;
-  void GenerateMissingTargetsCheckCode(
-    std::ostream& os, const std::vector<std::string>& missingTargets) override;
+  void GenerateMissingTargetsCheckCode(std::ostream& os) override;
   void GenerateInterfaceProperties(
     cmGeneratorTarget const* target, std::ostream& os,
     const ImportPropertyMap& properties) override;
@@ -66,8 +63,5 @@ protected:
     std::ostream& os, cmGeneratorTarget* target,
     ImportPropertyMap const& properties,
     const std::set<std::string>& importedLocations) override;
-  bool GenerateImportFileConfig(const std::string& config,
-                                std::vector<std::string>&) override;
+  bool GenerateImportFileConfig(const std::string& config) override;
 };
-
-#endif

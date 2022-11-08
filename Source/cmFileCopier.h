@@ -1,41 +1,42 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#ifndef cmFileCopier_h
-#define cmFileCopier_h
+#pragma once
 
 #include "cmConfigure.h" // IWYU pragma: keep
-
-#include "cmFileTimeCache.h"
-#include "cm_sys_stat.h"
-#include "cmsys/RegularExpression.hxx"
 
 #include <string>
 #include <vector>
 
-class cmFileCommand;
+#include "cmsys/RegularExpression.hxx"
+
+#include "cm_sys_stat.h"
+
+#include "cmFileTimeCache.h"
+
+class cmExecutionStatus;
 class cmMakefile;
 
 // File installation helper class.
 struct cmFileCopier
 {
-  cmFileCopier(cmFileCommand* command, const char* name = "COPY");
+  cmFileCopier(cmExecutionStatus& status, const char* name = "COPY");
   virtual ~cmFileCopier();
 
   bool Run(std::vector<std::string> const& args);
 
 protected:
-  cmFileCommand* FileCommand;
+  cmExecutionStatus& Status;
   cmMakefile* Makefile;
   const char* Name;
-  bool Always;
+  bool Always = false;
   cmFileTimeCache FileTimes;
 
   // Whether to install a file not matching any expression.
-  bool MatchlessFiles;
+  bool MatchlessFiles = true;
 
   // Permissions for files and directories installed by this object.
-  mode_t FilePermissions;
-  mode_t DirPermissions;
+  mode_t FilePermissions = 0;
+  mode_t DirPermissions = 0;
 
   // Properties set by pattern and regex match rules.
   struct MatchProperties
@@ -66,8 +67,9 @@ protected:
 
   bool InstallSymlinkChain(std::string& fromFile, std::string& toFile);
   bool InstallSymlink(const std::string& fromFile, const std::string& toFile);
-  bool InstallFile(const std::string& fromFile, const std::string& toFile,
-                   MatchProperties match_properties);
+  virtual bool InstallFile(const std::string& fromFile,
+                           const std::string& toFile,
+                           MatchProperties match_properties);
   bool InstallDirectory(const std::string& source,
                         const std::string& destination,
                         MatchProperties match_properties);
@@ -83,17 +85,15 @@ protected:
   virtual void ReportCopy(const std::string&, Type, bool) {}
   virtual bool ReportMissing(const std::string& fromFile);
 
-  MatchRule* CurrentMatchRule;
-  bool UseGivenPermissionsFile;
-  bool UseGivenPermissionsDir;
-  bool UseSourcePermissions;
-  bool FollowSymlinkChain;
+  MatchRule* CurrentMatchRule = nullptr;
+  bool UseGivenPermissionsFile = false;
+  bool UseGivenPermissionsDir = false;
+  bool UseSourcePermissions = true;
+  bool FollowSymlinkChain = false;
   std::string Destination;
   std::string FilesFromDir;
   std::vector<std::string> Files;
-  int Doing;
 
-  virtual bool Parse(std::vector<std::string> const& args);
   enum
   {
     DoingNone,
@@ -108,6 +108,9 @@ protected:
     DoingPermissionsMatch,
     DoingLast1
   };
+  int Doing = DoingNone;
+
+  virtual bool Parse(std::vector<std::string> const& args);
   virtual bool CheckKeyword(std::string const& arg);
   virtual bool CheckValue(std::string const& arg);
 
@@ -118,5 +121,3 @@ protected:
 
   bool GetDefaultDirectoryPermissions(mode_t** mode);
 };
-
-#endif

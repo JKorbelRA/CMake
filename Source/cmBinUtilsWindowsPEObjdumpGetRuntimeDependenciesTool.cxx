@@ -2,12 +2,14 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 
 #include "cmBinUtilsWindowsPEObjdumpGetRuntimeDependenciesTool.h"
-#include "cmRuntimeDependencyArchive.h"
-#include "cmUVProcessChain.h"
+
+#include <sstream>
 
 #include <cmsys/RegularExpression.hxx>
 
-#include <sstream>
+#include "cmRuntimeDependencyArchive.h"
+#include "cmSystemTools.h"
+#include "cmUVProcessChain.h"
 
 cmBinUtilsWindowsPEObjdumpGetRuntimeDependenciesTool::
   cmBinUtilsWindowsPEObjdumpGetRuntimeDependenciesTool(
@@ -41,8 +43,8 @@ bool cmBinUtilsWindowsPEObjdumpGetRuntimeDependenciesTool::GetFileInfo(
 
   std::string line;
   static const cmsys::RegularExpression regex(
-    "^\t*DLL Name: ([^\n]*\\.[Dd][Ll][Ll])\r$");
-  while (std::getline(*process.OutputStream(), line)) {
+    "^\t*DLL Name: ([^\n]*\\.[Dd][Ll][Ll])$");
+  while (cmSystemTools::GetLineFromStream(*process.OutputStream(), line)) {
     cmsys::RegularExpressionMatch match;
     if (regex.find(line.c_str(), match)) {
       needed.push_back(match.match(1));
