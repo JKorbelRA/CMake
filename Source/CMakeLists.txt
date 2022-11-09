@@ -859,6 +859,12 @@ if(WIN32)
         cmVisualStudioWCEPlatformParser.cxx
         cmVSSetupHelper.cxx
         cmVSSetupHelper.h
+# RA PATCH: Add IAR generators
+      cmGlobalIarGenerator.cxx
+      cmGlobalIarGenerator.h
+      cmLocalIarGenerator.cxx
+      cmLocalIarGenerator.h
+# END RA PATCH
       )
 
     # Add a manifest file to executables on Windows to allow for

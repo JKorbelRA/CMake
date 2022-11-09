@@ -38,11 +38,13 @@ constexpr size_t lang_property_size = 4;
 constexpr size_t pie_property_start = 4;
 constexpr size_t pie_property_size = 2;
 #define SETUP_LANGUAGE(name, lang)                                            \
-  static const std::string name[lang_property_size + pie_property_size + 1] = \
-    { "CMAKE_" #lang "_COMPILER_EXTERNAL_TOOLCHAIN",                          \
-      "CMAKE_" #lang "_COMPILER_TARGET",                                      \
-      "CMAKE_" #lang "_LINK_NO_PIE_SUPPORTED",                                \
-      "CMAKE_" #lang "_PIE_SUPPORTED", "" }
+  static const std::string name[lang_property_size + pie_property_size +      \
+                                1] = { "CMAKE_" #lang                         \
+                                       "_COMPILER_EXTERNAL_TOOLCHAIN",        \
+                                       "CMAKE_" #lang "_COMPILER_TARGET",     \
+                                       "CMAKE_" #lang                         \
+                                       "_LINK_NO_PIE_SUPPORTED",              \
+                                       "CMAKE_" #lang "_PIE_SUPPORTED", "" }
 
 // NOLINTNEXTLINE(bugprone-suspicious-missing-comma)
 SETUP_LANGUAGE(c_properties, C);
@@ -104,6 +106,29 @@ std::set<std::string> const ghs_platform_vars{
   "GHS_OS_ROOT",         "GHS_OS_DIR",         "GHS_BSP_NAME",
   "GHS_OS_DIR_OPTION"
 };
+
+// RA PATCH
+// IAR platform variables.
+std::set<std::string> const iar_platform_vars{
+  "IAR_EW_ROOT",
+  "IAR_SET_INSTALLATION_FOLDER_MANUALLY",
+  "IAR_DEBUGGER_LOGFILE",
+  "IAR_COMPILER_DLIB_CONFIG",
+  "IAR_CHIP_SELECTION",
+  "IAR_LINKER_ENTRY_ROUTINE",
+  "IAR_TARGET_RTOS",
+  "IAR_TARGET_ARCHITECTURE",
+  "IAR_ARM_PATH",
+  "IAR_DEBUGGER_CSPY_FLASHLOADER_V3",
+  "IAR_SEMIHOSTING_ENABLE",
+  "IAR_DEBUGGER_PROBE",
+  "IAR_GENERAL_BUFFERED_TERMINAL_OUTPUT",
+  "IAR_DEBUGGER_IJET_PROBECONFIG",
+  "IAR_LINKER_ICF_FILE",
+  "IAR_DEBUGGER_CSPY_MEMFILE"
+};
+// END: RA PATCH
+
 using Arguments = cmCoreTryCompile::Arguments;
 
 ArgumentParser::Continue TryCompileLangProp(Arguments& args,
@@ -1055,6 +1080,18 @@ bool cmCoreTryCompile::TryCompileCode(Arguments& arguments,
       }
     }
   }
+
+  // RA PATCH
+  if (this->Makefile->GetState()->UseIarIDE()) {
+    // Forward the GHS variables to the inner project cache.
+    for (std::string const& var : iar_platform_vars) {
+      if (cmValue val = this->Makefile->GetDefinition(var)) {
+        std::string flag = "-D" + var + "=" + "'" + *val + "'";
+        arguments.CMakeFlags.push_back(std::move(flag));
+      }
+    }
+  }
+  // END: RA PATCH
 
   if (this->Makefile->GetCMakeInstance()->GetDebugTryCompile()) {
     auto msg =
