@@ -111,6 +111,9 @@ std::set<std::string> const ghs_platform_vars{
 // IAR platform variables.
 std::set<std::string> const iar_platform_vars{
   "IAR_EW_ROOT",
+  "IAR_INSTALL_DIR",
+  "IAR_TOOLKIT_DIR",
+  "IAR_TOOLKIT_BIN_DIR",
   "IAR_SET_INSTALLATION_FOLDER_MANUALLY",
   "IAR_DEBUGGER_LOGFILE",
   "IAR_COMPILER_DLIB_CONFIG",
@@ -1087,7 +1090,7 @@ bool cmCoreTryCompile::TryCompileCode(Arguments& arguments,
     for (std::string const& var : iar_platform_vars) {
       if (cmValue val = this->Makefile->GetDefinition(var)) {
         std::string flag = "-D" + var + "=" + "'" + *val + "'";
-        arguments.CMakeFlags.push_back(std::move(flag));
+        arguments.CMakeFlags.emplace_back(std::move(flag));
       }
     }
   }

@@ -33,51 +33,60 @@ public:
   static const char* XML_DECL;
 
   cmGlobalIarGenerator(cmake* cm);
-  ~cmGlobalIarGenerator();
-
-  std::unique_ptr<cmLocalGenerator> CreateLocalGenerator(cmMakefile* mf);
+  ~cmGlobalIarGenerator() override;
 
   static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory()
   {
-
     return std::unique_ptr<cmGlobalGeneratorFactory>(
       new cmGlobalGeneratorSimpleFactory<cmGlobalIarGenerator>());
   }
 
-  virtual std::string GetName() const {
-    return cmGlobalIarGenerator::GetActualName();
-  }
+  //! create the correct local generator
+  std::unique_ptr<cmLocalGenerator> CreateLocalGenerator(
+    cmMakefile* mf) override;
 
+  /// @return the name of this generator.
   static std::string GetActualName() { return "IAR Workbench for ARM"; }
+
+  //! Get the name for this generator
+  std::string GetName() const override { return GetActualName(); }
 
   /// Overloaded methods. @see cmGlobalGenerator::GetDocumentation()
   static void GetDocumentation(cmDocumentationEntry& entry);
 
-  ///
-  /// Utilized by the generator factory to determine if this generator
-  /// supports toolsets.
-  ///
-  static bool SupportsToolset() { return false; }
-
-  ///
-  /// Utilized by the generator factory to determine if this generator
-  /// supports platforms.
-  ///
-  static bool SupportsPlatform() { return false; }
-
+  /**
+   * Utilized by the generator factory to determine if this generator
+   * supports toolsets.
+   */
+  static bool SupportsToolset() { return true; }
 
   /**
-  * Try to determine system information such as shared library
-  * extension, pthreads, byte order etc.
-  */
-  virtual void EnableLanguage(std::vector<std::string> const& languages,
-                              cmMakefile*, bool optional);
+   * Utilized by the generator factory to determine if this generator
+   * supports platforms.
+   */
+  static bool SupportsPlatform() { return true; }
+
+  // Toolset / Platform Support
+  bool SetGeneratorToolset(std::string const& ts, bool build,
+                           cmMakefile* mf) override;
+  bool SetGeneratorPlatform(std::string const& p, cmMakefile* mf) override;
+
+  /**
+   * Try to determine system information such as shared library
+   * extension, pthreads, byte order etc.
+   */
+  void EnableLanguage(std::vector<std::string> const& languages, cmMakefile*,
+                      bool optional) override;
   /*
-  * Determine what program to use for building the project.
-  */
+   * Determine what program to use for building the project.
+   */
   bool FindMakeProgram(cmMakefile* mf) override;
 
-  void Generate();
+  void ComputeTargetObjectDirectory(cmGeneratorTarget* gt) const override;
+
+  void Generate() override;
+  void AddExtraIDETargets() override;
+  
 
   bool Open(const std::string& bindir, const std::string& projectName,
             bool dryRun) override;
@@ -337,8 +346,9 @@ private:
     std::string iarCCompilerFlags;
     std::string iarAsmFlags;
     std::string iarCxxCompilerFlags ;
-    std::string iarLinkerFlags      ;
-    std::string iarArmPath          ;
+    std::string iarLinkerFlags;
+    std::string iarArmPath;
+    std::string iarPath;
     std::string compilerDlibConfig  ;
     int compilerDlibConfigId;
     std::string compilerPathExe     ;
@@ -359,7 +369,10 @@ private:
     std::string rtos                ;
     std::string compilerPreInclude  ;
     std::string scanfFmt  ;
-    std::string printfFmt  ;
+    std::string printfFmt;
+    std::string chipThumbSupport;
+    std::string chipSimd;
+    std::string chipFpu;
     int scanfFmtId  ;
     int printfFmtId  ;
     std::string bufferedTermOut;

@@ -586,12 +586,11 @@ void cmGlobalIarGenerator::GetDocumentation(cmDocumentationEntry& entry)
 void cmGlobalIarGenerator::EnableLanguage(
   std::vector<std::string> const& l, cmMakefile* mf, bool optional)
 {
-    // Get global config from IAR_* variables from toolchain and CMakeLists.txt.
-    if (GLOBALCFG.iarArmPath.empty())
-    {
-        // Load the settings only once.
-        GLOBALCFG.iarArmPath = mf->GetSafeDefinition("IAR_ARM_PATH");
-    }
+      // Load the settings only once.
+      GLOBALCFG.iarPath = mf->GetSafeDefinition("IAR_INSTALL_DIR");
+      // Load the settings only once.
+      GLOBALCFG.iarArmPath = mf->GetSafeDefinition("IAR_TOOLKIT_DIR");
+      GLOBALCFG.buildType = mf->GetSafeDefinition("CMAKE_BUILD_TYPE");
 
     this->cmGlobalGenerator::EnableLanguage(l, mf, optional);
 }
@@ -666,7 +665,7 @@ cmGlobalIarGenerator::GenerateBuildCommand(
   {*/
   std::string buildType = GLOBALCFG.buildType;
   if (GLOBALCFG.buildType.empty()) {
-    buildType = "Release";
+    buildType = "Debug";
   }
 
   makeCommand.Add(buildType);
@@ -746,8 +745,8 @@ void cmGlobalIarGenerator::Generate()
   }
 
   GLOBALCFG.compilerPathExe =
-      globalMakefile->GetSafeDefinition("IAR_COMPILER_PATH_EXE");
-  GLOBALCFG.cpuName = globalMakefile->GetSafeDefinition("IAR_CPU_NAME");
+      globalMakefile->GetSafeDefinition("CMAKE_C_COMPILER");
+  GLOBALCFG.cpuName = globalMakefile->GetSafeDefinition("IAR_CORE_NAME");
   GLOBALCFG.systemName =
       globalMakefile->GetSafeDefinition("CMAKE_SYSTEM_NAME");
   GLOBALCFG.dbgExtraOptions =
@@ -767,9 +766,14 @@ void cmGlobalIarGenerator::Generate()
   GLOBALCFG.linkerEntryRoutine =
       globalMakefile->GetSafeDefinition("IAR_LINKER_ENTRY_ROUTINE");
   GLOBALCFG.linkerIcfFile =
-      globalMakefile->GetSafeDefinition("IAR_LINKER_ICF_FILE");
+    globalMakefile->GetSafeDefinition("IAR_LINKER_ICF_FILE");
   GLOBALCFG.tgtArch =
-      globalMakefile->GetSafeDefinition("IAR_TARGET_ARCHITECTURE");
+    globalMakefile->GetSafeDefinition("IAR_TARGET_ARCHITECTURE");
+  GLOBALCFG.chipThumbSupport =
+    globalMakefile->GetSafeDefinition("IAR_CHIP_THUMBSUPPORT");
+  GLOBALCFG.chipFpu = globalMakefile->GetSafeDefinition("IAR_CHIP_FPU");
+  GLOBALCFG.iarPath = globalMakefile->GetSafeDefinition("IAR_INSTALL_DIR");
+  GLOBALCFG.iarArmPath = globalMakefile->GetSafeDefinition("IAR_TOOLKIT_DIR");
 
   GLOBALCFG.rtos = globalMakefile->GetSafeDefinition("IAR_TARGET_RTOS");
 
@@ -1256,8 +1260,15 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
       makeFile->GetOwnedImportedTargets();
 
   cmGlobalIarGenerator::BuildConfig buildCfg;
-  buildCfg.name = GLOBALCFG.buildType;
-  buildCfg.isDebug = (GLOBALCFG.buildType == "Debug");
+
+  std::string buildType = "Debug";
+  if (!GLOBALCFG.buildType.empty())
+  {
+    buildType = GLOBALCFG.buildType;
+  }
+
+  buildCfg.name = buildType;
+  buildCfg.isDebug = (buildType == "Debug");
   buildCfg.exeDir = buildCfg.name;
   buildCfg.objectDir = buildCfg.exeDir;
   buildCfg.listDir = buildCfg.exeDir;
@@ -1358,7 +1369,7 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
    cmLocalGenerator* lg = genTgt->GetLocalGenerator();
    cmLinkLineComputer linkLineComputer(lg,
                                        lg->GetStateSnapshot().GetDirectory());
-   lg->GetTargetFlags(&linkLineComputer, GLOBALCFG.buildType, linkLibs, flags,
+   lg->GetTargetFlags(&linkLineComputer, buildType, linkLibs, flags,
                       linkFlags, frameworkPath, linkPath,
                       (cmGeneratorTarget*)genTgt);
 
@@ -1374,8 +1385,7 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
     buildCfg.linkerOpts.push_back(*it);
   }*/
 
-  std::string importedLocationStr = std::string("IMPORTED_LOCATION_")
-                  + cmSystemTools::UpperCase(GLOBALCFG.buildType);
+  std::string importedLocationStr = std::string("IMPORTED_LOCATION_") + cmSystemTools::UpperCase(buildType);
 
   // Libraries:
   const cmTarget::LinkLibraryVectorType& libs =
@@ -2398,8 +2408,14 @@ void cmGlobalIarGenerator::Workspace::CreateWorkspaceFile()
   XmlNode rootWsdt = XmlNode("workspace");
   XmlNode* wsdt = new XmlNode("CurrentConfigs");
 
+  std::string buildType = "Debug";
+  if (!cmGlobalIarGenerator::GLOBALCFG.buildType.empty())
+  {
+    buildType = cmGlobalIarGenerator::GLOBALCFG.buildType;
+  }
+
   XmlNode* batch = new XmlNode("batchDefinition");
-  batch->NewChild("name", cmGlobalIarGenerator::GLOBALCFG.buildType + "_BuildAll");
+  batch->NewChild("name", buildType + "_BuildAll");
 
   std::vector<Project*> vProjects;
 
@@ -2423,16 +2439,15 @@ void cmGlobalIarGenerator::Workspace::CreateWorkspaceFile()
 
           XmlNode* member = batch->NewChild("member");
           member->NewChild("project", it->first);
-          member->NewChild("configuration", cmGlobalIarGenerator::GLOBALCFG.buildType);
+          member->NewChild("configuration", buildType);
 
-          wsdt->NewChild("Project", it->first + "/" + cmGlobalIarGenerator::GLOBALCFG.buildType);
+          wsdt->NewChild("Project", it->first + "/" + buildType);
 
           // Add batch command.
           std::string projPathWin = projPath;
           std::replace( projPathWin.begin(), projPathWin.end(), '/', '\\');
           batchOutput += "\"" + iarBuildCmd + "\" \""
-                  + projPathWin + "\" -build "
-                  + cmGlobalIarGenerator::GLOBALCFG.buildType + " -log all";
+                  + projPathWin + "\" -build " + buildType + " -log all";
           if (!cmGlobalIarGenerator::GLOBALCFG.jobs.empty())
           {
               batchOutput += " -parallel " + cmGlobalIarGenerator::GLOBALCFG.jobs;
@@ -2463,16 +2478,15 @@ void cmGlobalIarGenerator::Workspace::CreateWorkspaceFile()
 
       XmlNode* member = batch->NewChild("member");
       member->NewChild("project", (*it)->name);
-      member->NewChild("configuration", cmGlobalIarGenerator::GLOBALCFG.buildType);
+      member->NewChild("configuration", buildType);
 
-      wsdt->NewChild("Project", (*it)->name + "/" + cmGlobalIarGenerator::GLOBALCFG.buildType);
+      wsdt->NewChild("Project", (*it)->name + "/" + buildType);
 
       // Add batch command.
       std::string projPathWin = projPath;
       std::replace( projPathWin.begin(), projPathWin.end(), '/', '\\');
       batchOutput += "\"" + iarBuildCmd + "\" \""
-              + projPathWin + "\" -build "
-              + cmGlobalIarGenerator::GLOBALCFG.buildType +" -log all";
+              + projPathWin + "\" -build " + buildType + " -log all";
       if (!cmGlobalIarGenerator::GLOBALCFG.jobs.empty())
       {
           batchOutput += " -parallel " + cmGlobalIarGenerator::GLOBALCFG.jobs;
