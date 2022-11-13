@@ -18,6 +18,10 @@
 #include <algorithm>
 
 #include "cmake.h"
+#include <cm/memory>
+#include <cm/string>
+#include <cmext/algorithm>
+#include <cmext/memory>
 
 #include "cmGlobalIarGenerator.h"
 #include "cmGlobalGenerator.h"
@@ -33,12 +37,15 @@
 #include "cmSystemTools.h"
 #include "cmCustomCommand.h"
 #include "cmLinkLineComputer.h"
+#include "cmComputeLinkInformation.h"
 
 #include "cmsys/Glob.hxx"
 
 #include <filesystem>
 namespace fs = std::filesystem;
 
+const char* cmGlobalIarGenerator::DEFAULT_BUILD_PROGRAM = "IarBuild.exe";
+const char* cmGlobalIarGenerator::CHECK_BUILD_SYSTEM_TARGET = "RERUN_CMAKE";
 
 /// @brief XML Declaration.
 const char* cmGlobalIarGenerator::XML_DECL =
@@ -582,6 +589,16 @@ void cmGlobalIarGenerator::GetDocumentation(cmDocumentationEntry& entry)
     "Generates IAR Embedded Workbench files (experimental, work-in-progress).";
 }
 
+enum XmlParseState
+{
+  EXP_LT = 0,
+  EXP_GT = 1,
+  EXP_NOPAIR_GT = 2,
+  EXP_PAIR_LT = 3,
+  EXP_PAIR_GT = 4,
+  EXP_NOPAIR_QM = 5
+};
+
 
 void cmGlobalIarGenerator::EnableLanguage(
   std::vector<std::string> const& l, cmMakefile* mf, bool optional)
@@ -592,12 +609,183 @@ void cmGlobalIarGenerator::EnableLanguage(
       GLOBALCFG.iarArmPath = mf->GetSafeDefinition("IAR_TOOLKIT_DIR");
       GLOBALCFG.buildType = mf->GetSafeDefinition("CMAKE_BUILD_TYPE");
 
-    this->cmGlobalGenerator::EnableLanguage(l, mf, optional);
+      this->cmGlobalGenerator::EnableLanguage(l, mf, optional);
+
+      if (!mf->GetSafeDefinition("IAR_WORKBENCH_VERSION").empty())
+      {
+          return;
+      }
+
+      // Get platform version dynamically:
+      std::string platformVersionsName =
+        GLOBALCFG.iarPath + "/common/config/PlatformVersions.xml";
+      
+      FILE* pPlatformVersions = fopen(platformVersionsName.c_str(), "r");
+
+      std::string pvcontent = "";
+
+      if (pPlatformVersions != NULL)
+      {
+        pvcontent.reserve(1024);
+        char buffer[513];
+        while (!feof(pPlatformVersions))
+        {
+          size_t readBytes = fread(buffer, 1, sizeof(buffer)-1, pPlatformVersions);
+          buffer[readBytes] = '\0';
+          pvcontent += buffer;
+        }
+
+   
+        XmlParseState state = EXP_LT;
+
+        // String index.
+        size_t i = 0;
+        // Var or val?
+        bool var = false;
+
+        std::string curVarName;
+        curVarName.reserve(128);
+        std::string curVal;
+        curVal.reserve(128);
+
+        bool error = false;
+        std::string iarPlatformVersion = "";
+        size_t len = pvcontent.length();
+
+        while (!error && i < len)
+        {
+            // Load current char.
+          char c = pvcontent[i];
+            switch (state) {
+            case EXP_LT:
+                // Expedcting <.
+              if (c == '<') {
+                  // Found! Let's expect
+                  curVarName = "";
+                  curVal = "";
+                  state = EXP_GT;
+              } else if (isspace(c)) {
+                  // Skip
+              } else {
+                  // Only whitespaces allowed outside tags.
+                error = true;
+              }
+
+                break;
+            case EXP_GT:
+              // Expecting >. Loading all text into buffer (a var).
+              if (c == '>') {
+                  // Found, we should have a var name.
+                state = EXP_PAIR_LT;
+                error = curVarName.empty();
+                var = true;
+              } else if (c == '/') {
+                // This is not a pair tag and it does not have a value.
+                state = EXP_NOPAIR_GT;
+              } else if (c == '?') {
+                // First tag.
+                state = EXP_NOPAIR_QM;
+              } else {
+                  // Load everything else into variable name string.
+                curVarName += c;
+              }
+              break;
+            case EXP_NOPAIR_QM:
+              if (c == '?') {
+                state = EXP_NOPAIR_GT;
+              } else {
+                // Load everything else into variable name string.
+                curVarName += c;
+              }
+              break;
+            case EXP_NOPAIR_GT:
+              // Expecting > after / for no-pair tags.
+              if (c == '>') {
+                // Got it. Reset the SM to the initial state.
+                state = EXP_LT;
+              } else if (isspace(c)) {
+                // Skip
+              } else {
+                error = true;
+              }
+              break;
+            case EXP_PAIR_LT:
+
+              // Expecting <. Loading all text into buffer (a val).
+              if (c == '<' && (i + 1 < len) && pvcontent[i + 1] == '/') {
+                if (isspace(curVal.back())) {
+                  curVal = curVal.substr(0, curVal.length() - 1);
+                }
+                  // A pair tag reached. We have a var and a val now.
+                if (curVarName == "number") {
+                    iarPlatformVersion += curVal;
+                } else if (curVarName == "release") {
+                  iarPlatformVersion += std::string(".") + curVal;
+                  i = len - 1;
+                }
+
+                state = EXP_PAIR_GT;
+              } else if (c == '<') {
+                  // We have a new tag!
+                  // todo: won't work if the tag has a space before /.
+                curVarName = "";
+                curVal = "";
+                state = EXP_GT;
+              } else {
+                if (isspace(c)) {
+                  if (!curVal.empty() && isspace(curVal.back())) {
+                    curVal += c;
+                  }
+                } else {
+                  curVal += c;
+                }
+              }
+              break;
+            case EXP_PAIR_GT:
+              // Expecting >. Skipping everything.
+              if (c == '>') {
+                // A pair tag end reached. Reset the SM to the initial state.
+                state = EXP_LT;
+              }
+              break;
+            }
+
+            i++;
+        }
+
+        if (!error) {
+          GLOBALCFG.wbVersion = iarPlatformVersion;
+
+          sscanf(iarPlatformVersion.c_str(), "%u.%u.%u",
+                 &GLOBALCFG.wbVersionMajor, &GLOBALCFG.wbVersionMinor,
+                 &GLOBALCFG.wbVersionPatch);
+
+          mf->AddCacheDefinition("IAR_WORKBENCH_VERSION", iarPlatformVersion.c_str(),
+                                 "IAR Workbench Platform Version calculated from common/config/PlatformVersions.xml file",
+                                 cmStateEnums::CacheEntryType::STRING);
+          mf->AddCacheDefinition("IAR_WORKBENCH_VERSION_MAJOR",
+                                 std::to_string(GLOBALCFG.wbVersionMajor).c_str(),
+                                 "IAR Workbench Platform Version - Major",
+                                 cmStateEnums::CacheEntryType::STRING);
+          mf->AddCacheDefinition(
+            "IAR_WORKBENCH_VERSION_MINOR",
+                            std::to_string(GLOBALCFG.wbVersionMinor).c_str(),
+                            "IAR Workbench Platform Version - Minor",
+                            cmStateEnums::CacheEntryType::STRING);
+          mf->AddCacheDefinition(
+            "IAR_WORKBENCH_VERSION_PATCH",
+                            std::to_string(GLOBALCFG.wbVersionPatch).c_str(),
+                            "IAR Workbench Platform Version - Patch",
+                            cmStateEnums::CacheEntryType::STRING);
+        }
+
+        fclose(pPlatformVersions);
+      }
 }
 
 std::string cmGlobalIarGenerator::FindIarBuildCommand()
 {
-    std::string commonBin = GLOBALCFG.iarArmPath + "/../common/bin";
+    std::string commonBin = GLOBALCFG.iarPath + "/common/bin";
     std::vector<std::string> userPaths;
     userPaths.push_back(commonBin);
 
@@ -633,7 +821,7 @@ std::vector<cmGlobalGenerator::GeneratedMakeCommand>
 cmGlobalIarGenerator::GenerateBuildCommand(
   const std::string& makeProgram, const std::string& projectName,
   const std::string& projectDir, std::vector<std::string> const& targetNames,
-  const std::string& config, int /*jobs*/, bool verbose,
+  const std::string& config, int jobs, bool verbose,
   const cmBuildOptions& buildOptions,
   std::vector<std::string> const& makeOptions)
 {
@@ -658,24 +846,164 @@ cmGlobalIarGenerator::GenerateBuildCommand(
   }
 
   makeCommand.Add("-build");
-  /*auto majorVer = GLOBALCFG.wbVersion.substr(
-    0, GLOBALCFG.wbVersion.find('.'));
-  auto majorVerInt = atoi(majorVer.c_str());
-  if (majorVerInt < 8)
-  {*/
+
   std::string buildType = GLOBALCFG.buildType;
   if (GLOBALCFG.buildType.empty()) {
     buildType = "Debug";
   }
 
   makeCommand.Add(buildType);
-  /*}*/
+
+  if (jobs > 1) {
+    makeCommand.Add("-parallel");
+    makeCommand.Add(std::to_string(jobs));
+  }
+
 
   // TODO COMMENT
   // cmSystemTools::Message(makeCommand.Printable());
   // END TODO
 
   return { makeCommand };
+}
+
+bool cmGlobalIarGenerator::SetGeneratorPlatform(std::string const& p,
+                                                cmMakefile* mf)
+{
+    /* Use the value from `-A` or use `arm` */
+    std::string arch = "arm";
+    if (!cmIsOff(p)) {
+      arch = p;
+    }
+
+    /* update the primary target name*/
+    mf->AddDefinition("CMAKE_SYSTEM_PROCESSOR", arch);
+
+  return true;
+}
+
+void cmGlobalIarGenerator::ComputeTargetObjectDirectory(cmGeneratorTarget* gt) const
+{
+  // Compute full path to object file directory for this target.
+  std::string dir =
+    cmStrCat(gt->LocalGenerator->GetCurrentBinaryDirectory(),
+             '/', gt->LocalGenerator->GetTargetDirectory(gt),
+             '/', this->GetCMakeCFGIntDir(), '/');
+
+  // A nasty haxx. IAR builds binaries into CMAKE_BUILD_TYPE folder. And we need
+  // to set this early.
+  if (!gt->Target->GetProperty("OUTPUT_NAME")) {
+    gt->Target->SetProperty("OUTPUT_NAME",
+                            std::string(this->GetCMakeCFGIntDir()) + "/" +
+                              gt->GetName());
+  }
+
+  gt->ObjectDirectory = dir;
+}
+
+bool cmGlobalIarGenerator::AddCheckTarget()
+{
+  // Skip the target if no regeneration is to be done.
+  if (this->GlobalSettingIsOn("CMAKE_SUPPRESS_REGENERATION")) {
+    return false;
+  }
+
+  // Get the generators.
+  std::vector<std::unique_ptr<cmLocalGenerator>> const& generators =
+    this->LocalGenerators;
+  auto& lg =
+    cm::static_reference_cast<cmLocalIarGenerator>(generators[0]);
+
+  // The name of the output file for the custom command.
+  this->StampFile = lg.GetBinaryDirectory() + std::string("/CMakeFiles/") +
+    CHECK_BUILD_SYSTEM_TARGET;
+
+  // Add a custom rule to re-run CMake if any input files changed.
+  {
+    // Collect the input files used to generate all targets in this
+    // project.
+    std::vector<std::string> listFiles;
+    for (const auto& gen : generators) {
+      cm::append(listFiles, gen->GetMakefile()->GetListFiles());
+    }
+
+    // Add the cache file.
+    listFiles.push_back(cmStrCat(
+      this->GetCMakeInstance()->GetHomeOutputDirectory(), "/CMakeCache.txt"));
+
+    // Print not implemented warning.
+    if (this->GetCMakeInstance()->DoWriteGlobVerifyTarget()) {
+      std::ostringstream msg;
+      msg << "Any pre-check scripts, such as those generated for file(GLOB "
+             "CONFIGURE_DEPENDS), will not be run by gbuild.";
+      this->GetCMakeInstance()->IssueMessage(MessageType::AUTHOR_WARNING,
+                                             msg.str());
+    }
+
+    // Sort the list of input files and remove duplicates.
+    std::sort(listFiles.begin(), listFiles.end(), std::less<std::string>());
+    auto newEnd = std::unique(listFiles.begin(), listFiles.end());
+    listFiles.erase(newEnd, listFiles.end());
+
+    // Create a rule to re-run CMake and create output file.
+    cmCustomCommandLines commandLines;
+    commandLines.emplace_back(
+      cmMakeCommandLine({ cmSystemTools::GetCMakeCommand(), "-E", "rm", "-f",
+                          this->StampFile }));
+    std::string argS = cmStrCat("-S", lg.GetSourceDirectory());
+    std::string argB = cmStrCat("-B", lg.GetBinaryDirectory());
+    commandLines.emplace_back(
+      cmMakeCommandLine({ cmSystemTools::GetCMakeCommand(), argS, argB }));
+    commandLines.emplace_back(cmMakeCommandLine(
+      { cmSystemTools::GetCMakeCommand(), "-E", "touch", this->StampFile }));
+
+    /* Create the target(Exclude from ALL_BUILD).
+     *
+     * The build tool, currently, does not support rereading the project files
+     * if they get updated. So do not run this target as part of ALL_BUILD.
+     */
+    auto cc = cm::make_unique<cmCustomCommand>();
+    cmTarget* tgt =
+      lg.AddUtilityCommand(CHECK_BUILD_SYSTEM_TARGET, true, std::move(cc));
+    auto ptr = cm::make_unique<cmGeneratorTarget>(tgt, &lg);
+    auto* gt = ptr.get();
+    lg.AddGeneratorTarget(std::move(ptr));
+
+    // Add the rule.
+    cc = cm::make_unique<cmCustomCommand>();
+    cc->SetOutputs(this->StampFile);
+    cc->SetDepends(listFiles);
+    cc->SetCommandLines(commandLines);
+    cc->SetComment("Checking Build System");
+    cc->SetCMP0116Status(cmPolicies::NEW);
+    cc->SetEscapeOldStyle(false);
+    cc->SetStdPipesUTF8(true);
+
+    if (cmSourceFile* file =
+          lg.AddCustomCommandToOutput(std::move(cc), true)) {
+      gt->AddSource(file->ResolveFullPath());
+    } else {
+      cmSystemTools::Error("Error adding rule for " + this->StampFile);
+    }
+    // Organize in the "predefined targets" folder:
+    if (this->UseFolderProperty()) {
+      tgt->SetProperty("FOLDER", this->GetPredefinedTargetsFolder());
+    }
+  }
+
+  return true;
+}
+
+void cmGlobalIarGenerator::AddExtraIDETargets()
+{
+
+  /* Add Custom Target to check if CMake needs to be rerun.
+   *
+   * The build tool, currently, does not support rereading the project files
+   * if they get updated.  So do not make the other targets dependent on this
+   * check.
+   */
+  this->AddCheckTarget();
 }
 
 
@@ -746,7 +1074,7 @@ void cmGlobalIarGenerator::Generate()
 
   GLOBALCFG.compilerPathExe =
       globalMakefile->GetSafeDefinition("CMAKE_C_COMPILER");
-  GLOBALCFG.cpuName = globalMakefile->GetSafeDefinition("IAR_CORE_NAME");
+  GLOBALCFG.cpuName = globalMakefile->GetSafeDefinition("IAR_CPU_NAME");
   GLOBALCFG.systemName =
       globalMakefile->GetSafeDefinition("CMAKE_SYSTEM_NAME");
   GLOBALCFG.dbgExtraOptions =
@@ -788,10 +1116,8 @@ void cmGlobalIarGenerator::Generate()
   // be used for different IAR version).
   GLOBALCFG.wbVersion =
       globalMakefile->GetSafeDefinition("IAR_WORKBENCH_VERSION");
-  //if (GLOBALCFG.wbVersion.empty())
-  //{
+
   GLOBALCFG.tgtArch = "ARM";
-  //}
 
   // todo Add list of IAR variables, which the user is able to set.
   GLOBALCFG.chipSelection =
@@ -1213,6 +1539,12 @@ void cmGlobalIarGenerator::GetCmdLines(std::vector<cmCustomCommand> const& rTmpC
 void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
     cmGeneratorTarget* genTgt)
 {
+    std::string buildType = "Debug";
+    if (!GLOBALCFG.buildType.empty())
+    {
+      buildType = GLOBALCFG.buildType;
+    }
+
   // For IAR, each code related target is considered a separate IAR project.
   cmGlobalIarGenerator::Project* project = new cmGlobalIarGenerator::Project();
   project->name = genTgt->GetName();
@@ -1230,7 +1562,7 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
   cmMakefile* makeFile = tgt.GetMakefile();
 
   project->projectDir = makeFile->GetCurrentSourceDirectory();
-  project->binaryDir = this->workspace.workspaceDir;
+  project->binaryDir = makeFile->GetCurrentBinaryDirectory();
 
   // INCLUDE DIRECTORIES: Gather all includes.
   const std::vector <BT<std::string>> includeDirsVector =
@@ -1260,12 +1592,6 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
       makeFile->GetOwnedImportedTargets();
 
   cmGlobalIarGenerator::BuildConfig buildCfg;
-
-  std::string buildType = "Debug";
-  if (!GLOBALCFG.buildType.empty())
-  {
-    buildType = GLOBALCFG.buildType;
-  }
 
   buildCfg.name = buildType;
   buildCfg.isDebug = (buildType == "Debug");
@@ -1378,66 +1704,16 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
      sizeof(cmGlobalIarGenerator::MULTIOPTS_LINKER) / sizeof(const char*),
      buildCfg.linkerOpts);
 
-  /*std::vector<std::string> linkerOpts;
-  genTgt->GetLinkOptions(linkerOpts, buildCfg.name, "C");
-  for (std::vector<std::string>::const_iterator it = linkerOpts.begin();
-       it != linkerOpts.end(); ++it) {
-    buildCfg.linkerOpts.push_back(*it);
-  }*/
+   cmComputeLinkInformation* pcli = genTgt->GetLinkInformation(buildCfg.name);
 
-  std::string importedLocationStr = std::string("IMPORTED_LOCATION_") + cmSystemTools::UpperCase(buildType);
+    if (pcli) {
 
-  // Libraries:
-  const cmTarget::LinkLibraryVectorType& libs =
-      tgt.GetOriginalLinkLibraries();
-  for(cmTarget::LinkLibraryVectorType::const_iterator it = libs.begin();
-      it != libs.end(); ++it)
-    {
-    bool found = false;
-    /*for(std::vector<cmTarget*>::const_iterator it2 = owned.begin();
-        it2 != owned.end(); ++it2)*/
-    for (const auto& l : owned)
-      {
-      if (it->first == l.get()->GetName())
-        {
-          cmValue propStrPtr = l.get()->GetProperty(importedLocationStr);
-          const char* pPropertyStr = NULL;
-          if (propStrPtr != NULL)
-          {
-              pPropertyStr = propStrPtr->c_str();
-          }
-          propStrPtr = l.get()->GetProperty(std::string("IMPORTED_LOCATION"));
-          const char* pNoBtPropertyStr = NULL;
-          if (propStrPtr != NULL)
-          {
-              pNoBtPropertyStr = propStrPtr->c_str();
-          }
-
-          if (pPropertyStr != NULL)
-          {
-              buildCfg.libraries.push_back(pPropertyStr);
-          }
-          else if (pNoBtPropertyStr != NULL)
-          {
-              buildCfg.libraries.push_back(pNoBtPropertyStr);
-          }
-
-          found = true;
-          break;
-        }
-      }
-
-    if (!found)
-      {
-      // If there is no imported target attaches, look for it in regular
-      // folders.
-      std::string libpath = this->workspace.workspaceDir;
-      libpath += std::string("/") + buildCfg.exeDir + "/";
-      libpath += std::string(it->first) + ".a";
-
-      buildCfg.libraries.push_back(libpath);
-      }
-    }
+     for (std::vector<std::string>::const_iterator it =
+            pcli->GetDepends().begin();
+          it != pcli->GetDepends().end(); ++it) {
+       buildCfg.libraries.push_back(*it);
+     }
+   }
 
   // Add configurations to the list.
   project->buildCfg = buildCfg;
@@ -1593,7 +1869,7 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   iccArmData->NewOption("CCDiagWarnAreErr")->NewState("0");
   iccArmData->NewOption("CCCompilerRuntimeInfo")->NewState("0");
   iccArmData->NewOption("IFpuProcessor")->NewState("1");
-  iccArmData->NewOption("OutputFile")->NewState("$FILE_BNAME$.o");
+  iccArmData->NewOption("OutputFile")->NewState(this->binaryDir + "/" + "$FILE_BNAME$.o");
   iccArmData->NewOption("CCLibConfigHeader")->NewState("1");
   iccArmData->NewOption("PreInclude")
                 ->NewState(cmGlobalIarGenerator::GLOBALCFG.compilerPreInclude);
@@ -1665,7 +1941,8 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   aArmData->NewOption("AXRefDual")->NewState("0");
   aArmData->NewOption("AProcessor")->NewState("1");
   aArmData->NewOption("AFpuProcessor")->NewState("1");
-  aArmData->NewOption("AOutputFile")->NewState("$FILE_BNAME$.o");
+  aArmData->NewOption("AOutputFile")
+    ->NewState(this->binaryDir + "/" + "$FILE_BNAME$.o");
   aArmData->NewOption("AMultibyteSupport")->NewState("0");
   aArmData->NewOption("ALimitErrorsCheck")->NewState("0");
   aArmData->NewOption("ALimitErrorsEdit")->NewState("100");
@@ -1717,8 +1994,7 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   config->AddChild(ilinkSettings);
   IarData* ilinkData = ilinkSettings->NewData(15, true, this->buildCfg.isDebug);
 
-  outFile = this->buildCfg.outputFile;
-  outFile += ".elf";
+  outFile = this->buildCfg.outputFile + ".elf";
   ilinkData->NewOption("IlinkOutputFile")->NewState(outFile);
   ilinkData->NewOption("IlinkLibIOConfig")->NewState("1");
   ilinkData->NewOption("XLinkMisraHandler")->NewState("0");

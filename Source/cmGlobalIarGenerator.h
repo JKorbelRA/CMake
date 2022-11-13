@@ -58,7 +58,7 @@ public:
    * Utilized by the generator factory to determine if this generator
    * supports toolsets.
    */
-  static bool SupportsToolset() { return true; }
+  static bool SupportsToolset() { return false; }
 
   /**
    * Utilized by the generator factory to determine if this generator
@@ -67,8 +67,6 @@ public:
   static bool SupportsPlatform() { return true; }
 
   // Toolset / Platform Support
-  bool SetGeneratorToolset(std::string const& ts, bool build,
-                           cmMakefile* mf) override;
   bool SetGeneratorPlatform(std::string const& p, cmMakefile* mf) override;
 
   /**
@@ -91,7 +89,14 @@ public:
   bool Open(const std::string& bindir, const std::string& projectName,
             bool dryRun) override;
 
-  bool IsMultiConfig() const override {return false;};
+  bool IsMultiConfig() const override { return false; };
+
+  const char* GetCMakeCFGIntDir() const override
+  {
+    return cmGlobalIarGenerator::GLOBALCFG.buildType.empty()
+      ? "Debug"
+      : cmGlobalIarGenerator::GLOBALCFG.buildType.c_str();
+  }
 
   static std::string ToToolkitPath(std::string absolutePath);
 
@@ -109,8 +114,12 @@ protected:
     const cmBuildOptions& buildOptions = cmBuildOptions(),
     std::vector<std::string> const& makeOptions =
       std::vector<std::string>()) override;
-private:
 
+private:
+  std::string StampFile;
+  static const char* DEFAULT_BUILD_PROGRAM;
+  static const char* CHECK_BUILD_SYSTEM_TARGET;
+  bool AddCheckTarget();
   std::string FindIarBuildCommand();
 
   void RegisterProject(const std::string& projectName);
@@ -364,7 +373,10 @@ private:
     std::string linkerEntryRoutine  ;
     std::string linkerIcfFile       ;
     std::string tgtArch             ;
-    std::string wbVersion           ;
+    std::string wbVersion;
+    unsigned int wbVersionMajor;
+    unsigned int wbVersionMinor;
+    unsigned int wbVersionPatch;
     std::string chipSelection       ;
     std::string rtos                ;
     std::string compilerPreInclude  ;
