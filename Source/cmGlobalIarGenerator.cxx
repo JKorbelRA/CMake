@@ -605,13 +605,27 @@ void cmGlobalIarGenerator::EnableLanguage(
 {
       // Load the settings only once.
       GLOBALCFG.iarPath = mf->GetSafeDefinition("IAR_INSTALL_DIR");
+
+      std::string wbVer = mf->GetSafeDefinition("IAR_WORKBENCH_VERSION");
+
+      if (GLOBALCFG.iarPath.empty() && wbVer.empty())
+      {
+          mf->AddCacheDefinition("IAR_INSTALL_DIR",
+                                 "",
+                                 "IAR Workbench Installation Path",
+                                 cmStateEnums::CacheEntryType::PATH);
+
+          cmSystemTools::Error("IAR_INSTALL_DIR neither IAR_WORKBENCH_VERSION (obsolete) is set. Please, pre-set it.");
+          cmSystemTools::SetFatalErrorOccurred();
+      }
+
       // Load the settings only once.
       GLOBALCFG.iarArmPath = mf->GetSafeDefinition("IAR_TOOLKIT_DIR");
       GLOBALCFG.buildType = mf->GetSafeDefinition("CMAKE_BUILD_TYPE");
 
       this->cmGlobalGenerator::EnableLanguage(l, mf, optional);
 
-      if (!mf->GetSafeDefinition("IAR_WORKBENCH_VERSION").empty())
+      if (!wbVer.empty())
       {
           return;
       }
@@ -1097,9 +1111,6 @@ void cmGlobalIarGenerator::Generate()
     globalMakefile->GetSafeDefinition("IAR_LINKER_ICF_FILE");
   GLOBALCFG.tgtArch =
     globalMakefile->GetSafeDefinition("IAR_TARGET_ARCHITECTURE");
-  GLOBALCFG.chipThumbSupport =
-    globalMakefile->GetSafeDefinition("IAR_CHIP_THUMBSUPPORT");
-  GLOBALCFG.chipFpu = globalMakefile->GetSafeDefinition("IAR_CHIP_FPU");
   GLOBALCFG.iarPath = globalMakefile->GetSafeDefinition("IAR_INSTALL_DIR");
   GLOBALCFG.iarArmPath = globalMakefile->GetSafeDefinition("IAR_TOOLKIT_DIR");
 

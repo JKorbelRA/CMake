@@ -382,9 +382,6 @@ private:
     std::string compilerPreInclude  ;
     std::string scanfFmt  ;
     std::string printfFmt;
-    std::string chipThumbSupport;
-    std::string chipSimd;
-    std::string chipFpu;
     int scanfFmtId  ;
     int printfFmtId  ;
     std::string bufferedTermOut;
