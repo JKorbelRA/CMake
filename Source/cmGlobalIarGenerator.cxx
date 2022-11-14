@@ -1086,9 +1086,12 @@ void cmGlobalIarGenerator::Generate()
           GLOBALCFG.printfFmtId = i;
       }
   }
-
   GLOBALCFG.compilerPathExe =
+    globalMakefile->GetSafeDefinition("IAR_COMPILER_PATH_EXE");
+  if (GLOBALCFG.compilerPathExe.empty()) {
+    GLOBALCFG.compilerPathExe =
       globalMakefile->GetSafeDefinition("CMAKE_C_COMPILER");
+  }
   GLOBALCFG.cpuName = globalMakefile->GetSafeDefinition("IAR_CPU_NAME");
   GLOBALCFG.systemName =
       globalMakefile->GetSafeDefinition("CMAKE_SYSTEM_NAME");
