@@ -568,6 +568,7 @@ cmGlobalIarGenerator::cmGlobalIarGenerator(cmake* cm)
 : cmGlobalGenerator(cm)
 {
     cm->GetState()->SetIarIDE(true);
+    GLOBALCFG.iarPath = cm->GetCacheDefinition("IAR_INSTALL_DIR");
 }
 
 cmGlobalIarGenerator::~cmGlobalIarGenerator()
@@ -605,23 +606,23 @@ void cmGlobalIarGenerator::EnableLanguage(
 {
       // Load the settings only once.
       GLOBALCFG.iarPath = mf->GetSafeDefinition("IAR_INSTALL_DIR");
-
       std::string wbVer = mf->GetSafeDefinition("IAR_WORKBENCH_VERSION");
-
-      if (GLOBALCFG.iarPath.empty() && wbVer.empty())
-      {
-          mf->AddCacheDefinition("IAR_INSTALL_DIR",
-                                 "",
-                                 "IAR Workbench Installation Path",
-                                 cmStateEnums::CacheEntryType::PATH);
-
-          cmSystemTools::Error("IAR_INSTALL_DIR neither IAR_WORKBENCH_VERSION (obsolete) is set. Please, pre-set it.");
-          cmSystemTools::SetFatalErrorOccurred();
-      }
-
       // Load the settings only once.
       GLOBALCFG.iarArmPath = mf->GetSafeDefinition("IAR_TOOLKIT_DIR");
       GLOBALCFG.buildType = mf->GetSafeDefinition("CMAKE_BUILD_TYPE");
+
+      if (GLOBALCFG.iarPath.empty() && wbVer.empty()) {
+        mf->AddCacheDefinition("IAR_INSTALL_DIR", "",
+                               "IAR Workbench Installation Path",
+                               cmStateEnums::CacheEntryType::PATH);
+        mf->AddCacheDefinition("IAR_WORKBENCH_VERSION", "",
+                               "IAR Workbench Version",
+                               cmStateEnums::CacheEntryType::PATH);
+
+          cmSystemTools::Message("IAR_INSTALL_DIR neither IAR_WORKBENCH_VERSION (obsolete) is set. Please, pre-set one of those.");
+          return;
+      }
+
 
       this->cmGlobalGenerator::EnableLanguage(l, mf, optional);
 
@@ -2826,16 +2827,18 @@ void cmGlobalIarGenerator::Workspace::RegisterProject(std::string wsName,
 #include <objbase.h>
 #include <shellapi.h>
 
-static bool OpenWorkspace(std::string workspace)
+static bool OpenWorkspace(std::string workspace, std::string iarIde)
 {
+    
     HRESULT comInitialized =
         CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(comInitialized)) {
         return false;
     }
 
-    HINSTANCE hi =
-        ShellExecuteA(NULL, "open", workspace.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    HINSTANCE hi = ShellExecuteA(NULL, "open", iarIde.c_str(), workspace.c_str(),
+                                 NULL,
+                                 SW_SHOWNORMAL);
 
     CoUninitialize();
 
@@ -2847,14 +2850,18 @@ bool cmGlobalIarGenerator::Open(const std::string& bindir,
     const std::string& projectName,
     bool dryRun)
 {
-    std::string projFile = bindir + "/" + projectName + ".eww";
+  std::string projFile = bindir + "/" + projectName + ".eww";
+  std::string iarIde = GLOBALCFG.iarPath + "/common/bin/IarIdePm.exe";
     // TODO: COMMENT
     // cmSystemTools::Message(std::string("Trying to OPEN: ") + projFile);
     // END TODO
 
     if (dryRun) {
-        return cmSystemTools::FileExists(projFile, true);
+      bool ok = true;
+      ok = ok && cmSystemTools::FileExists(projFile, true);
+      ok = ok && cmSystemTools::FileExists(iarIde, true);
+      return ok;
     }
 
-    return std::async(std::launch::async, OpenWorkspace, projFile).get();
+    return std::async(std::launch::async, OpenWorkspace, projFile, iarIde).get();
 }
