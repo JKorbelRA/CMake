@@ -565,14 +565,28 @@ public:
 
 //----------------------------------------------------------------------------
 cmGlobalIarGenerator::cmGlobalIarGenerator(cmake* cm)
-: cmGlobalGenerator(cm)
+  : cmGlobalGenerator(cm)
 {
-    cm->GetState()->SetIarIDE(true);
-    GLOBALCFG.iarPath = cm->GetCacheDefinition("IAR_INSTALL_DIR");
+  cm->GetState()->SetIarIDE(true);
+  std::string iarPath = cm->GetCacheDefinition("IAR_INSTALL_DIR");
+  if (!iarPath.empty()) {
+    GLOBALCFG.iarPath = iarPath;
+  }
 }
 
 cmGlobalIarGenerator::~cmGlobalIarGenerator()
 {
+}
+
+void cmGlobalIarGenerator::AppendDirectoryForConfig(
+  const std::string& prefix, const std::string& config,
+  const std::string& suffix, std::string& dir)
+{
+  if (!config.empty()) {
+    dir += prefix;
+    dir += config;
+    dir += suffix;
+  }
 }
 
 std::unique_ptr<cmLocalGenerator> cmGlobalIarGenerator::CreateLocalGenerator(
@@ -611,6 +625,11 @@ void cmGlobalIarGenerator::EnableLanguage(
       GLOBALCFG.iarArmPath = mf->GetSafeDefinition("IAR_TOOLKIT_DIR");
       GLOBALCFG.buildType = mf->GetSafeDefinition("CMAKE_BUILD_TYPE");
 
+      // todo: remove eventually, this should be set from the platform file.
+      mf->AddCacheDefinition("CMAKE_STATIC_LIBRARY_PREFIX", "",
+                             "",
+                             cmStateEnums::CacheEntryType::STRING);
+
       if (GLOBALCFG.iarPath.empty() && wbVer.empty()) {
         mf->AddCacheDefinition("IAR_INSTALL_DIR", "",
                                "IAR Workbench Installation Path",
@@ -620,6 +639,7 @@ void cmGlobalIarGenerator::EnableLanguage(
                                cmStateEnums::CacheEntryType::PATH);
 
           cmSystemTools::Message("IAR_INSTALL_DIR neither IAR_WORKBENCH_VERSION (obsolete) is set. Please, pre-set one of those.");
+        this->cmGlobalGenerator::EnableLanguage(l, mf, optional);
           return;
       }
 
@@ -864,7 +884,7 @@ cmGlobalIarGenerator::GenerateBuildCommand(
 
   std::string buildType = GLOBALCFG.buildType;
   if (GLOBALCFG.buildType.empty()) {
-    buildType = "Debug";
+    buildType = "empty";
   }
 
   makeCommand.Add(buildType);
@@ -904,14 +924,14 @@ void cmGlobalIarGenerator::ComputeTargetObjectDirectory(cmGeneratorTarget* gt) c
     cmStrCat(gt->LocalGenerator->GetCurrentBinaryDirectory(),
              '/', gt->LocalGenerator->GetTargetDirectory(gt),
              '/', this->GetCMakeCFGIntDir(), '/');
-
+/*
   // A nasty haxx. IAR builds binaries into CMAKE_BUILD_TYPE folder. And we need
   // to set this early.
   if (!gt->Target->GetProperty("OUTPUT_NAME")) {
     gt->Target->SetProperty("OUTPUT_NAME",
                             std::string(this->GetCMakeCFGIntDir()) + "/" +
                               gt->GetName());
-  }
+  }*/
 
   gt->ObjectDirectory = dir;
 }
@@ -1116,7 +1136,24 @@ void cmGlobalIarGenerator::Generate()
   GLOBALCFG.tgtArch =
     globalMakefile->GetSafeDefinition("IAR_TARGET_ARCHITECTURE");
   GLOBALCFG.iarPath = globalMakefile->GetSafeDefinition("IAR_INSTALL_DIR");
+  if (GLOBALCFG.iarPath.empty()) {
+    cmSystemTools::Message(
+      "IAR_INSTALL_DIR not set, using obsolete IAR_EW_ROOT");
+    GLOBALCFG.iarPath = globalMakefile->GetSafeDefinition("IAR_EW_ROOT");
+  }
   GLOBALCFG.iarArmPath = globalMakefile->GetSafeDefinition("IAR_TOOLKIT_DIR");
+  if (GLOBALCFG.iarArmPath.empty()) {
+    cmSystemTools::Message(
+      "IAR_TOOLKIT_DIR not set, using obsolete IAR_ARM_PATH");
+    GLOBALCFG.iarArmPath =
+      globalMakefile->GetSafeDefinition("IAR_ARM_PATH");
+  }
+
+  if (GLOBALCFG.iarPath.empty()) {
+    cmSystemTools::Message(
+      "IAR_INSTALL_DIR not set, using obsolete ${IAR_ARM_PATH}/..");
+    GLOBALCFG.iarPath = GLOBALCFG.iarArmPath + "/..";
+  }
 
   GLOBALCFG.rtos = globalMakefile->GetSafeDefinition("IAR_TARGET_RTOS");
 
@@ -1554,7 +1591,7 @@ void cmGlobalIarGenerator::GetCmdLines(std::vector<cmCustomCommand> const& rTmpC
 void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
     cmGeneratorTarget* genTgt)
 {
-    std::string buildType = "Debug";
+    std::string buildType = "empty";
     if (!GLOBALCFG.buildType.empty())
     {
       buildType = GLOBALCFG.buildType;
@@ -1611,8 +1648,13 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
   buildCfg.name = buildType;
   buildCfg.isDebug = (buildType == "Debug");
   buildCfg.exeDir = buildCfg.name;
+  if (buildType == "empty") {
+    buildCfg.exeDir = "";
+  }
+
   buildCfg.objectDir = buildCfg.exeDir;
   buildCfg.listDir = buildCfg.exeDir;
+
   if (!buildCfg.exeDir.empty()) {
     buildCfg.objectDir += "/";
     buildCfg.listDir += "/";
@@ -1620,13 +1662,13 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
   buildCfg.objectDir += "Object";
   buildCfg.listDir += "List";
   buildCfg.toolchain = GLOBALCFG.tgtArch;
-  buildCfg.outputFile = genTgt->GetExportName();
+  buildCfg.outputFile = genTgt->GetName();
 
   buildCfg.preBuildCmd = "";
   buildCfg.postBuildCmd = "";
 
-  std::string prebuild = project->binaryDir + "/" + buildCfg.exeDir+"/"+project->name+"_prebuild.bat";
-  std::string postbuild = project->binaryDir + "/" + buildCfg.exeDir+"/"+project->name+"_postbuild.bat";
+  std::string prebuild = cmStrCat(project->binaryDir, "/", buildCfg.exeDir, "/", project->name, "_prebuild.bat");
+  std::string postbuild = cmStrCat(project->binaryDir, "/", buildCfg.exeDir, "/", project->name, "_postbuild.bat");
 
   buildCfg.icfPath = GLOBALCFG.linkerIcfFile;
 
@@ -2699,7 +2741,7 @@ void cmGlobalIarGenerator::Workspace::CreateWorkspaceFile()
   XmlNode rootWsdt = XmlNode("workspace");
   XmlNode* wsdt = new XmlNode("CurrentConfigs");
 
-  std::string buildType = "Debug";
+  std::string buildType = "empty";
   if (!cmGlobalIarGenerator::GLOBALCFG.buildType.empty())
   {
     buildType = cmGlobalIarGenerator::GLOBALCFG.buildType;

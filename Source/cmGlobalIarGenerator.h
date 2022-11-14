@@ -94,9 +94,15 @@ public:
   const char* GetCMakeCFGIntDir() const override
   {
     return cmGlobalIarGenerator::GLOBALCFG.buildType.empty()
-      ? "Debug"
+      ? "empty"
       : cmGlobalIarGenerator::GLOBALCFG.buildType.c_str();
   }
+
+  /** Append the subdirectory for the given configuration.  */
+  void AppendDirectoryForConfig(const std::string& prefix,
+                                const std::string& config,
+                                const std::string& suffix,
+                                std::string& dir) override;
 
   static std::string ToToolkitPath(std::string absolutePath);
 
