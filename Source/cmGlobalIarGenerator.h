@@ -332,7 +332,7 @@ private:
   static void cmGlobalIarGenerator::ParseCmdLineOpts(std::string cmdLine,
                                               const char* multiOpts[],
                                               size_t multiOptsLen,
-                                              std::vector<std::string>& opts);
+    std::vector<std::string>& opts);
 
   struct Workspace
   {

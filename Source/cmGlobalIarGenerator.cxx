@@ -1482,7 +1482,7 @@ namespace IarArg
 //----------------------------------------------------------------------------
 void cmGlobalIarGenerator::ParseCmdLineOpts(
   std::string cmdLine, const char* multiOpts[], size_t multiOptsLen,
-  std::vector<std::string>& opts)
+                                            std::vector<std::string>& opts)
 {
 #if 0
   const char* pChar = cmdLine.c_str();
@@ -1523,11 +1523,6 @@ void cmGlobalIarGenerator::ParseCmdLineOpts(
 
     if (isMulti) {
       continue;
-    }
-
-    if ((*it).find("-O") == 0) {
-        // Skip big O it is unusable in IDE!
-        continue;
     }
 
     if ((*it) == std::string(""))
@@ -1756,6 +1751,7 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
                       linkFlags, frameworkPath, linkPath,
                       (cmGeneratorTarget*)genTgt);
 
+   std::string optimization = "";
    cmGlobalIarGenerator::ParseCmdLineOpts(
      linkFlags, cmGlobalIarGenerator::MULTIOPTS_LINKER,
      sizeof(cmGlobalIarGenerator::MULTIOPTS_LINKER) / sizeof(const char*),
@@ -1885,7 +1881,60 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   // ARM Compiler (ICCARM):
   IarSettings* iccArmSettings = new IarSettings("ICCARM", 2);
   config->AddChild(iccArmSettings);
+  std::string optimization = "";
+  cmGlobalIarGenerator::ParseCmdLineOpts(
+    GLOBALCFG.iarCCompilerFlags, MULTIOPTS_COMPILER,
+    sizeof(MULTIOPTS_COMPILER) / sizeof(const char*),
+    this->buildCfg.compilerOpts);
 
+  for (std::vector<std::string>::const_iterator it =
+         this->buildCfg.compilerOpts.begin();
+       it != this->buildCfg.compilerOpts.end();) {
+
+    if (it->find("-O") == 0) {
+      optimization = *it;
+      it = this->buildCfg.compilerOpts.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  
+  std::string optLvl = "0";
+  std::string ccAllowList = "0000000";
+  std::string optStrategy = "0";
+  if (!this->buildCfg.isDebug) {
+    optLvl = "3";
+    optStrategy = "1";
+    ccAllowList = "1111111";
+  }
+
+  if (optimization == "-On") {
+    optLvl = "0";
+    optStrategy = "0";
+    ccAllowList = "0000000";
+  } else if (optimization == "-Ol") {
+    optLvl = "1";
+    optStrategy = "0";
+    ccAllowList = "0000000";
+  } else if (optimization == "-Om") {
+    optLvl = "2";
+    optStrategy = "0";
+    ccAllowList = "10010100";
+  } else if (optimization == "-Oh") {
+    optLvl = "3";
+    optStrategy = "0";
+    ccAllowList = "1111111";
+  } else if (optimization == "-Ohs") {
+    optLvl = "3";
+    optStrategy = "2";
+    ccAllowList = "1111111";
+  } else if (optimization == "-Ohz") {
+    optLvl = "3";
+    optStrategy = "1";
+    ccAllowList = "1111111";
+  } else {
+    ; // Keep defaults.
+  }
 
   IarData* iccArmData = iccArmSettings->NewData(28, true, this->buildCfg.isDebug);
 
@@ -1900,23 +1949,16 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   iccArmData->NewOption("CCListAssFile")->NewState("0");
   iccArmData->NewOption("CCListAssSource")->NewState("0");
   iccArmData->NewOption("CCEnableRemarks")->NewState("0");
-  iccArmData->NewOption("CCDiagSuppress")
-                ->NewState("");
+  iccArmData->NewOption("CCDiagSuppress")->NewState("");
   iccArmData->NewOption("CCDiagRemark")->NewState("");
   iccArmData->NewOption("CCDiagWarning")->NewState("");
   iccArmData->NewOption("CCDiagError")->NewState("");
   iccArmData->NewOption("CCObjPrefix")->NewState("1");
-  iccArmData->NewOption("CCAllowList", 1)
-                ->NewState(this->buildCfg.isDebug ? "0000000" : "1111111");
+  iccArmData->NewOption("CCAllowList", 1)->NewState(ccAllowList);
   iccArmData->NewOption("CCDebugInfo")->NewState(this->buildCfg.isDebug ? "1" : "0");
   iccArmData->NewOption("IEndianMode")->NewState("1");
   iccArmData->NewOption("IProcessor")->NewState("1");
   iccArmData->NewOption("IExtraOptionsCheck")->NewState("1");
-
-  cmGlobalIarGenerator::ParseCmdLineOpts(
-    GLOBALCFG.iarCCompilerFlags, MULTIOPTS_COMPILER,
-    sizeof(MULTIOPTS_COMPILER) / sizeof(const char*),
-    this->buildCfg.compilerOpts);
 
   iccArmData->NewOption("IExtraOptions")->NewStates(this->buildCfg.compilerOpts);
   iccArmData->NewOption("CCLangConformance")->NewState("0");
@@ -1936,10 +1978,12 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   iccArmData->NewOption("CCCodeSection")->NewState(".text");
   iccArmData->NewOption("IInterwork2")->NewState("0");
   iccArmData->NewOption("IProcessorMode2")->NewState("1");
-  iccArmData->NewOption("CCOptLevel")->NewState(this->buildCfg.isDebug ? "0" : "3");
-  iccArmData->NewOption("CCOptStrategy", 0)->NewState("1");
-  iccArmData->NewOption("CCOptLevelSlave")
-                ->NewState(this->buildCfg.isDebug ? "0" : "3");
+
+
+  iccArmData->NewOption("CCOptLevel")->NewState(optLvl);
+  iccArmData->NewOption("CCOptStrategy", 0)->NewState(optStrategy);
+  iccArmData->NewOption("CCOptLevelSlave")->NewState(optLvl);
+
   iccArmData->NewOption("CompilerMisraRules98", 0)
                 ->NewState("100011111011010110111001110011111110111001101100010111"
                     "011110110110011111111111110011001111100111011100111111"
