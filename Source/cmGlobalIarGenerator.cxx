@@ -1662,8 +1662,10 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
   buildCfg.preBuildCmd = "";
   buildCfg.postBuildCmd = "";
 
-  std::string prebuild = cmStrCat(project->binaryDir, "/", buildCfg.exeDir, "/", project->name, "_prebuild.bat");
-  std::string postbuild = cmStrCat(project->binaryDir, "/", buildCfg.exeDir, "/", project->name, "_postbuild.bat");
+  std::string prebuild = cmStrCat(project->binaryDir, "/", project->name, "_",
+                                  buildCfg.name, "_prebuild.bat");
+  std::string postbuild = cmStrCat(project->binaryDir, "/", project->name, "_",
+                                   buildCfg.name, "_postbuild.bat");
 
   buildCfg.icfPath = GLOBALCFG.linkerIcfFile;
 
@@ -1698,6 +1700,9 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
           fwrite(cmdHdr.c_str(), cmdHdr.length(), 1, pBuild);
           fwrite(buildCmd.c_str(), buildCmd.length(), 1, pBuild);
           fclose(pBuild);
+      }
+      else {
+          cmSystemTools::Error(std::string("Cannot open ") + prebuild + " for writing!");
       }
   }
 
