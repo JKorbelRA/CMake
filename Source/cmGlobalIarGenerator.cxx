@@ -38,6 +38,7 @@
 #include "cmCustomCommand.h"
 #include "cmLinkLineComputer.h"
 #include "cmComputeLinkInformation.h"
+#include "cmValue.h"
 
 #include "cmsys/Glob.hxx"
 
@@ -262,16 +263,16 @@ public:
 const char* XmlNode::LEVELS[] =
     {
         "",
-        "\t",
-        "\t\t",
-        "\t\t\t",
-        "\t\t\t\t",
-        "\t\t\t\t\t",
-        "\t\t\t\t\t\t",
-        "\t\t\t\t\t\t\t",
-        "\t\t\t\t\t\t\t\t",
-        "\t\t\t\t\t\t\t\t\t",
-        "\t\t\t\t\t\t\t\t\t\t"
+        "    ",
+        "        ",
+        "            ",
+        "                ",
+        "                    ",
+        "                        ",
+        "                            ",
+        "                                ",
+        "                                    ",
+        "                                        "
     };
 
 const char* RUNTIME_LIBRARY_CONFIG[] =
@@ -1179,7 +1180,6 @@ void cmGlobalIarGenerator::Generate()
     GLOBALCFG.chipSelection = "None";
     }
 
-
   // IAR needs a workspace name. This would be the root CMake project.
   for (std::map<std::string, std::vector<cmLocalGenerator*> >::const_iterator
       it = this->GetProjectMap().begin();
@@ -1811,28 +1811,24 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   IarSettings* generalSettings = new IarSettings("General", 3);
   config->AddChild(generalSettings);
 
-  IarData* generalData = generalSettings->NewData(21, true, this->buildCfg.isDebug);
+  IarData* generalData = generalSettings->NewData(30, true, this->buildCfg.isDebug);
   generalData->NewOption("ExePath")->NewState(this->buildCfg.exeDir);
   generalData->NewOption("ObjPath")->NewState(this->buildCfg.objectDir + "/" + this->name);
   generalData->NewOption("ListPath")->NewState(this->buildCfg.listDir + "/" + this->name);
-  generalData->NewOption("Variant", 20)->NewState("42");
   generalData->NewOption("GEndianMode")->NewState("0");
 
 
   std::string pPrintfIdStr = int2str(GLOBALCFG.printfFmtId);
   std::string pScanfIdStr = int2str(GLOBALCFG.scanfFmtId);
 
-  generalData->NewOption("Input variant", 3)->NewState(pPrintfIdStr);
   generalData->NewOption("Input description")
               ->NewState("No specifier n, no float nor "
                   "long long, no scan set,"
                   " no assignment suppressing, without multibyte support.");
-  generalData->NewOption("Output variant", 2)->NewState(pScanfIdStr);
   generalData->NewOption("Output description")
                 ->NewState("No specifier a, A, without multibyte support.");
   generalData->NewOption("GOutputBinary")
                 ->NewState(this->isLib ? "1" : "0");
-  generalData->NewOption("FPU", 2)->NewState("3");
   generalData->NewOption("OGCoreOrChip")->NewState("1");
 
 
@@ -1878,10 +1874,28 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
                     "11111001111011111011111111111111111");
   generalData->NewOption("RTConfigPath2")
               ->NewState(std::string("$TOOLKIT_DIR$\\INC\\c\\DLib_Config_") + cmGlobalIarGenerator::GLOBALCFG.compilerDlibConfig + ".h");
-  generalData->NewOption("GFPUCoreSlave", 20)->NewState("42");
-  generalData->NewOption("GBECoreSlave", 20)->NewState("42");
+  generalData->NewOption("GBECoreSlave", 26)->NewState("43");
   generalData->NewOption("OGUseCmsis")->NewState("0");
   generalData->NewOption("OGUseCmsisDspLib")->NewState("0");
+  generalData->NewOption("GRuntimeLibThreads")->NewState("0");
+  generalData->NewOption("CoreVariant", 26)->NewState("42");
+
+  generalData->NewOption("GFPUDeviceSlave")->NewState(chipSelection);
+  generalData->NewOption("FPU2", 0)->NewState("3");
+  generalData->NewOption("NrRegs", 0)->NewState("1");
+  generalData->NewOption("NEON")->NewState("0");
+  generalData->NewOption("GFPUCoreSlave2", 26)->NewState("42");
+  generalData->NewOption("OGCMSISPackSelectDevice");
+  generalData->NewOption("OgLibHeap")->NewState("0");
+  generalData->NewOption("OGLibAdditionalLocale")->NewState("0");
+  generalData->NewOption("OGPrintfVariant", 0)->NewState("0");
+  generalData->NewOption("OGPrintfMultibyteSupport")->NewState("0");
+  generalData->NewOption("OGScanfVariant", 0)->NewState("0");
+  generalData->NewOption("OGScanfMultibyteSupport")->NewState("0");
+  generalData->NewOption("GenLocaleTags")->NewState("");
+  generalData->NewOption("GenLocaleDisplayOnly")->NewState("");
+  generalData->NewOption("DSPExtension")->NewState("0");
+  generalData->NewOption("TrustZone")->NewState("0");
 
   // ARM Compiler (ICCARM):
   IarSettings* iccArmSettings = new IarSettings("ICCARM", 2);
@@ -1916,11 +1930,11 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   if (optimization == "-On") {
     optLvl = "0";
     optStrategy = "0";
-    ccAllowList = "0000000";
+    ccAllowList = "00000000";
   } else if (optimization == "-Ol") {
     optLvl = "1";
     optStrategy = "0";
-    ccAllowList = "0000000";
+    ccAllowList = "00000000";
   } else if (optimization == "-Om") {
     optLvl = "2";
     optStrategy = "0";
@@ -1928,20 +1942,20 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   } else if (optimization == "-Oh") {
     optLvl = "3";
     optStrategy = "0";
-    ccAllowList = "1111111";
+    ccAllowList = "11111111";
   } else if (optimization == "-Ohs") {
     optLvl = "3";
     optStrategy = "2";
-    ccAllowList = "1111111";
+    ccAllowList = "11111111";
   } else if (optimization == "-Ohz") {
     optLvl = "3";
     optStrategy = "1";
-    ccAllowList = "1111111";
+    ccAllowList = "11111111";
   } else {
     ; // Keep defaults.
   }
 
-  IarData* iccArmData = iccArmSettings->NewData(28, true, this->buildCfg.isDebug);
+  IarData* iccArmData = iccArmSettings->NewData(34, true, this->buildCfg.isDebug);
 
   iccArmData->NewOption("CCOptimizationNoSizeConstraints")->NewState("0");
   iccArmData->NewOption("CCDefines")->NewStates(this->buildCfg.compileDefs);
@@ -1969,7 +1983,6 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   iccArmData->NewOption("CCLangConformance")->NewState("0");
   iccArmData->NewOption("CCSignedPlainChar")->NewState("1");
   iccArmData->NewOption("CCRequirePrototypes")->NewState("0");
-  iccArmData->NewOption("CCMultibyteSupport")->NewState("0");
   iccArmData->NewOption("CCDiagWarnAreErr")->NewState("0");
   iccArmData->NewOption("CCCompilerRuntimeInfo")->NewState("0");
   iccArmData->NewOption("IFpuProcessor")->NewState("1");
@@ -1981,7 +1994,6 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   iccArmData->NewOption("CCIncludePath2")->NewStates(this->includes);
   iccArmData->NewOption("CCStdIncCheck")->NewState("0");
   iccArmData->NewOption("CCCodeSection")->NewState(".text");
-  iccArmData->NewOption("IInterwork2")->NewState("0");
   iccArmData->NewOption("IProcessorMode2")->NewState("1");
 
 
@@ -2003,19 +2015,24 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   iccArmData->NewOption("IccLang")->NewState("2");
   iccArmData->NewOption("IccCDialect")->NewState("1");
   iccArmData->NewOption("IccAllowVLA")->NewState("0");
-  iccArmData->NewOption("IccCppDialect")->NewState("2");
-  iccArmData->NewOption("IccExceptions")->NewState("0");
-  iccArmData->NewOption("IccRTTI")->NewState("0");
   iccArmData->NewOption("IccStaticDestr")->NewState("0");
   iccArmData->NewOption("IccCppInlineSemantics")->NewState("1");
   iccArmData->NewOption("IccCmsis")->NewState("1");
   iccArmData->NewOption("IccFloatSemantics")->NewState("0");
-
+  iccArmData->NewOption("CCNoLiteralPool")->NewState("0");
+  iccArmData->NewOption("CCOptStrategySlave")->NewState("0");
+  iccArmData->NewOption("CCGuardCalls")->NewState("1");
+  iccArmData->NewOption("CCEncSource")->NewState("0");
+  iccArmData->NewOption("CCEncOutput")->NewState("0");
+  iccArmData->NewOption("CCEncOutputBom")->NewState("1");
+  iccArmData->NewOption("CCEncInput")->NewState("0");
+  iccArmData->NewOption("IccExceptions2")->NewState("0");
+  iccArmData->NewOption("IccRTTI2")->NewState("0");
 
   // AARM:
   IarSettings* aArmSettings = new IarSettings("AARM", 2);
   config->AddChild(aArmSettings);
-  IarData* aArmData = aArmSettings->NewData(8, true, this->buildCfg.isDebug);
+  IarData* aArmData = aArmSettings->NewData(10, true, this->buildCfg.isDebug);
 
   aArmData->NewOption("AObjPrefix")->NewState("1");
   aArmData->NewOption("AEndian")->NewState("1");
@@ -2049,13 +2066,13 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   aArmData->NewOption("AFpuProcessor")->NewState("1");
   aArmData->NewOption("AOutputFile")
     ->NewState(this->binaryDir + "/" + "$FILE_BNAME$.o");
-  aArmData->NewOption("AMultibyteSupport")->NewState("0");
   aArmData->NewOption("ALimitErrorsCheck")->NewState("0");
   aArmData->NewOption("ALimitErrorsEdit")->NewState("100");
   aArmData->NewOption("AIgnoreStdInclude")->NewState("0");
   aArmData->NewOption("AUserIncludes")->NewState("");
   aArmData->NewOption("AExtraOptionsCheckV2")->NewState("0");
   aArmData->NewOption("AExtraOptionsV2")->NewState("");
+  aArmData->NewOption("AsmNoLiteralPool")->NewState("0");
 
 
   // OBJCOPY:
@@ -2063,7 +2080,7 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   config->AddChild(objCopySettings);
   IarData* objCopyData = objCopySettings->NewData(1, true, this->buildCfg.isDebug);
 
-  objCopyData->NewOption("OOCOutputFormat", 2)->NewState("2");
+  objCopyData->NewOption("OOCOutputFormat", 3)->NewState("3");
   objCopyData->NewOption("OCOutputOverride")->NewState("0");
 
   std::string outFile = this->buildCfg.outputFile;
@@ -2078,6 +2095,7 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   XmlNode* customData = customSettings->NewChild("data");
   customData->NewChild("extensions");
   customData->NewChild("cmdline");
+  customData->NewChild("hasPrio", "0");
   config->AddChild(customSettings);
 
 
@@ -2098,7 +2116,7 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   // IAR Linker (ILINK):
   IarSettings* ilinkSettings = new IarSettings("ILINK", 0);
   config->AddChild(ilinkSettings);
-  IarData* ilinkData = ilinkSettings->NewData(15, true, this->buildCfg.isDebug);
+  IarData* ilinkData = ilinkSettings->NewData(20, true, this->buildCfg.isDebug);
 
   outFile = this->buildCfg.outputFile + ".elf";
   ilinkData->NewOption("IlinkOutputFile")->NewState(outFile);
@@ -2170,8 +2188,16 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
   ilinkData->NewOption("IlinkStackAnalysisEnable")->NewState("0");
   ilinkData->NewOption("IlinkStackControlFile")->NewState("");
   ilinkData->NewOption("IlinkStackCallGraphFile")->NewState("");
-  ilinkData->NewOption("CrcAlgorithm", 0)->NewState("1");
+  ilinkData->NewOption("CrcAlgorithm", 1)->NewState("1");
   ilinkData->NewOption("CrcUnitSize", 0)->NewState("0");
+  ilinkData->NewOption("IlinkThreadsSlave")->NewState("1");
+  ilinkData->NewOption("IlinkLogCallGraph")->NewState("0");
+  ilinkData->NewOption("IlinkIcfFile_AltDefault")->NewState("");
+  ilinkData->NewOption("IlinkEncInput")->NewState("0");
+  ilinkData->NewOption("IlinkEncOutput")->NewState("0");
+  ilinkData->NewOption("IlinkEncOutputBom")->NewState("1");
+  ilinkData->NewOption("IlinkHeapSelect")->NewState("1");
+  ilinkData->NewOption("IlinkLocaleSelect")->NewState("1");
 
   // IARCHIVE:
   IarSettings* iArchiveSettings = new IarSettings("IARCHIVE", 0);
@@ -2250,7 +2276,7 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile()
   debuggerFileName += std::string("/") + this->name + ".ewd";
 
   XmlNode root = XmlNode("project");
-  root.NewChild("fileVersion", "2");
+  root.NewChild("fileVersion", "3");
 
   for (unsigned int i = 0; i < 2; i++)
     {
