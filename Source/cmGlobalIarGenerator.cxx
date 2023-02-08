@@ -2301,6 +2301,10 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile()
     {
         cspyData->NewOption("OCDynDriverList")->NewState("IJET_ID");
     }
+    else if (GLOBALCFG.dbgProbeSelection == "Simulator")
+    {
+        cspyData->NewOption("OCDynDriverList")->NewState("ARMSIM_ID");
+    }	
     else
     {
         // I-Jet is the default probe.
