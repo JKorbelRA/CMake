@@ -21,11 +21,12 @@ public:
   ~cmLocalIarGenerator() override;
 
   std::string GetTargetDirectory(
-    cmGeneratorTarget const* target) const override;
+    cmGeneratorTarget const* target,
+    cmStateEnums::IntermediateDirKind kind) const override;
 
   void ComputeObjectFilenames(
-    std::map<cmSourceFile const*, std::string>& mapping,
-    cmGeneratorTarget const* gt = nullptr) override;
+    std::map<cmSourceFile const*, cmObjectLocations>& mapping,
+    std::string const& config, cmGeneratorTarget const* gt = nullptr) override;
 
   /**
    * Generate the makefile for this directory.

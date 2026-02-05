@@ -598,11 +598,11 @@ std::unique_ptr<cmLocalGenerator> cmGlobalIarGenerator::CreateLocalGenerator(
 }
 
 
-void cmGlobalIarGenerator::GetDocumentation(cmDocumentationEntry& entry)
+cmDocumentationEntry
+  cmGlobalIarGenerator::GetDocumentation(void)
 {
-  entry.Name = GetActualName();
-  entry.Brief =
-    "Generates IAR Embedded Workbench files (experimental, work-in-progress).";
+  cmDocumentationEntry entry{ GetActualName(), "Generates IAR Embedded Workbench files (experimental, work-in-progress)." };
+  return entry;
 }
 
 enum XmlParseState
@@ -852,14 +852,23 @@ bool cmGlobalIarGenerator::FindMakeProgram(cmMakefile* mf)
   return true;
 }
 
-
 std::vector<cmGlobalGenerator::GeneratedMakeCommand>
 cmGlobalIarGenerator::GenerateBuildCommand(
+  std::string const& makeProgram,
+                     std::string const& projectName,
+                     std::string const& projectDir,
+                     std::vector<std::string> const& targetNames,
+                     std::string const& config, int jobs, bool verbose,
+                     cmBuildOptions buildOptions,
+                     std::vector<std::string> const& makeOptions,
+                     BuildTryCompile /*isInTryCompile*/)
+  /* std::vector<
+    cmGlobalGenerator::GeneratedMakeCommand> cmGlobalIarGenerator::GenerateBuildCommand(
   const std::string& makeProgram, const std::string& projectName,
   const std::string& projectDir, std::vector<std::string> const& targetNames,
   const std::string& config, int jobs, bool verbose,
   const cmBuildOptions& buildOptions,
-  std::vector<std::string> const& makeOptions)
+  std::vector<std::string> const& makeOptions)*/
 {
   cmGlobalGenerator::GeneratedMakeCommand makeCommand = {};
 
@@ -922,8 +931,9 @@ void cmGlobalIarGenerator::ComputeTargetObjectDirectory(cmGeneratorTarget* gt) c
 {
   // Compute full path to object file directory for this target.
   std::string dir =
-    cmStrCat(gt->LocalGenerator->GetCurrentBinaryDirectory(),
-             '/', gt->LocalGenerator->GetTargetDirectory(gt),
+    cmStrCat(gt->LocalGenerator->GetCurrentBinaryDirectory(), '/',
+             gt->LocalGenerator->GetTargetDirectory(
+               gt, cmStateEnums::IntermediateDirKind::ObjectFiles),
              '/', this->GetCMakeCFGIntDir(), '/');
 /*
   // A nasty haxx. IAR builds binaries into CMAKE_BUILD_TYPE folder. And we need
@@ -1011,7 +1021,7 @@ bool cmGlobalIarGenerator::AddCheckTarget()
     cc->SetDepends(listFiles);
     cc->SetCommandLines(commandLines);
     cc->SetComment("Checking Build System");
-    cc->SetCMP0116Status(cmPolicies::NEW);
+    //cc->SetCMP0116Status(cmPolicies::NEW);
     cc->SetEscapeOldStyle(false);
     cc->SetStdPipesUTF8(true);
 

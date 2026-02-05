@@ -52,7 +52,7 @@ public:
   std::string GetName() const override { return GetActualName(); }
 
   /// Overloaded methods. @see cmGlobalGenerator::GetDocumentation()
-  static void GetDocumentation(cmDocumentationEntry& entry);
+  static cmDocumentationEntry GetDocumentation();
 
   /**
    * Utilized by the generator factory to determine if this generator
@@ -112,14 +112,13 @@ public:
                               cmGeneratorTarget* genTgt);
 
 protected:
-
-  std::vector<GeneratedMakeCommand> GenerateBuildCommand(
-    const std::string& makeProgram, const std::string& projectName,
-    const std::string& projectDir, std::vector<std::string> const& targetNames,
-    const std::string& config, int jobs, bool verbose,
-    const cmBuildOptions& buildOptions = cmBuildOptions(),
-    std::vector<std::string> const& makeOptions =
-      std::vector<std::string>()) override;
+  std::vector<cmGlobalGenerator::GeneratedMakeCommand>
+    GenerateBuildCommand(
+    std::string const& makeProgram, std::string const& projectName,
+    std::string const& projectDir, std::vector<std::string> const& targetNames,
+    std::string const& config, int jobs, bool verbose,
+    cmBuildOptions buildOptions, std::vector<std::string> const& makeOptions,
+    BuildTryCompile /*isInTryCompile*/) override;
 
 private:
   std::string StampFile;
