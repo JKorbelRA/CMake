@@ -44,8 +44,11 @@
 
 #include <filesystem>
 namespace fs = std::filesystem;
-
+#ifdef __linux__
+char const* cmGlobalIarGenerator::DEFAULT_BUILD_PROGRAM = "IarBuild";
+#elif defined(_WIN32)
 const char* cmGlobalIarGenerator::DEFAULT_BUILD_PROGRAM = "IarBuild.exe";
+#endif
 const char* cmGlobalIarGenerator::CHECK_BUILD_SYSTEM_TARGET = "RERUN_CMAKE";
 
 /// @brief XML Declaration.
@@ -54,7 +57,12 @@ const char* cmGlobalIarGenerator::XML_DECL =
 
 const char* cmGlobalIarGenerator::PROJ_FILE_EXT = ".ewp";
 const char* cmGlobalIarGenerator::WS_FILE_EXT = ".eww";
+
+#ifdef __linux__
+char const* cmGlobalIarGenerator::DEFAULT_MAKE_PROGRAM = "IarBuild";
+#elif defined(_WIN32)
 const char* cmGlobalIarGenerator::DEFAULT_MAKE_PROGRAM = "IarBuild.exe";
+#endif
 
 const char* cmGlobalIarGenerator::MULTIOPTS_COMPILER[13] = {
   "--dependencies",
@@ -2795,11 +2803,12 @@ void cmGlobalIarGenerator::Workspace::CreateWorkspaceFile()
   std::size_t lastSlash = iarBuildCmd.find_last_of("/\\");
   if (lastSlash != std::string::npos)
   {
-      iarBuildCmd = iarBuildCmd.substr(0, lastSlash) + "/common/bin/IarBuild.exe";
+    iarBuildCmd = iarBuildCmd.substr(0, lastSlash) +
+      "/common/bin/" + cmGlobalIarGenerator::DEFAULT_BUILD_PROGRAM;
   }
   else
   {
-      iarBuildCmd = "IarBuild.exe";
+    iarBuildCmd = cmGlobalIarGenerator::DEFAULT_BUILD_PROGRAM;
   }
 
   std::replace( iarBuildCmd.begin(), iarBuildCmd.end(), '/', '\\');
@@ -2954,6 +2963,7 @@ void cmGlobalIarGenerator::Workspace::RegisterProject(std::string wsName,
 }
 
 
+#ifdef _WIN32
 #include <future>
 
 #include <windows.h>
@@ -2999,3 +3009,4 @@ bool cmGlobalIarGenerator::Open(const std::string& bindir,
 
     return std::async(std::launch::async, OpenWorkspace, projFile, iarIde).get();
 }
+#endif // _WIN32
