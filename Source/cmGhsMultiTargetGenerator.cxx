@@ -247,11 +247,16 @@ void cmGhsMultiTargetGenerator::WriteCompilerFlags(std::ostream& fout,
   auto flagsByLangI = this->FlagsByLanguage.find(language);
   if (flagsByLangI != this->FlagsByLanguage.end()) {
     if (!flagsByLangI->second.empty()) {
+      // RA: Error for older Multi, workaround: options can be all on one line.
+      fout << "    " << flagsByLangI->second << std::endl;
+#if 0
       std::vector<std::string> ghsCompFlags =
         cmSystemTools::ParseArguments(flagsByLangI->second);
       for (std::string const& f : ghsCompFlags) {
         fout << "    " << f << '\n';
       }
+#endif
+      // END RA
     }
   }
 }

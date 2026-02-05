@@ -213,6 +213,10 @@ public:
   bool UseGhsMultiIDE() const;
   void SetBorlandMake(bool borlandMake);
   bool UseBorlandMake() const;
+  // RA PATCH:
+  void SetIarIDE(bool iarIDE);
+  bool UseIarIDE() const;
+  // END RA PATCH
   void SetWatcomWMake(bool watcomWMake);
   bool UseWatcomWMake() const;
   void SetMinGWMake(bool minGWMake);
@@ -299,6 +303,9 @@ private:
   bool WindowsVSIDE = false;
   bool GhsMultiIDE = false;
   bool BorlandMake = false;
+  // RA PATCH:
+  bool IarIDE = false;
+  // END RA PATCH
   bool WatcomWMake = false;
   bool MinGWMake = false;
   bool NMake = false;
