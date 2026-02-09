@@ -778,6 +778,7 @@ private:
 
   struct GlobalCmakeCfg
   {
+    bool cacheLoaded;
     std::string buildType;
     std::string iarCCompilerFlags;
     std::string iarAsmFlags;

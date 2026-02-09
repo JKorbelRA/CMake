@@ -154,6 +154,21 @@ cmGlobalIarGenerator::cmGlobalIarGenerator(cmake* cm)
   if (!iarPath.empty()) {
     GLOBALCFG.iarPath = iarPath;
   }
+
+  std::string iarWbVersion = cm->GetCacheDefinition("IAR_WORKBENCH_VERSION");
+  std::string iarWbMajorVersion =
+    cm->GetCacheDefinition("IAR_WORKBENCH_VERSION_MAJOR");
+  std::string iarWbMinorVersion =
+    cm->GetCacheDefinition("IAR_WORKBENCH_VERSION_MINOR");
+
+  GLOBALCFG.wbVersion =
+    iarWbVersion.empty() ? GLOBALCFG.wbVersion : iarWbVersion;
+  GLOBALCFG.wbVersionMajor = iarWbMajorVersion.empty()
+    ? GLOBALCFG.wbVersionMajor
+    : std::stoi(iarWbMajorVersion);
+  GLOBALCFG.wbVersionMinor = iarWbMajorVersion.empty()
+    ? GLOBALCFG.wbVersionMinor
+    : std::stoi(iarWbMinorVersion);
 }
 
 cmGlobalIarGenerator::~cmGlobalIarGenerator()
@@ -1371,7 +1386,11 @@ void cmGlobalIarGenerator::ConvertTargetToProject(const cmTarget& tgt,
      for (std::vector<std::string>::const_iterator it =
             pcli->GetDepends().begin();
           it != pcli->GetDepends().end(); ++it) {
-       buildCfg.libraries.push_back(*it);
+
+         
+        if (std::find(buildCfg.libraries.begin(), buildCfg.libraries.end(),  *it) == buildCfg.libraries.end()) {
+         buildCfg.libraries.push_back(*it);
+       }
      }
    }
 
@@ -1392,11 +1411,11 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
     {
         // Supported.
     }
-    else
-    {
-        cmSystemTools::Message(
-            "Warning: IAR Workbench version " + GLOBALCFG.wbVersion +
-            " is not explicitly supported.");
+    else {
+      cmSystemTools::Message("Warning: IAR Workbench version " +
+                             std::to_string(GLOBALCFG.wbVersionMajor) +
+                             std::to_string(GLOBALCFG.wbVersionMinor) +
+                             " is not explicitly supported.");
     }
     CreateProjectFile8();
   } else //(GLOBALCFG.wbVersionMajor >= 9)
@@ -1405,11 +1424,11 @@ void cmGlobalIarGenerator::Project::CreateProjectFile()
     {
         // Supported.
     }
-    else
-    {
-        cmSystemTools::Message(
-            "Warning: IAR Workbench version " + GLOBALCFG.wbVersion +
-            " is not explicitly supported.");
+    else {
+      cmSystemTools::Message("Warning: IAR Workbench version " +
+                             std::to_string(GLOBALCFG.wbVersionMajor) +
+                             std::to_string(GLOBALCFG.wbVersionMinor) +
+                             " is not explicitly supported.");
     }
 
     CreateProjectFile9();

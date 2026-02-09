@@ -286,16 +286,8 @@ void cmGlobalIarGenerator::Project::CreateProjectFile9()
 
   iccArmData->NewOption("CCOptLevel")->NewState(optLvl);
   iccArmData->NewOption("CCOptStrategy", 0)->NewState(optStrategy);
-  iccArmData->NewOption("CCOptLevelSlave")->NewState(optLvl);
+  iccArmData->NewOption("CCOptLevelSlave", 0)->NewState(optLvl);
 
-  iccArmData->NewOption("CompilerMisraRules98", 0)
-                ->NewState("100011111011010110111001110011111110111001101100010111"
-                    "011110110110011111111111110011001111100111011100111111"
-                    "1111111111111111111");
-  iccArmData->NewOption("CompilerMisraRules04", 0)
-                ->NewState("111101110010111111111000110111111111111111111111111110"
-                    "010111101111010101111111111111111111111111101111111011"
-                    "111001111011111011111111111111111");
   iccArmData->NewOption("CCPosIndRopi")->NewState("0");
   iccArmData->NewOption("CCPosIndRwpi")->NewState("0");
   iccArmData->NewOption("CCPosIndNoDynInit")->NewState("0");
@@ -316,10 +308,17 @@ void cmGlobalIarGenerator::Project::CreateProjectFile9()
   iccArmData->NewOption("IccExceptions2")->NewState("0");
   iccArmData->NewOption("IccRTTI2")->NewState("0");
 
+  //v9
+
+  iccArmData->NewOption("OICompilerExtraOption")->NewState("1");
+  iccArmData->NewOption("CCStackProtection")->NewState("0");
+  iccArmData->NewOption("CCPointerAutentiction")->NewState("0");
+  iccArmData->NewOption("CCBranchTargetIdentification")->NewState("0");
+
   // AARM:
   IarSettings* aArmSettings = new IarSettings("AARM", 2);
   config->AddChild(aArmSettings);
-  IarData* aArmData = aArmSettings->NewData(10, true, this->buildCfg.isDebug);
+  IarData* aArmData = aArmSettings->NewData(12, true, this->buildCfg.isDebug);
 
   aArmData->NewOption("AObjPrefix")->NewState("1");
   aArmData->NewOption("AEndian")->NewState("1");
@@ -361,6 +360,11 @@ void cmGlobalIarGenerator::Project::CreateProjectFile9()
   aArmData->NewOption("AExtraOptionsV2")->NewState("");
   aArmData->NewOption("AsmNoLiteralPool")->NewState("0");
 
+  //v9
+  aArmData->NewOption("PreInclude")->NewState("");
+  aArmData->NewOption("A_32_64Device")->NewState("1");
+
+
 
   // OBJCOPY:
   IarSettings* objCopySettings = new IarSettings("OBJCOPY", 0);
@@ -383,32 +387,19 @@ void cmGlobalIarGenerator::Project::CreateProjectFile9()
   customData->NewChild("extensions");
   customData->NewChild("cmdline");
   customData->NewChild("hasPrio", "0");
+  customData->NewChild("buildSequence", "inputOutputBased");
   config->AddChild(customSettings);
 
-
-  // BICOMP:
-  IarSettings* bicompSettings = new IarSettings("BICOMP", 0);
-  bicompSettings->NewChild("data");
-  config->AddChild(bicompSettings);
-
-
-  // BUILDACTION:
-  IarSettings* bactionSettings = new IarSettings("BUILDACTION", 1);
-  XmlNode* bactionData = bactionSettings->NewChild("data");
-  bactionData->NewChild("prebuild", this->buildCfg.preBuildCmd);
-  bactionData->NewChild("postbuild", this->buildCfg.postBuildCmd);
-  config->AddChild(bactionSettings);
 
 
   // IAR Linker (ILINK):
   IarSettings* ilinkSettings = new IarSettings("ILINK", 0);
   config->AddChild(ilinkSettings);
-  IarData* ilinkData = ilinkSettings->NewData(20, true, this->buildCfg.isDebug);
+  IarData* ilinkData = ilinkSettings->NewData(27, true, this->buildCfg.isDebug);
 
   outFile = this->buildCfg.outputFile + ".elf";
   ilinkData->NewOption("IlinkOutputFile")->NewState(outFile);
   ilinkData->NewOption("IlinkLibIOConfig")->NewState("1");
-  ilinkData->NewOption("XLinkMisraHandler")->NewState("0");
   ilinkData->NewOption("IlinkInputFileSlave")->NewState("0");
   ilinkData->NewOption("IlinkDebugInfoEnable")->NewState("1");
   ilinkData->NewOption("IlinkKeepSymbols")->NewState("");
@@ -486,21 +477,50 @@ void cmGlobalIarGenerator::Project::CreateProjectFile9()
   ilinkData->NewOption("IlinkHeapSelect")->NewState("1");
   ilinkData->NewOption("IlinkLocaleSelect")->NewState("1");
 
+  // v9
+  ilinkData->NewOption("IlinkTrustzoneImportLibraryOut")->NewState("###Unitialized###");
+  ilinkData->NewOption("OILinkExtraOption")->NewState("1");
+  ilinkData->NewOption("IlinkRawBinaryFile2")->NewState("");
+  ilinkData->NewOption("IlinkRawBinarySymbol2")->NewState("");
+  ilinkData->NewOption("IlinkRawBinarySegment2")->NewState("");
+  ilinkData->NewOption("IlinkRawBinaryAlign2")->NewState("");
+  ilinkData->NewOption("IlinkLogCrtRoutineSelection")->NewState("0");
+  ilinkData->NewOption("IlinkLogFragmentInfo")->NewState("0");
+  ilinkData->NewOption("IlinkLogInlining")->NewState("0");
+  ilinkData->NewOption("IlinkLogMerging")->NewState("0");
+  ilinkData->NewOption("IlinkDemangle")->NewState("0");
+  ilinkData->NewOption("IlinkWrapperFileEnable")->NewState("0");
+  ilinkData->NewOption("IlinkWrapperFile")->NewState("");
+  ilinkData->NewOption("IlinkProcessor")->NewState("1");
+  ilinkData->NewOption("IlinkFpuProcessor")->NewState("1");
+
+
   // IARCHIVE:
   IarSettings* iArchiveSettings = new IarSettings("IARCHIVE", 0);
   config->AddChild(iArchiveSettings);
   IarData* iArchiveData = iArchiveSettings->NewData(0, true, this->buildCfg.isDebug);
 
-  // 00
   iArchiveData->NewOption("IarchiveInputs")->NewState("");
   iArchiveData->NewOption("IarchiveOverride")->NewState("0");
   iArchiveData->NewOption("IarchiveOutput")->NewState("###Unitialized###");
 
+  
 
-  // BILINK:
-  IarSettings* bilinkSettings = new IarSettings("BILINK", 0);
-  bilinkSettings->NewChild("data");
-  config->AddChild(bilinkSettings);
+  // BUILDACTION:
+  IarSettings* bactionSettings = new IarSettings("BUILDACTION", 2);
+  XmlNode* bactionData = bactionSettings->NewChild("data");
+  XmlNode* bactions = bactionData->NewChild("buildActions");
+
+  if (!this->buildCfg.postBuildCmd.empty()) {
+    XmlNode* bactionPostBuild = bactions->NewChild("buildAction");
+    bactionPostBuild->NewChild("cmdline", this->buildCfg.postBuildCmd);
+    bactionPostBuild->NewChild("workingDirectory", "$PROJ_DIR$");
+    bactionPostBuild->NewChild("buildSequence", "postLink");
+    XmlNode* baOutputs = bactionPostBuild->NewChild("outputs");
+    XmlNode* baOutFile = baOutputs->NewChild("file");
+    baOutFile->NewChild("name", "$BUILD_FILES_DIR$/.postbuild");
+  }
+  config->AddChild(bactionSettings);
 
 
   // This file is outside our source directory.
@@ -563,7 +583,7 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
   debuggerFileName += std::string("/") + this->name + ".ewd";
 
   XmlNode root = XmlNode("project");
-  root.NewChild("fileVersion", "3");
+  root.NewChild("fileVersion", "4");
 
   for (unsigned int i = 0; i < 2; i++)
     {
@@ -582,7 +602,7 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     IarSettings* cspySettings = new IarSettings("C-SPY", 2);
     config->AddChild(cspySettings);
 
-    IarData* cspyData = cspySettings->NewData(25, true, isDebug);
+    IarData* cspyData = cspySettings->NewData(33, true, isDebug);
 
     cspyData->NewOption("CInput")->NewState("1");
     cspyData->NewOption("CEndian")->NewState("1");
@@ -626,7 +646,6 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
 
     cspyData->NewOption("OCLastSavedByProductVersion")
             ->NewState(GLOBALCFG.wbVersion);
-    cspyData->NewOption("OCDownloadAttachToProgram")->NewState("0");
 
     cspyData->NewOption("UseFlashLoader")->NewState("0");
     cspyData->NewOption("CLowLevel")->NewState("1");
@@ -656,6 +675,28 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     cspyData->NewOption("OCDebuggerExtraOption")->NewState("1");
     cspyData->NewOption("OCAllMTBOptions")->NewState("1");
 
+    // v9
+    cspyData->NewOption("OCMulticoreNrOfCores")->NewState("1");
+    cspyData->NewOption("OCMulticoreWorkspace")->NewState("");
+    cspyData->NewOption("OCMulticoreSlaveProject")->NewState("");
+    cspyData->NewOption("OCMulticoreSlaveConfiguration")->NewState("");
+    cspyData->NewOption("OCDownloadExtraImage")->NewState("1");
+    cspyData->NewOption("OCAttachSlave")->NewState("0");
+    cspyData->NewOption("MassEraseBeforeFlashing")->NewState("0");
+    cspyData->NewOption("OCMulticoreNrOfCoresSlave")->NewState("1");
+    cspyData->NewOption("OCMulticoreAMPConfigType")->NewState("0");
+    cspyData->NewOption("OCMulticoreSessionFile")->NewState("");
+    cspyData->NewOption("OCTpiuBaseOption")->NewState("1");
+    cspyData->NewOption("OCOverrideSlave")->NewState("0");
+    cspyData->NewOption("OCOverrideSlavePath")->NewState("");
+    cspyData->NewOption("C_32_64Device")->NewState("1");
+    cspyData->NewOption("AuthEnable")->NewState("0");
+    cspyData->NewOption("AuthSdmSelection")->NewState("1");
+    cspyData->NewOption("AuthSdmManifest")->NewState("");
+    cspyData->NewOption("AuthSdmExplicitLib")->NewState("");
+    cspyData->NewOption("AuthEnforce")->NewState("0");
+
+
     // ARMSIM_ID
     IarSettings* armsimId = new IarSettings("ARMSIM_ID", 2);
     config->AddChild(armsimId);
@@ -667,32 +708,29 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     armsimData->NewOption("OCSimPspOverrideConfig")->NewState("0");
     armsimData->NewOption("OCSimPspConfigFile")->NewState("");
 
-    // ANGEL_ID
+    // CADI_ID
 
-    IarSettings* angelId = new IarSettings("ANGEL_ID", 2);
-    config->AddChild(angelId);
+    IarSettings* cadiId = new IarSettings("CADI_ID", 2);
+    config->AddChild(cadiId);
 
-    IarData* angelData = angelId->NewData(0, true, isDebug);
+    IarData* cadiData = cadiId->NewData(0, true, isDebug);
 
-    angelData->NewOption("CCAngelHeartbeat")->NewState("1");
-    angelData->NewOption("CAngelCommunication")->NewState("1");
-    angelData->NewOption("CAngelCommBaud",0)->NewState("3");
-    angelData->NewOption("CAngelCommPort",0)->NewState("0");
-    angelData->NewOption("ANGELTCPIP")->NewState("aaa.bbb.ccc.ddd");
-    angelData->NewOption("DoAngelLogfile")->NewState("0");
-    angelData->NewOption("AngelLogFile")
-            ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
-    angelData->NewOption("OCDriverInfo")->NewState("1");
+    cadiData->NewOption("CCadiMemory")->NewState("1");
+    cadiData->NewOption("Fast Model")->NewState("");
+    cadiData->NewOption("CCADILogFileCheck")->NewState("0");
+    cadiData->NewOption("CCADILogFileEditB")
+      ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
+    cadiData->NewOption("OCDriverInfo")->NewState("1");
 
     // CMSISDAP_ID
 
     IarSettings* cmsisdapId = new IarSettings("CMSISDAP_ID", 2);
     config->AddChild(cmsisdapId);
 
-    IarData* cmsisdapData = cmsisdapId->NewData(0, true, isDebug);
+    IarData* cmsisdapData = cmsisdapId->NewData(4, true, isDebug);
 
+    cmsisdapData->NewOption("CatchSFERR")->NewState("1");
     cmsisdapData->NewOption("OCDriverInfo")->NewState("1");
-    cmsisdapData->NewOption("CMSISDAPAttachSlave")->NewState("1");
     cmsisdapData->NewOption("OCIarProbeScriptFile")->NewState("1");
     cmsisdapData->NewOption("CMSISDAPResetList",1)->NewState("10");
     cmsisdapData->NewOption("CMSISDAPHWResetDuration")->NewState("300");
@@ -728,6 +766,34 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     cmsisdapData->NewOption("CMSISDAPMultiCPUEnable")->NewState("0");
     cmsisdapData->NewOption("CMSISDAPMultiCPUNumber")->NewState("0");
 
+    //v9
+    cmsisdapData->NewOption("OCProbeCfgOverride")->NewState("0");
+    cmsisdapData->NewOption("OCProbeConfig")->NewState("");
+    cmsisdapData->NewOption("CMSISDAPProbeConfigRadio")->NewState("0");
+    cmsisdapData->NewOption("CMSISDAPSelectedCPUBehaviour")->NewState("0");
+    cmsisdapData->NewOption("ICpuName")->NewState("");
+    cmsisdapData->NewOption("OCJetEmuParams")->NewState("1");
+    cmsisdapData->NewOption("CCCMSISDAPUsbSerialNo")->NewState("");
+    cmsisdapData->NewOption("CCCMSISDAPUsbSerialNoSelect")->NewState("0");
+
+    
+    // E2_ID
+
+    IarSettings* ed2id = new IarSettings("E2_ID", 2);
+    config->AddChild(ed2id);
+
+    IarData* ed2Data = ed2id->NewData(0, true, isDebug);
+
+    ed2Data->NewOption("E2PowerFromProbe")->NewState("1");
+    ed2Data->NewOption("CE2UsbSerialNo")->NewState("");
+    ed2Data->NewOption("CE2IdCodeEditB")->NewState("0xFFFF'FFFF'FFFF'FFFF'FFFF'FFFF'FFFF'FFFF");
+    ed2Data->NewOption("CE2LogFileCheck")->NewState("0");
+    ed2Data->NewOption("CE2LogFileEditB")
+      ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
+    ed2Data->NewOption("OCDriverInfo")->NewState("1");
+
+    //--------------
+
     IarSettings* gdbId = new IarSettings("GDBSERVER_ID", 2);
     config->AddChild(gdbId);
 
@@ -742,25 +808,28 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     gdbData->NewOption("CCJTagDoUpdateBreakpoints")->NewState("0");
     gdbData->NewOption("CCJTagUpdateBreakpoints")->NewState("main");
 
-    IarSettings* iarromId = new IarSettings("IARROM_ID", 2);
-    config->AddChild(iarromId);
+    //---------------
 
-    IarData* iarromData = iarromId->NewData(1, true, isDebug);
+    IarSettings* gplinkId = new IarSettings("GPLINK_ID", 2);
+    config->AddChild(gplinkId);
 
-    iarromData->NewOption("CRomLogFileCheck")
+    IarData* gplinkData = gplinkId->NewData(0, true, isDebug);
+
+    gplinkData->NewOption("OCDriverInfo")->NewState("1");
+    gplinkData->NewOption("DoLogfile")->NewState("0");
+    gplinkData->NewOption("OCDriverInfo")->NewState("1");
+
+    gplinkData->NewOption("LogFile")
             ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
-    iarromData->NewOption("CRomCommPort",0)->NewState("0");
-    iarromData->NewOption("CRomCommBaud",0)->NewState("7");
-    iarromData->NewOption("OCDriverInfo")->NewState("1");
 
 
     IarSettings* ijetId = new IarSettings("IJET_ID", 2);
     config->AddChild(ijetId);
 
-    IarData* ijetData = ijetId->NewData(2, true, isDebug);
+    IarData* ijetData = ijetId->NewData(9, true, isDebug);
 
+    ijetData->NewOption("CatchSFERR")->NewState("1");
     ijetData->NewOption("OCDriverInfo")->NewState("1");
-    ijetData->NewOption("IjetAttachSlave")->NewState("1");
     ijetData->NewOption("OCIarProbeScriptFile")->NewState("1");
     ijetData->NewOption("IjetResetList",1)->NewState("2");
     ijetData->NewOption("IjetHWResetDuration")->NewState("300");
@@ -811,12 +880,35 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     ijetData->NewOption("IjetSelectedCPUBehaviour")
             ->NewState(isDebug ? "R4" : "0");
     ijetData->NewOption("ICpuName")->NewState(isDebug ? "R4" : "");
+    //v9
+
+    ijetData->NewOption("OCJetEmuParams")->NewState("1");
+    ijetData->NewOption("IjetPreferETB")->NewState("1");
+    ijetData->NewOption("IjetTraceSettingsList",0)->NewState("0");
+    ijetData->NewOption("IjetTraceSizeList",0)->NewState("4");
+    ijetData->NewOption("FlashBoardPathSlave")->NewState("0");
+    ijetData->NewOption("CCIjetUsbSerialNo")->NewState("");
+    ijetData->NewOption("CCIjetUsbSerialNoSelect")->NewState("0");
+    ijetData->NewOption("CatchV8ARReset")->NewState("0");
+    ijetData->NewOption("CatchV8AREREL1NS")->NewState("0");
+    ijetData->NewOption("CatchV8AREREL1S")->NewState("0");
+    ijetData->NewOption("CatchV8AREREL2NS")->NewState("0");
+    ijetData->NewOption("CatchV8AREREL3S")->NewState("0");
+    ijetData->NewOption("CatchV8AREEL1NS")->NewState("0");
+    ijetData->NewOption("CatchV8ARREL1NS")->NewState("0");
+    ijetData->NewOption("CatchV8AREEL1S")->NewState("0");
+    ijetData->NewOption("CatchV8ARREL1S")->NewState("0");
+    ijetData->NewOption("CatchV8AREEL2NS")->NewState("0");
+    ijetData->NewOption("CatchV8ARREL2NS")->NewState("0");
+    ijetData->NewOption("CatchV8AREEL3S")->NewState("0");
+    ijetData->NewOption("CatchV8ARREL3S")->NewState("0");
 
     IarSettings* jlinkId = new IarSettings("JLINK_ID", 2);
     config->AddChild(jlinkId);
 
-    IarData* jlinkData = jlinkId->NewData(15, true, isDebug);
+    IarData* jlinkData = jlinkId->NewData(16, true, isDebug);
 
+    jlinkData->NewOption("CCCatchSFERR")->NewState("0");
     jlinkData->NewOption("JLinkSpeed")->NewState("10000");
     jlinkData->NewOption("CCJLinkDoLogfile")->NewState("0");
     jlinkData->NewOption("CCJLinkLogFile")
@@ -843,7 +935,6 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     jlinkData->NewOption("CCJLinkDoUpdateBreakpoints")->NewState("0");
     jlinkData->NewOption("CCJLinkUpdateBreakpoints")->NewState("main");
     jlinkData->NewOption("CCJLinkInterfaceRadio")->NewState("0");
-    jlinkData->NewOption("OCJLinkAttachSlave")->NewState("1");
     jlinkData->NewOption("CCJLinkResetList",6)
             ->NewState(isDebug ? "1" : "5");
     jlinkData->NewOption("CCJLinkInterfaceCmdLine")->NewState("0");
@@ -867,101 +958,67 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
     jlinkData->NewOption("OCJLinkTraceSourceDummy")->NewState("0");
     jlinkData->NewOption("OCJLinkDeviceName")->NewState("1");
 
-    IarSettings* lmiftdiId = new IarSettings("LMIFTDI_ID", 2);
-    config->AddChild(lmiftdiId);
+    IarSettings* nulinkId = new IarSettings("NULINK_ID", 2);
+    config->AddChild(nulinkId);
 
-    IarData* lmiftdiData = lmiftdiId->NewData(2, true, isDebug);
+    IarData* nulinkData = nulinkId->NewData(0, true, isDebug);
 
-    lmiftdiData->NewOption("OCDriverInfo")->NewState("1");
-    lmiftdiData->NewOption("LmiftdiSpeed")->NewState("500");
-    lmiftdiData->NewOption("CCLmiftdiDoLogfile")->NewState("0");
-    lmiftdiData->NewOption("CCLmiftdiLogFile")
-            ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
-    lmiftdiData->NewOption("CCLmiFtdiInterfaceRadio")->NewState("0");
-    lmiftdiData->NewOption("CCLmiFtdiInterfaceCmdLine")->NewState("0");
-
-    IarSettings* macraigorId = new IarSettings("MACRAIGOR_ID", 2);
-    config->AddChild(macraigorId);
-
-    IarData* macraigorData = macraigorId->NewData(3, true, isDebug);
-
-    macraigorData->NewOption("jtag",0)->NewState("0");
-    macraigorData->NewOption("EmuSpeed")->NewState("1");
-    macraigorData->NewOption("TCPIP")->NewState("aaa.bbb.ccc.ddd");
-    macraigorData->NewOption("DoLogfile")->NewState("0");
-    macraigorData->NewOption("LogFile")
-            ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
-    macraigorData->NewOption("DoEmuMultiTarget")->NewState("0");
-    macraigorData->NewOption("EmuMultiTarget")->NewState("0@ARM7TDMI");
-    macraigorData->NewOption("EmuHWReset")->NewState("0");
-    macraigorData->NewOption("CEmuCommBaud",0)->NewState("4");
-    macraigorData->NewOption("CEmuCommPort",0)->NewState("0");
-    macraigorData->NewOption("jtago",0)->NewState("0");
-    macraigorData->NewOption("OCDriverInfo")->NewState("1");
-    macraigorData->NewOption("UnusedAddr")->NewState("0x00800000");
-    macraigorData->NewOption("CCMacraigorHWResetDelay")->NewState("");
-    macraigorData->NewOption("CCJTagBreakpointRadio")->NewState("0");
-    macraigorData->NewOption("CCJTagDoUpdateBreakpoints")->NewState("0");
-    macraigorData->NewOption("CCJTagUpdateBreakpoints")->NewState("main");
-    macraigorData->NewOption("CCMacraigorInterfaceRadio")->NewState("0");
-    macraigorData->NewOption("CCMacraigorInterfaceCmdLine")->NewState("0");
+    nulinkData->NewOption("OCDriverInfo")->NewState("1");
+    nulinkData->NewOption("DoLogfile")->NewState("0");
+    nulinkData->NewOption("LogFile")->NewState(
+      cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
 
     IarSettings* pemicroId = new IarSettings("PEMICRO_ID", 2);
     config->AddChild(pemicroId);
 
-    IarData* pemicroData = pemicroId->NewData(1, true, isDebug);
+    IarData* pemicroData = pemicroId->NewData(3, true, isDebug);
 
     pemicroData->NewOption("OCDriverInfo")->NewState("1");
-    pemicroData->NewOption("OCPEMicroAttachSlave")->NewState("1");
-    pemicroData->NewOption("CCPEMicroInterfaceList",0)->NewState("0");
-    pemicroData->NewOption("CCPEMicroResetDelay")->NewState("");
-    pemicroData->NewOption("CCPEMicroJtagSpeed")->NewState("#UNINITIALIZED#");
     pemicroData->NewOption("CCJPEMicroShowSettings")->NewState("0");
     pemicroData->NewOption("DoLogfile")->NewState("0");
-    pemicroData->NewOption("LogFile")
-            ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
-    pemicroData->NewOption("CCPEMicroUSBDevice",0)->NewState("0");
-    pemicroData->NewOption("CCPEMicroSerialPort",0)->NewState("0");
-    pemicroData->NewOption("CCJPEMicroTCPIPAutoScanNetwork")->NewState("1");
-    pemicroData->NewOption("CCPEMicroTCPIP")->NewState("10.0.0.1");
-    pemicroData->NewOption("CCPEMicroCommCmdLineProducer")->NewState("0");
-    pemicroData->NewOption("CCSTLinkInterfaceRadio")->NewState("0");
-    pemicroData->NewOption("CCSTLinkInterfaceCmdLine")->NewState("0");
 
-
-    IarSettings* rdiId = new IarSettings("RDI_ID", 2);
-    config->AddChild(rdiId);
-
-    IarData* rdiData = rdiId->NewData(2, true, isDebug);
-
-    rdiData->NewOption("CRDIDriverDll")->NewState("###Uninitialized###");
-    rdiData->NewOption("CRDILogFileCheck")->NewState("0");
-    rdiData->NewOption("CRDILogFileEdit")
-            ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
-    rdiData->NewOption("CCRDIHWReset")->NewState("0");
-    rdiData->NewOption("CCRDICatchReset")->NewState("0");
-    rdiData->NewOption("CCRDICatchUndef")->NewState("0");
-    rdiData->NewOption("CCRDICatchSWI")->NewState("0");
-    rdiData->NewOption("CCRDICatchData")->NewState("0");
-    rdiData->NewOption("CCRDICatchPrefetch")->NewState("0");
-    rdiData->NewOption("CCRDICatchIRQ")->NewState("0");
-    rdiData->NewOption("CCRDICatchFIQ")->NewState("0");
-    rdiData->NewOption("OCDriverInfo")->NewState("1");
+    pemicroData->NewOption("LogFile")->NewState(
+      cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
 
 
     IarSettings* stlinkId = new IarSettings("STLINK_ID", 2);
     config->AddChild(stlinkId);
 
-    IarData* stlinkData = stlinkId->NewData(2, true, isDebug);
+    IarData* stlinkData = stlinkId->NewData(8, true, isDebug);
 
 
     stlinkData->NewOption("OCDriverInfo")->NewState("1");
     stlinkData->NewOption("CCSTLinkInterfaceRadio")->NewState("0");
     stlinkData->NewOption("CCSTLinkInterfaceCmdLine")->NewState("0");
-    stlinkData->NewOption("CCSTLinkResetList",1)->NewState("0");
+    stlinkData->NewOption("CCSTLinkResetList",3)->NewState("0");
     stlinkData->NewOption("CCCpuClockEdit")->NewState("72.0");
     stlinkData->NewOption("CCSwoClockAuto")->NewState("0");
     stlinkData->NewOption("CCSwoClockEdit")->NewState("2000");
+    stlinkData->NewOption("DoLogfile")->NewState("0");
+
+    stlinkData->NewOption("LogFile")->NewState(
+      cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
+    stlinkData->NewOption("CCSTLinkDoUpdateBreakpoints")->NewState("0");
+    stlinkData->NewOption("CCSTLinkUpdateBreakpoints")->NewState("_call_main");
+    stlinkData->NewOption("CCSTLinkCatchCORERESET")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchMMERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchNOCPERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchCHRERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchSTATERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchBUSERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchINTERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchSFERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchHARDERR")->NewState("0");
+    stlinkData->NewOption("CCSTLinkCatchDummy")->NewState("0");
+    stlinkData->NewOption("CCSTLinkUsbSerialNo")->NewState("");
+    stlinkData->NewOption("CCSTLinkUsbSerialNoSelect")->NewState("0");
+    stlinkData->NewOption("CCSTLinkJtagSpeedList",2)->NewState("0");
+    stlinkData->NewOption("CCSTLinkDAPNumber")->NewState("");
+    stlinkData->NewOption("CCSTLinkDebugAccessPortRadio")->NewState("0");
+    stlinkData->NewOption("CCSTLinkUseServerSelect")->NewState("0");
+    stlinkData->NewOption("CCSTLinkProbeList",2)->NewState("0");
+    stlinkData->NewOption("CCSTLinkTargetVccEnable")->NewState("1");
+    stlinkData->NewOption("CCSTLinkTargetVoltage")->NewState("###Uninitialized###");
 
 
     IarSettings* thirdPartyId = new IarSettings("THIRDPARTY_ID", 2);
@@ -976,20 +1033,82 @@ void cmGlobalIarGenerator::Project::CreateDebuggerFile9()
             ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
     thirdPartyData->NewOption("OCDriverInfo")->NewState("1");
 
+    IarSettings* tifetId = new IarSettings("TIFET_ID", 2);
+    config->AddChild(tifetId);
+
+    IarData* tifetData = tifetId->NewData(1, true, isDebug);
+
+    tifetData->NewOption("OCDriverInfo")->NewState("1");
+    tifetData->NewOption("CCMSPFetResetList",0)->NewState("0");
+    tifetData->NewOption("CCMSPFetInterfaceRadio")->NewState("0");
+    tifetData->NewOption("CCMSPFetInterfaceCmdLine")->NewState("0");
+    tifetData->NewOption("CCMSPFetTargetVccTypeDefault")->NewState("0");
+    tifetData->NewOption("CCMSPFetTargetVoltage")
+      ->NewState("###Uninitialized###");
+    tifetData->NewOption("CCMSPFetVCCDefault")->NewState("1");
+    tifetData->NewOption("CCMSPFetTargetSettlingtime")->NewState("0");
+    tifetData->NewOption("CCMSPFetRadioJtagSpeedType")->NewState("1");
+    tifetData->NewOption("CCMSPFetConnection",0)->NewState("0");
+    tifetData->NewOption("CCMSPFetUsbComPort")->NewState("Automatic");
+    tifetData->NewOption("CCMSPFetAllowAccessToBSL")->NewState("0");
+
+
+    tifetData->NewOption("CCMSPFetDoLogfile")->NewState("0");
+    tifetData->NewOption("CCMSPFetLogFile")->NewState(
+      cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
+
+    tifetData->NewOption("CCMSPFetRadioEraseFlash")->NewState("1");
+
+    
     IarSettings* xds100Id = new IarSettings("XDS100_ID", 2);
     config->AddChild(xds100Id);
-
-    IarData* xds100Data = xds100Id->NewData(2, true, isDebug);
+    IarData* xds100Data = xds100Id->NewData(9, true, isDebug);
 
     xds100Data->NewOption("OCDriverInfo")->NewState("1");
-    xds100Data->NewOption("OCXDS100AttachSlave")->NewState("1");
     xds100Data->NewOption("TIPackageOverride")->NewState("0");
     xds100Data->NewOption("TIPackage")->NewState("");
-    xds100Data->NewOption("CCXds100InterfaceList",0)->NewState("0");
     xds100Data->NewOption("BoardFile")->NewState("");
+
     xds100Data->NewOption("DoLogfile")->NewState("0");
     xds100Data->NewOption("LogFile")
-            ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
+      ->NewState(cmGlobalIarGenerator::GLOBALCFG.dbgLogFile);
+
+    xds100Data->NewOption("CCXds100BreakpointRadio")->NewState("0");
+    xds100Data->NewOption("CCXds100DoUpdateBreakpoints")->NewState("0");
+    xds100Data->NewOption("CCXds100UpdateBreakpoints")->NewState("_call_main");
+    xds100Data->NewOption("CCXds100CatchReset")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchUndef")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchSWI")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchData")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchPrefetch")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchIRQ")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchFIQ")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchCORERESET")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchMMERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchNOCPERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchCHRERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchSTATERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchBUSERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchINTERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchSFERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchHARDERR")->NewState("0");
+    xds100Data->NewOption("CCXds100CatchDummy")->NewState("0");
+    xds100Data->NewOption("CCXds100CpuClockEdit")->NewState("");
+    xds100Data->NewOption("CCXds100SwoClockAuto")->NewState("0");
+    xds100Data->NewOption("CCXds100SwoClockEdit")->NewState("1000");
+    xds100Data->NewOption("CCXds100HWResetDelay")->NewState("0");
+    xds100Data->NewOption("CCXds100ResetList",1)->NewState("0");
+    xds100Data->NewOption("CCXds100UsbSerialNoSelect")->NewState("0");
+    xds100Data->NewOption("CCXds100JtagSpeedList",0)->NewState("0");
+    xds100Data->NewOption("CCXds100InterfaceRadio")->NewState("0");
+    xds100Data->NewOption("CCXds100InterfaceCmdLine")->NewState("0");
+    xds100Data->NewOption("CCXds100ProbeList",0)->NewState("0");
+    xds100Data->NewOption("CCXds100SWOPortRadio")->NewState("0");
+    xds100Data->NewOption("CCXds100SWOPort")->NewState("1");
+    xds100Data->NewOption("CCXDSTargetVccEnable")->NewState("0");
+    xds100Data->NewOption("CCXDSTargetVoltage")->NewState("###Uninitialized###");
+    xds100Data->NewOption("OCXDSDigitalStatesConfigFile")->NewState("1");
+    xds100Data->NewOption("OCSelectedCoreName")->NewState("1");
 
 
     XmlNode* debuggerPlugins = new XmlNode("debuggerPlugins");
