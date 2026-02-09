@@ -1269,7 +1269,7 @@ cm::optional<cmTryCompileResult> cmCoreTryCompile::TryCompileCode(
 
   // RA PATCH
   if (this->Makefile->GetState()->UseIarIDE()) {
-    // Forward the GHS variables to the inner project cache.
+    // Forward the IAR variables to the inner project cache.
     for (std::string const& var : iar_platform_vars) {
       if (cmValue val = this->Makefile->GetDefinition(var)) {
         std::string flag = "-D" + var + "=" + "'" + *val + "'";

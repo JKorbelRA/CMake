@@ -1000,6 +1000,8 @@ if(WIN32)
         cmVSVersion.h
 # RA PATCH: Add IAR generators
       cmGlobalIarGenerator.cxx
+      cmGlobalIarGenerator8.cxx
+      cmGlobalIarGenerator9.cxx
       cmGlobalIarGenerator.h
       cmLocalIarGenerator.cxx
       cmLocalIarGenerator.h

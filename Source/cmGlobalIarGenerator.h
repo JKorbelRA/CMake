@@ -24,6 +24,419 @@
 class cmMakefile;
 class cmGeneratedFileStream;
 
+
+std::string getLvl(unsigned int level);
+
+
+//------------------------------------------------------------------------------
+///
+/// @brief Converts integer to decimal string notation.
+///
+/// @param[in] val Value to convert.
+///
+/// @return Converted string.
+///
+//------------------------------------------------------------------------------
+static inline std::string int2str(int val)
+{
+  std::stringstream tmp;
+  tmp << val;
+  return tmp.str();
+}
+
+//------------------------------------------------------------------------------
+///
+/// @brief Generic XML node.
+///
+/// This node can have multiple children and attributes, or a plain text
+/// value.
+///
+//------------------------------------------------------------------------------
+class XmlNode
+{
+  /// @brief Node name (represented later as tag name).
+  std::string nodeName;
+
+  /// @brief Plain text value.
+  std::string plainValue;
+
+  /// @brief Attribute pairs (attr="val").
+  std::vector<std::pair<std::string, std::string>> attrs;
+
+  /// @brief Children vector.
+  std::vector<XmlNode*> children;
+
+public:
+  XmlNode(std::string name, std::string value)
+    : nodeName(name)
+    , plainValue(value)
+  {
+    // Just copy values.
+  }
+
+  XmlNode(std::string name)
+    : nodeName(name)
+    , plainValue("")
+  {
+    // Just copy values.
+  }
+
+  /// This function creates a new child node (dynamic memory allocation).
+  XmlNode* NewChild(std::string name, std::string value)
+  {
+    XmlNode* child = new XmlNode(name, value);
+    children.push_back(child);
+    return child;
+  }
+
+  /// This function creates a new child node (dynamic memory allocation).
+  XmlNode* NewChild(std::string name, int value)
+  {
+    XmlNode* child = new XmlNode(name, std::to_string(value));
+    children.push_back(child);
+    return child;
+  }
+
+  /// This function creates a new child node (dynamic memory allocation).
+  XmlNode* NewChild(std::string name)
+  {
+    XmlNode* child = new XmlNode(name);
+    children.push_back(child);
+    return child;
+  }
+
+  /// This function adds a child node (no memory allocation).
+  ///
+  /// @warning delete will be issued for this node!
+  XmlNode* AddChild(XmlNode* child)
+  {
+    children.push_back(child);
+    return this;
+  }
+
+  void AddAttr(std::string name, std::string value)
+  {
+    attrs.push_back(std::make_pair(name, value));
+  }
+
+  std::string& AppendOpenTag(std::string& tag, unsigned int level) const
+  {
+    tag += getLvl(level) + "<" + nodeName;
+
+    for (std::vector<std::pair<std::string, std::string>>::const_iterator it =
+           attrs.begin();
+         it != attrs.end(); ++it) {
+      tag += std::string(" ") + it->first + "=\"" + it->second + "\"";
+    }
+    tag += ">";
+    return tag;
+  }
+
+  std::string& AppendCloseTag(std::string& tag, unsigned int level) const
+  {
+    (void)level; // May come handy, when open and close are on a separate
+    // line.
+
+    tag += std::string("</") + nodeName + ">\n";
+    return tag;
+  }
+
+  void ToString(unsigned int level, std::string& outStr) const
+  {
+    this->AppendOpenTag(outStr, level);
+
+    bool moreThanOnce = false;
+
+    for (std::vector<XmlNode*>::const_iterator it = this->children.begin();
+         it != this->children.end(); ++it) {
+      if (!moreThanOnce) {
+        moreThanOnce = true;
+        outStr += "\n";
+      }
+
+      (*it)->ToString(level + 1, outStr);
+    }
+
+    if (!moreThanOnce) {
+      if (this->plainValue.empty()) {
+        outStr[outStr.length() - 1] = '/';
+        outStr += ">\n";
+        // Do not append close tag.
+      } else {
+        outStr += this->plainValue;
+        this->AppendCloseTag(outStr, level);
+      }
+    } else {
+      outStr += getLvl(level);
+      this->AppendCloseTag(outStr, level);
+    }
+  }
+
+  virtual ~XmlNode()
+  {
+    for (std::vector<XmlNode*>::iterator it = this->children.begin();
+         it != this->children.end(); ++it) {
+      delete *it;
+    }
+  }
+};
+
+static const char* RUNTIME_LIBRARY_CONFIG[] = {
+  "None",   // 0
+  "Normal", // 1
+  "Full",   // 2
+  "Custom"  // 3
+};
+
+static const char* SCANF_PRINTF_FORMATTING[] = {
+  "Auto",                     // 0
+  "Full",                     // 1
+  "Full without multibytes",  // 2
+  "Large",                    // 3
+  "Large without multibytes", // 4
+  "Small",                    // 5
+  "Small without multibytes", // 6
+  "Tiny"                      // 7
+};
+
+static const int SCANF_FORMATTING_CNT = 7;
+static const int PRINTF_FORMATTING_CNT = 8;
+
+class FileTreeNode
+{
+public:
+  std::string ftNodeName;
+
+  std::vector<FileTreeNode*> children;
+
+  FileTreeNode(std::string name)
+    : ftNodeName(name)
+  {
+  }
+
+  void TransformToIarTree(XmlNode* root)
+  {
+    if (!this->children.empty()) {
+      XmlNode* group = root->NewChild("group");
+      group->NewChild("name", this->ftNodeName);
+
+      for (std::vector<FileTreeNode*>::const_iterator it =
+             this->children.begin();
+           it != this->children.end(); ++it) {
+        (*it)->TransformToIarTree(group);
+      }
+
+    } else {
+      XmlNode* file = root->NewChild("file");
+      file->NewChild("name", this->ftNodeName);
+    }
+  }
+
+  FileTreeNode* NewNode(std::string name)
+  {
+    FileTreeNode* node = new FileTreeNode(name);
+    children.push_back(node);
+    return node;
+  }
+
+  static void AddToTree(FileTreeNode* root, std::string path,
+                        std::string const& fullpath)
+  {
+    size_t slashPos = path.find_first_of("/\\");
+    std::string currentChunk;
+    std::string restOfPath;
+    if (slashPos != std::string::npos) {
+      currentChunk = path.substr(0, slashPos);
+      restOfPath = path.substr(slashPos + 1);
+    } else {
+      currentChunk = path;
+      restOfPath = "";
+    }
+
+    if (!currentChunk.empty()) {
+      bool found = false;
+      for (std::vector<FileTreeNode*>::const_iterator it =
+             root->children.begin();
+           it != root->children.end(); ++it) {
+        if ((*it)->ftNodeName == currentChunk) {
+          // Found, move in tree.
+          AddToTree(*it, restOfPath, fullpath);
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        if (restOfPath.empty()) {
+          // Not found, create new and finish.
+          root->NewNode(fullpath);
+          return;
+        } else {
+          // Not found, create new and move inside.
+          FileTreeNode* newNode = root->NewNode(currentChunk);
+          AddToTree(newNode, restOfPath, fullpath);
+        }
+      }
+    }
+  }
+
+  virtual ~FileTreeNode()
+  {
+    for (std::vector<FileTreeNode*>::iterator it = children.begin();
+         it != children.end(); ++it) {
+      delete *it;
+    }
+  }
+};
+
+class IarOption : public XmlNode
+{
+private:
+  int optVersion;
+  std::string optName;
+
+public:
+  IarOption(std::string name, int version)
+    : XmlNode("option")
+    , optVersion(version)
+    , optName(name)
+  {
+    if (!optName.empty()) {
+      this->NewChild("name", optName);
+    }
+
+    if (optVersion >= 0) {
+      this->NewChild("version", int2str(optVersion));
+    }
+  }
+
+  IarOption(std::string name)
+    : XmlNode("option")
+    , optVersion(-1)
+    , optName(name)
+  {
+    if (!optName.empty()) {
+      this->NewChild("name", optName);
+    }
+  }
+
+  void NewState(std::string state) { this->NewChild("state", state); }
+
+  void NewStates(std::vector<std::string> states)
+  {
+    for (std::vector<std::string>::const_iterator it = states.begin();
+         it != states.end(); ++it) {
+      this->NewChild("state", *it);
+    }
+  }
+};
+
+class IarDebuggerPlugin : public XmlNode
+{
+public:
+  IarDebuggerPlugin(std::string file, bool load)
+    : XmlNode("plugin")
+  {
+    if (!file.empty()) {
+      this->NewChild("file", file);
+      this->NewChild("loadFlag", load ? "1" : "0");
+    }
+  }
+};
+
+class IarData : public XmlNode
+{
+private:
+  int dataVersion;
+  bool dataWantNonLocal;
+  bool dataDebug;
+
+public:
+  IarData(int version, bool wantNonLocal, bool debug)
+    : XmlNode("data")
+    , dataVersion(version)
+    , dataWantNonLocal(wantNonLocal)
+    , dataDebug(debug)
+  {
+    this->NewChild("version", int2str(dataVersion));
+    this->NewChild("wantNonLocal", dataWantNonLocal ? "1" : "0");
+    this->NewChild("debug", dataDebug ? "1" : "0");
+  }
+
+  IarOption* NewOption(std::string name, int version)
+  {
+    IarOption* option = new IarOption(name, version);
+    this->AddChild(option);
+    return option;
+  }
+
+  IarOption* NewOption(std::string name)
+  {
+    IarOption* option = new IarOption(name);
+    this->AddChild(option);
+    return option;
+  }
+};
+
+class IarSettings : public XmlNode
+{
+private:
+  std::string settingsName;
+  int archiveVersion;
+
+public:
+  IarSettings(std::string name, int version)
+    : XmlNode("settings")
+    , settingsName(name)
+    , archiveVersion(version)
+  {
+    if (!settingsName.empty()) {
+      this->NewChild("name", settingsName);
+    }
+
+    this->NewChild("archiveVersion", int2str(archiveVersion));
+  }
+
+  IarData* NewData(int version, bool wantNonLocal, bool debug)
+  {
+    IarData* data = new IarData(version, wantNonLocal, debug);
+    this->AddChild(data);
+    return data;
+  }
+};
+
+class IarFsNode : public XmlNode
+{
+private:
+  std::string fsPath;
+  bool fsIsDir;
+
+  std::string GetLastDir(std::string path)
+  {
+    size_t position = path.find_last_of("/\\");
+    if (position != std::string::npos) {
+      return path.substr(position + 1);
+    }
+    return std::string("");
+  }
+
+public:
+  IarFsNode(std::string path, bool isDir)
+    : XmlNode(isDir ? "group" : "file")
+    , fsPath(path)
+    , fsIsDir(isDir)
+  {
+    this->NewChild("name", isDir ? GetLastDir(fsPath) : fsPath);
+  }
+
+  IarData* NewData(int version, bool wantNonLocal, bool debug)
+  {
+    IarData* data = new IarData(version, wantNonLocal, debug);
+    this->AddChild(data);
+    return data;
+  }
+};
+
 /** \class cmGlobalIarGenerator
  * \brief Write Eclipse project files for Makefile based projects
  */
@@ -31,6 +444,7 @@ class cmGlobalIarGenerator : public cmGlobalGenerator
 {
 public:
   static const char* XML_DECL;
+  static char const* XML_DECL_V9;
 
   cmGlobalIarGenerator(cmake* cm);
   ~cmGlobalIarGenerator() override;
@@ -259,6 +673,9 @@ private:
     std::string toolchain;
 
     /// directory where to store all object files (.o).
+    std::string browseInfoDir;
+
+    /// directory where to store all object files (.o).
     std::string objectDir;
 
     /// directory where to store targets (executables and libs).
@@ -325,7 +742,12 @@ private:
     std::vector<std::string> sources;
 
     void CreateProjectFile();
+    void CreateProjectFile8(); // for v8
+    void CreateProjectFile9(); // for v9
+
     void CreateDebuggerFile();
+    void CreateDebuggerFile8();
+    void CreateDebuggerFile9();
   };
 
   static void cmGlobalIarGenerator::ParseCmdLineOpts(std::string cmdLine,
