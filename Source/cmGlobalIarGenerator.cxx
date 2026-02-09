@@ -150,25 +150,6 @@ cmGlobalIarGenerator::cmGlobalIarGenerator(cmake* cm)
   : cmGlobalGenerator(cm)
 {
   cm->GetState()->SetIarIDE(true);
-  std::string iarPath = cm->GetCacheDefinition("IAR_INSTALL_DIR");
-  if (!iarPath.empty()) {
-    GLOBALCFG.iarPath = iarPath;
-  }
-
-  std::string iarWbVersion = cm->GetCacheDefinition("IAR_WORKBENCH_VERSION");
-  std::string iarWbMajorVersion =
-    cm->GetCacheDefinition("IAR_WORKBENCH_VERSION_MAJOR");
-  std::string iarWbMinorVersion =
-    cm->GetCacheDefinition("IAR_WORKBENCH_VERSION_MINOR");
-
-  GLOBALCFG.wbVersion =
-    iarWbVersion.empty() ? GLOBALCFG.wbVersion : iarWbVersion;
-  GLOBALCFG.wbVersionMajor = iarWbMajorVersion.empty()
-    ? GLOBALCFG.wbVersionMajor
-    : std::stoi(iarWbMajorVersion);
-  GLOBALCFG.wbVersionMinor = iarWbMajorVersion.empty()
-    ? GLOBALCFG.wbVersionMinor
-    : std::stoi(iarWbMinorVersion);
 }
 
 cmGlobalIarGenerator::~cmGlobalIarGenerator()
@@ -393,12 +374,13 @@ void cmGlobalIarGenerator::EnableLanguage(
                  &GLOBALCFG.wbVersionPatch);
 
           
-          cmSystemTools::Message(std::string("GENERATOR DETECTED: IAR Version ") +
-                                 std::to_string(GLOBALCFG.wbVersionMajor) +
-                                 "." +
-                                 std::to_string(GLOBALCFG.wbVersionMinor) +
-              "." + std::to_string(GLOBALCFG.wbVersionPatch)
-              );
+          // TODO COMMENT
+          //cmSystemTools::Message(std::string("GENERATOR DETECTED: IAR Version ") +
+          //                       std::to_string(GLOBALCFG.wbVersionMajor) +
+          //                       "." +
+          //                       std::to_string(GLOBALCFG.wbVersionMinor) +
+          //    "." + std::to_string(GLOBALCFG.wbVersionPatch));
+          // END TODO
 
           mf->AddCacheDefinition("IAR_WORKBENCH_VERSION", iarPlatformVersion.c_str(),
                                  "IAR Workbench Platform Version calculated from common/config/PlatformVersions.xml file",
@@ -466,13 +448,6 @@ cmGlobalIarGenerator::GenerateBuildCommand(
                      cmBuildOptions buildOptions,
                      std::vector<std::string> const& makeOptions,
                      BuildTryCompile /*isInTryCompile*/)
-  /* std::vector<
-    cmGlobalGenerator::GeneratedMakeCommand> cmGlobalIarGenerator::GenerateBuildCommand(
-  const std::string& makeProgram, const std::string& projectName,
-  const std::string& projectDir, std::vector<std::string> const& targetNames,
-  const std::string& config, int jobs, bool verbose,
-  const cmBuildOptions& buildOptions,
-  std::vector<std::string> const& makeOptions)*/
 {
   cmGlobalGenerator::GeneratedMakeCommand makeCommand = {};
 
@@ -660,13 +635,29 @@ void cmGlobalIarGenerator::AddExtraIDETargets()
 //----------------------------------------------------------------------------
 void cmGlobalIarGenerator::Generate()
 {
-    // TODO COMMENT
-    // cmSystemTools::Message(std::string("Generation has started..."));
-    // END TODO
-
   const cmLocalGenerator* const lgs0 =
       this->GetLocalGenerators()[0].get();
   const cmMakefile* globalMakefile = lgs0->GetMakefile();
+  
+  std::string iarPath = globalMakefile->GetSafeDefinition("IAR_INSTALL_DIR");
+  if (!iarPath.empty()) {
+    GLOBALCFG.iarPath = iarPath;
+  }
+
+  GLOBALCFG.wbVersion = globalMakefile->GetSafeDefinition("IAR_WORKBENCH_VERSION");
+  std::string version =
+    globalMakefile->GetSafeDefinition("IAR_WORKBENCH_VERSION_MAJOR");
+  if (!version.empty()) {
+    GLOBALCFG.wbVersionMajor = std::stoi(version);
+  }
+  version = globalMakefile->GetSafeDefinition("IAR_WORKBENCH_VERSION_MINOR");
+  if (!version.empty()) {
+    GLOBALCFG.wbVersionMinor = std::stoi(version);
+  }
+  version = globalMakefile->GetSafeDefinition("IAR_WORKBENCH_VERSION_PATCH");
+  if (!version.empty()) {
+    GLOBALCFG.wbVersionPatch = std::stoi(version);
+  }
 
   GLOBALCFG.buildType = globalMakefile->GetSafeDefinition("CMAKE_BUILD_TYPE");
   std::string flagsWithType = std::string("CMAKE_C_FLAGS_") + cmSystemTools::UpperCase(GLOBALCFG.buildType);
