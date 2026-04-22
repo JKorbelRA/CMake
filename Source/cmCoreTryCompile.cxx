@@ -100,6 +100,32 @@ std::set<std::string> const ghs_platform_vars{
   "GHS_OS_ROOT",         "GHS_OS_DIR",         "GHS_BSP_NAME",
   "GHS_OS_DIR_OPTION"
 };
+
+// RA PATCH
+// IAR platform variables.
+std::set<std::string> const iar_platform_vars{
+  "IAR_EW_ROOT",
+  "IAR_INSTALL_DIR",
+  "IAR_TOOLKIT_DIR",
+  "IAR_TOOLKIT_BIN_DIR",
+  "IAR_SET_INSTALLATION_FOLDER_MANUALLY",
+  "IAR_DEBUGGER_LOGFILE",
+  "IAR_COMPILER_DLIB_CONFIG",
+  "IAR_CHIP_SELECTION",
+  "IAR_LINKER_ENTRY_ROUTINE",
+  "IAR_TARGET_RTOS",
+  "IAR_TARGET_ARCHITECTURE",
+  "IAR_ARM_PATH",
+  "IAR_DEBUGGER_CSPY_FLASHLOADER_V3",
+  "IAR_SEMIHOSTING_ENABLE",
+  "IAR_DEBUGGER_PROBE",
+  "IAR_GENERAL_BUFFERED_TERMINAL_OUTPUT",
+  "IAR_DEBUGGER_IJET_PROBECONFIG",
+  "IAR_LINKER_ICF_FILE",
+  "IAR_DEBUGGER_CSPY_MEMFILE"
+};
+// END: RA PATCH
+
 using Arguments = cmCoreTryCompile::Arguments;
 
 ArgumentParser::Continue TryCompileLangProp(Arguments& args,
@@ -1240,6 +1266,18 @@ cm::optional<cmTryCompileResult> cmCoreTryCompile::TryCompileCode(
       }
     }
   }
+
+  // RA PATCH
+  if (this->Makefile->GetState()->UseIarIDE()) {
+    // Forward the IAR variables to the inner project cache.
+    for (std::string const& var : iar_platform_vars) {
+      if (cmValue val = this->Makefile->GetDefinition(var)) {
+        std::string flag = "-D" + var + "=" + "'" + *val + "'";
+        arguments.CMakeFlags.emplace_back(std::move(flag));
+      }
+    }
+  }
+  // END: RA PATCH
 
   if (this->Makefile->GetCMakeInstance()->GetDebugTryCompile()) {
     auto msg =

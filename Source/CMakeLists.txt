@@ -998,6 +998,14 @@ if(WIN32)
         cmVSSolution.cxx
         cmVSSolution.h
         cmVSVersion.h
+# RA PATCH: Add IAR generators
+      cmGlobalIarGenerator.cxx
+      cmGlobalIarGenerator8.cxx
+      cmGlobalIarGenerator9.cxx
+      cmGlobalIarGenerator.h
+      cmLocalIarGenerator.cxx
+      cmLocalIarGenerator.h
+# END RA PATCH
       )
 
     # Add a manifest file to executables on Windows to allow for

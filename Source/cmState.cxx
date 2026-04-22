@@ -732,6 +732,18 @@ bool cmState::UseBorlandMake() const
   return this->BorlandMake;
 }
 
+// RA PATCH:
+void cmState::SetIarIDE(bool iarIDE)
+{
+  this->IarIDE = iarIDE;
+}
+
+bool cmState::UseIarIDE() const
+{
+  return this->IarIDE;
+}
+// END RA PATCH
+
 void cmState::SetWatcomWMake(bool watcomWMake)
 {
   this->WatcomWMake = watcomWMake;
