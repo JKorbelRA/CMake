@@ -375,11 +375,11 @@ void cmGlobalIarGenerator::EnableLanguage(
 
           
           // TODO COMMENT
-          cmSystemTools::Message(std::string("IAR Generator: Detected IAR Version ") +
-                                 std::to_string(GLOBALCFG.wbVersionMajor) +
-                                 "." +
-                                 std::to_string(GLOBALCFG.wbVersionMinor) +
-              "." + std::to_string(GLOBALCFG.wbVersionPatch));
+          //cmSystemTools::Message(std::string("IAR Generator: Detected IAR Version ") +
+          //                       std::to_string(GLOBALCFG.wbVersionMajor) +
+          //                                 "." +
+          //                                 std::to_string(GLOBALCFG.wbVersionMinor) +
+          //              "." + std::to_string(GLOBALCFG.wbVersionPatch));
           // END TODO
 
           mf->AddCacheDefinition("IAR_WORKBENCH_VERSION", iarPlatformVersion.c_str(),
