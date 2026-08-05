@@ -520,6 +520,17 @@ void cmGlobalIarGenerator::Project::CreateProjectFile9()
     XmlNode* baOutFile = baOutputs->NewChild("file");
     baOutFile->NewChild("name", "$BUILD_FILES_DIR$/.postbuild");
   }
+
+  if (!this->buildCfg.preBuildCmd.empty()) {
+    XmlNode* bactionPreBuild = bactions->NewChild("buildAction");
+    bactionPreBuild->NewChild("cmdline", this->buildCfg.preBuildCmd);
+    bactionPreBuild->NewChild("workingDirectory", "$PROJ_DIR$");
+    bactionPreBuild->NewChild("buildSequence", "preCompile");
+    XmlNode* baOutputs = bactionPreBuild->NewChild("outputs");
+    XmlNode* baOutFile = baOutputs->NewChild("file");
+    baOutFile->NewChild("name", "$BUILD_FILES_DIR$/.prebuild");
+  }
+
   config->AddChild(bactionSettings);
 
 
